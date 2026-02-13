@@ -3,8 +3,10 @@
 > **Sistema completo de optimización de rutas de reparto para Posadas, Córdoba**  
 > Backend FastAPI + Flutter App + OSRM + VROOM
 
-**Versión:** 3.0.0  
+**Versión:** 1.0.0  
 **Última actualización:** Febrero 2026
+
+
 
 ---
 
@@ -17,13 +19,12 @@
 - 🗺️ **Visualiza** en mapa con navegación GPS
 - ✅ **Gestiona** entregas en tiempo real (Entregado/Ausente/Incidencia)
 - 💾 **Persiste** el progreso (puedes cerrar la app y continuar)
-- 👥 **Reparto compartido** entre 2 repartidores
 
 ---
 
-## ⚡ Inicio Rápido
+## ⚡ Up del servidor
 
-### Opción 1: Script Automático (⭐ Recomendado)
+### Opción 1: Script Automático 
 
 ```bash
 cd /home/mariano/Desktop/app_repartir
@@ -50,26 +51,18 @@ nohup ngrok http 8000 --log=stdout > /tmp/ngrok.log 2>&1 &
 
 ---
 
-## 📚 Documentación
+## 📚 Documentación y archivos relevantes
 
-> **[📖 ÍNDICE COMPLETO DE DOCUMENTACIÓN](INDICE_DOCS.md)** ← Empieza aquí
+| Archivo / Carpeta | Descripción |
+|-------------------|-------------|
+| **CHANGELOG.md** | Historial y versión inicial estable (v1.0.0) |
+| **start.sh** | Script de arranque automático (si está presente) |
+| **docker-compose.yml** | Definición de servicios Docker (OSRM, VROOM, etc.) |
+| **requirements.txt** | Dependencias Python para el backend |
+| **vroom-conf/** | Configuraciones de ejemplo para VROOM |
+| **app/** | Código del backend (FastAPI) |
+| **flutter_app/** | Código de la app Flutter |
 
-| Archivo | Descripción |
-|---------|-------------|
-| **[INDICE_DOCS.md](INDICE_DOCS.md)** | 🗺️ Guía de navegación de toda la documentación |
-| **[INICIO_RAPIDO.md](INICIO_RAPIDO.md)** | ⚡ Una página con comandos esenciales |
-| **[GUIA_INICIO.md](GUIA_INICIO.md)** | 📋 Guía paso a paso manual completa |
-| **[README_SCRIPT.md](README_SCRIPT.md)** | 🚀 Cómo usar el script `start.sh` |
-| **[DOCUMENTACION.md](DOCUMENTACION.md)** | 📖 Documentación técnica completa (2000+ líneas) |
-| **[start.sh](start.sh)** | 🎯 Script de inicio automático |
-
-### ¿Qué leer según tu necesidad?
-
-- **No sé por dónde empezar** → `INDICE_DOCS.md` 🗺️
-- **Solo quiero que funcione YA** → `INICIO_RAPIDO.md`
-- **Quiero entender qué hace cada comando** → `GUIA_INICIO.md`
-- **Quiero usar el script automático** → `README_SCRIPT.md`
-- **Soy desarrollador, quiero entender TODO** → `DOCUMENTACION.md`
 
 ---
 
@@ -218,132 +211,50 @@ app_repartir/
 ├── docker-compose.yml       # 🐳 Definición servicios
 ├── requirements.txt         # 📦 Dependencias Python
 │
-├── start.sh                 # 🚀 Script de inicio
-├── INICIO_RAPIDO.md         # ⚡ Guía express
-├── GUIA_INICIO.md          # 📋 Guía manual completa
-├── README_SCRIPT.md         # 📖 Uso del script
-└── DOCUMENTACION.md         # 📚 Docs técnicas completas
+├── start.sh                 # 🚀 Script de inicio (si está presente)
+└── CHANGELOG.md      # � Changelog y versión inicial
 ```
 
----
 
-## 🐛 Troubleshooting
+## ⚠️ Mapas OSRM (no incluidos)
 
-### Backend no arranca
+La carpeta `osrm/` con el mapa no se incluye en el repo por su tamaño.
+
+Si necesitas volver a poner la carpeta `osrm/` en tu entorno local, estos son los pasos recomendados (ejecutar desde la raíz del proyecto, y ajusta nombres según tu fichero PBF):
+
+1. Descarga el PBF de la zona que necesites (por ejemplo, Geofabrik). Ejemplo:
+```bash
+mkdir -p osrm
+cd osrm
+# Ejemplo (sustituye URL por la del área que necesites)
+wget -O andalucia-latest.osm.pbf "https://download.geofabrik.de/europe/spain/andalucia-latest.osm.pbf"
+cd ..
+```
+
+2. Generar los índices OSRM (usando la imagen Docker oficial). Aquí usamos el perfil por defecto (`/opt/car.lua`) y el algoritmo MLD:
 
 ```bash
-# Ver logs
-tail -f backend.log
+# Extraer datos
+docker run --rm -t -v "$(pwd)/osrm:/data" osrm/osrm-backend osrm-extract -p /opt/car.lua /data/andalucia-latest.osm.pbf
 
-# Verificar puerto libre
-lsof -ti:8000
+# Particionar y customizar (MLD)
+docker run --rm -t -v "$(pwd)/osrm:/data" osrm/osrm-backend osrm-partition /data/andalucia-latest.osrm
+docker run --rm -t -v "$(pwd)/osrm:/data" osrm/osrm-backend osrm-customize /data/andalucia-latest.osrm
 
-# Si está ocupado, matar proceso
-lsof -ti:8000 | xargs kill
+# Iniciar el servicio OSRM (puerto 5000)
+docker run -d --name osrm -p 5000:5000 -v "$(pwd)/osrm:/data" osrm/osrm-backend osrm-routed --algorithm mld /data/andalucia-latest.osrm
 ```
 
-### Docker no responde
+Alternativa (si prefieres `osrm-contract` en vez de `mld`) — consulta la documentación de OSRM para tu versión y perfil de coste.
+
+3. Verifica que OSRM responde:
 
 ```bash
-# Reiniciar servicios
-docker compose down
-docker compose up -d
-
-# Ver logs
-docker logs osrm-posadas
-docker logs vroom-posadas
+curl "http://localhost:5000/route/v1/driving/-5.105,37.802;-5.110,37.800?overview=false"
+# deberías ver un JSON con "code":"Ok"
 ```
 
-### App muestra 🔴 Offline
-
-```bash
-# Verificar backend
-curl http://localhost:8000/health
-
-# Verificar ngrok
-curl http://127.0.0.1:4040/api/tunnels
-
-# Reiniciar todo
-./start.sh restart
-```
-
----
-
-## 🎨 Características v3.0
-
-### ✨ Nuevo Sistema de Colores
-- Paleta centralizada en `app_theme.dart`
-- Modo oscuro automático (sigue sistema)
-- Colores profesionales: Azul profundo + Verde esmeralda + Ámbar
-
-### 🔄 Validación Incremental (v3.0+)
-- Editar direcciones una por una
-- Revalidar solo las modificadas
-- Persistencia con Hive
-- Indicadores visuales de estado
-
-### 🗺️ Mapa Inteligente
-- Segmento GPS → siguiente parada (verde)
-- Marcador siguiente parada: grande y destacado
-- Recálculo automático tras cada entrega
-- Cámara ajusta GPS + destino simultáneamente
-
-### 📊 Soporte Multi-formato
-- CSV con detección automática de columnas
-- Excel (.xlsx) con múltiples hojas
-- Agrupación de direcciones duplicadas
-- Suma automática de bultos
-
----
-
-## 📝 Changelog
-
-### v3.0.0 (Feb 2026)
-- ✨ Rediseño completo de paleta de colores
-- 🎨 Modo oscuro automático
-- 🔄 Validación incremental con persistencia
-- 📋 Script de inicio automático
-- 📚 Documentación reorganizada
-
-### v2.9.0
-- 🎨 Interfaz de importación mejorada
-- 🔍 Validación previa de direcciones
-- ⚠️ Banner de errores expandible
-
-### v2.8.0
-- 🌐 Configuración zero-config con ngrok
-- 🔗 URL pública estática
-
-*(Ver DOCUMENTACION.md para changelog completo)*
-
----
-
-## 👥 Equipo
-
-- **Backend & Arquitectura:** Sistema FastAPI + Docker
-- **Frontend:** App Flutter Material 3
-- **Infraestructura:** OSRM + VROOM + ngrok
-- **Zona:** Posadas, Córdoba, España
-
----
-
-## 📄 Licencia
-
-Proyecto interno — Uso privado
-
----
-
-## 🆘 Soporte
-
-Para problemas o preguntas:
-
-1. Revisar `DOCUMENTACION.md` sección 12 (Troubleshooting)
-2. Ejecutar `./start.sh status` y capturar salida
-3. Revisar logs:
-   - Backend: `tail -f backend.log`
-   - Docker: `docker logs osrm-posadas`
-   - ngrok: `tail -f /tmp/ngrok.log`
-
----
-
-*Desarrollado con ❤️ para optimizar entregas en Posadas*
+Notas:
+- El repositorio incluye un `.gitignore` que excluye la carpeta `osrm/` para evitar añadir archivos pesados por accidente.
+- Si prefieres no usar Docker, puedes instalar `osrm-backend` localmente y ejecutar los mismos comandos (`osrm-extract`, `osrm-partition`, `osrm-customize`, `osrm-routed`).
+- Los nombres de archivo (`andalucia-latest.osm.pbf` y `andalucia-latest.osrm`) son solo ejemplos; usa los que correspondan a tu área.

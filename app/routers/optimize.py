@@ -2,14 +2,10 @@
 Router de optimización de rutas.
 Endpoint principal: POST /optimize
 
-Cambios v2.1:
-  - Se envían client_names opcionales y se usan como identidad del punto.
-  - Se eliminan los campos de duración/ETA de la respuesta.
-  - Para 2 rutas, VROOM equilibra por número de paradas (no por tiempo).
-
-Cambios v2.3:
-  - Direcciones duplicadas se fusionan en una sola parada con
-    package_count y client_names agregados.
+Descripción:
+    - Recibe direcciones, calcula la orden óptima de visita (TSP/VRP) y devuelve
+        la ruta con geometría, ETAs e instrucciones.
+    - Soporta envío de coordenadas pre-resueltas y datos pre-agrupados.
 """
 
 import io

@@ -1,5 +1,5 @@
 """
-Router de validación — v7 (simplificado)
+Router de validación
 
 Flujo: un solo endpoint POST /api/validation/start
   1. Recibe lista de direcciones

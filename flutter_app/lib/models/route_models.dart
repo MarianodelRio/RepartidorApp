@@ -1,10 +1,4 @@
 /// Modelos de datos que reflejan los contratos del backend FastAPI.
-///
-/// Cambios v2.1:
-///   - StopInfo: añadido `clientName`, eliminados `etaSeconds` y `etaDisplay`.
-///   - RouteSummary: eliminados `totalDurationS` y `totalDurationDisplay`.
-///   - RouteStep: eliminado `durationS`.
-///   - La identidad de cada parada se basa en `clientName` si existe.
 library;
 
 // ═══════════════════════════════════════════

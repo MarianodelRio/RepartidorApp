@@ -1,11 +1,6 @@
 """
 Servicio de optimización de rutas con VROOM + OSRM.
-Resuelve el TSP (Problema del Viajante) como Open Trip.
-
-Cambios v2.1:
-  - Para 2 vehículos: VROOM equilibra por número de paradas (no por tiempo)
-    usando restricciones de capacidad en vehículos y "amount" en jobs.
-  - Se elimina el campo duration_s de los RouteStep.
+Resuelve el TSP (Problema del Viajante) y devuelve detalles de ruta.
 """
 
 import math

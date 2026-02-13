@@ -41,3 +41,6 @@ node_modules/
 
 # others
 *.sqlite3
+
+# files for test 
+data/

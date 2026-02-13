@@ -1,4 +1,4 @@
-// Modelos de datos para validación simplificada v7.
+// Modelos de datos para validación.
 //
 // Reflejan el contrato de POST /api/validation/start.
 

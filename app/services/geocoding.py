@@ -2,12 +2,9 @@
 Servicio de geocodificación con Nominatim.
 Cache en memoria para evitar llamadas repetidas.
 
-v3.0 — Limpieza agresiva de direcciones del Excel real:
-  - Normaliza abreviaturas (C/, CL, Avda, Pza, Ctra, etc.)
-  - Corrige encoding roto (?, ´, \\xa0, etc.)
-  - Elimina ruido (paréntesis, notas, duplicados)
-  - Multi-estrategia: intento limpio → sin número → solo calle+ciudad
-  - Búsqueda estructurada: street/city/county para mayor precisión
+Limpieza y multi-estrategia para convertir direcciones de texto en coordenadas:
+    - Normaliza abreviaturas y corrige encoding
+    - Elimina ruido y aplica búsquedas alternas (texto libre, estructurada, bounded)
 """
 
 import json

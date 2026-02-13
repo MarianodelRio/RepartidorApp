@@ -1,10 +1,6 @@
 /// Modelos para el estado de ejecución del reparto.
 ///
 /// Diseñados para ser serializables a Hive (base de datos local).
-///
-/// Cambios v2.1:
-///   - DeliveryStop: añadido `clientName`, eliminados `etaSeconds` y `etaDisplay`.
-///   - DeliverySession: eliminado `totalDurationDisplay`.
 library;
 
 // ═══════════════════════════════════════════

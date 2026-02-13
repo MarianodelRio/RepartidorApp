@@ -1,14 +1,6 @@
 """
 Modelos Pydantic para request/response de la API.
 Contrato claro entre frontend y backend.
-
-Cambios v2.1:
-  - OptimizeRequest: añadido campo opcional 'client_names' para enviar
-    nombre del cliente por cada dirección.
-  - StopInfo: añadido 'client_name', eliminados 'eta_seconds' y 'eta_display'
-    (los tiempos estimados no son reales por las paradas físicas).
-  - RouteSummary: eliminados 'total_duration_s' y 'total_duration_display'.
-  - La identidad de cada parada se basa en 'client_name' (si existe) en lugar de ID numérico.
 """
 
 from pydantic import BaseModel, Field
