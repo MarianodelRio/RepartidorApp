@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.pyc
+env/
+venv/
+.venv/
+# Pyenv
+.python-version
+
+# OSRM and large map files
+osrm/
+*.osm.pbf
+*.osrm*
+
+# IDEs
+.vscode/
+.idea/
+*.iml
+
+# Flutter build
+flutter_app/build/
+**/build/
+.gradle/
+*.apk
+*.aab
+
+# macOS
+.DS_Store
+
+# logs
+*.log
+
+# local secrets
+.env
+secrets.json
+
+# node
+node_modules/
+
+# others
+*.sqlite3

@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  # ── Motor de rutas OSRM ─────────────────────────────────────
+  osrm:
+    image: osrm/osrm-backend
+    container_name: osrm-posadas
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./osrm:/data
+    command: osrm-routed --algorithm mld /data/andalucia-latest.osrm
+
+  # ── Optimizador VROOM (TSP/VRP) ────────────────────────────
+  vroom:
+    image: ghcr.io/vroom-project/vroom-docker:v1.14.0
+    container_name: vroom-posadas
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - VROOM_ROUTER=osrm
+    volumes:
+      - ./vroom-conf:/conf
+    depends_on:
+      - osrm
