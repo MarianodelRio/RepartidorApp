@@ -159,6 +159,49 @@ curl http://127.0.0.1:4040/api/tunnels | grep public_url
 # → "public_url":"https://..."
 ```
 
+## 🐞 Debuggear local (Flutter web + backend)
+
+Si quieres depurar la app sin compilar un APK ni usar un emulador físico, la opción más rápida es ejecutar la app Flutter como web app y conectar al backend local. Resumen de pasos:
+
+1) Cambiar la URL del backend para desarrollo
+
+ - Edita `flutter_app/lib/config/api_config.dart` y cambia `baseUrl` por:
+
+```dart
+static const String baseUrl = 'http://127.0.0.1:8000';
+```
+
+2) Arrancar el backend y servicios usando el script `start.sh` (recomendado)
+
+```bash
+# Desde la raíz del proyecto
+./start.sh start    # inicia Docker (OSRM + VROOM), backend y ngrok
+
+# Comandos útiles del script:
+./start.sh status   # ver estado de servicios
+./start.sh stop     # detener todos los servicios
+./start.sh restart  # reiniciar
+```
+
+Si prefieres arrancar sólo el backend manualmente (por ejemplo para depuración muy rápida), puedes hacerlo con el venv:
+
+```bash
+source venv/bin/activate
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+# o en background
+nohup venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload > /tmp/backend.log 2>&1 &
+```
+
+3) Lanzar la app Flutter como servidor web
+
+```bash
+cd flutter_app
+flutter pub get
+flutter run -d web-server --web-port=8080
+# abre luego http://localhost:8080 en tu navegador
+```
+
+
 ---
 
 ## 🚀 Despliegue en Móvil
