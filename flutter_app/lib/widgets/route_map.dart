@@ -76,9 +76,11 @@ class RouteMapState extends State<RouteMap> {
         widget.highlightedStopIndex != null) {
       _flyToStop(widget.highlightedStopIndex!);
     }
-    // Si cambiamos la siguiente parada en modo reparto, re-encuadrar GPS+destino.
+    // Si cambiamos la siguiente parada en modo reparto y el usuario no ha intervenido,
+    // re-encuadrar GPS+destino.
     if (widget.deliveryMode &&
-        widget.nextStopIndex != oldWidget.nextStopIndex) {
+        widget.nextStopIndex != oldWidget.nextStopIndex &&
+        _followGps) {
       // Pequeño delay para asegurar que _currentPosition esté actualizado si viene de fuera.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) fitGpsAndNextStop();
@@ -199,9 +201,9 @@ class RouteMapState extends State<RouteMap> {
           setState(() {
             _currentPosition = LatLng(pos.latitude, pos.longitude);
           });
-          // En modo reparto siempre mostrar el recuadro que encuadra GPS + siguiente parada.
+          // Solo auto-encuadrar en modo reparto si el usuario no ha desactivado el seguimiento.
           if (widget.deliveryMode) {
-            fitGpsAndNextStop();
+            if (_followGps) fitGpsAndNextStop();
           } else if (_followGps) {
             _mapController.move(_currentPosition!, _mapController.camera.zoom);
           }
@@ -271,6 +273,12 @@ class RouteMapState extends State<RouteMap> {
                   )
                 : const LatLng(37.802, -5.105),
             initialZoom: 15,
+            // Si el usuario mueve el mapa con gesto, desactivar el auto-follow/auto-fit
+            onPositionChanged: (position, hasGesture) {
+              if (hasGesture == true && mounted) {
+                setState(() => _followGps = false);
+              }
+            },
             onMapReady: () {
               if (bounds != null) {
                 _mapController.fitCamera(
