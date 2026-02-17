@@ -76,6 +76,14 @@ class RouteMapState extends State<RouteMap> {
         widget.highlightedStopIndex != null) {
       _flyToStop(widget.highlightedStopIndex!);
     }
+    // Si cambiamos la siguiente parada en modo reparto, re-encuadrar GPS+destino.
+    if (widget.deliveryMode &&
+        widget.nextStopIndex != oldWidget.nextStopIndex) {
+      // Pequeño delay para asegurar que _currentPosition esté actualizado si viene de fuera.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) fitGpsAndNextStop();
+      });
+    }
   }
 
   /// Centra el mapa en una parada específica.
@@ -191,7 +199,10 @@ class RouteMapState extends State<RouteMap> {
           setState(() {
             _currentPosition = LatLng(pos.latitude, pos.longitude);
           });
-          if (_followGps) {
+          // En modo reparto siempre mostrar el recuadro que encuadra GPS + siguiente parada.
+          if (widget.deliveryMode) {
+            fitGpsAndNextStop();
+          } else if (_followGps) {
             _mapController.move(_currentPosition!, _mapController.camera.zoom);
           }
         }
@@ -318,31 +329,8 @@ class RouteMapState extends State<RouteMap> {
           ],
         ),
 
-        // ── Controles flotantes ──
-        Positioned(
-          right: 12,
-          bottom: 12,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Botón encuadrar: delivery → GPS+destino, preview → toda la ruta
-              _MapButton(
-                icon: widget.deliveryMode ? Icons.crop_free : Icons.zoom_out_map,
-                tooltip: widget.deliveryMode ? 'Ver GPS y destino' : 'Ver toda la ruta',
-                onTap: widget.deliveryMode ? fitGpsAndNextStop : fitRoute,
-              ),
-              const SizedBox(height: 8),
-              // Botón centrar en GPS
-              if (_gpsActive)
-                _MapButton(
-                  icon: _followGps ? Icons.gps_fixed : Icons.gps_not_fixed,
-                  tooltip: 'Mi ubicación',
-                  onTap: centerOnGps,
-                  isActive: _followGps,
-                ),
-            ],
-          ),
-        ),
+        // Controles flotantes eliminados: el mapa en modo reparto siempre muestra
+        // el recuadro que encuadra GPS + siguiente parada.
       ],
     );
   }
