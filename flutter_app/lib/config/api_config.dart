@@ -12,7 +12,6 @@ class ApiConfig {
 
   // ── Endpoints ──
   static const String optimizeEndpoint = '/api/optimize';
-  static const String optimizeCsvEndpoint = '/api/optimize/csv';
   static const String healthEndpoint = '/health';
   static const String servicesStatusEndpoint = '/api/services/status';
 

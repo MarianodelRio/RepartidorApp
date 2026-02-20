@@ -8,12 +8,10 @@ Descripción:
     - Soporta envío de coordenadas pre-resueltas y datos pre-agrupados.
 """
 
-import io
 import time
 from collections import OrderedDict
-import pandas as pd
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, HTTPException
 
 from app.core.config import START_ADDRESS, MAX_STOPS, POSADAS_CENTER
 from app.models import (
@@ -365,61 +363,3 @@ async def optimize(req: OptimizeRequest):
     )
 
 
-@router.post(
-    "/optimize/csv",
-    response_model=OptimizeResponse,
-    responses={
-        400: {"model": ErrorResponse},
-        500: {"model": ErrorResponse},
-        503: {"model": ErrorResponse},
-    },
-    summary="Optimizar ruta desde archivo CSV",
-    description=(
-        "Sube un CSV con al menos las columnas 'address' (obligatoria) y "
-        "opcionalmente 'name'/'nombre' (nombre del cliente). "
-        "Las columnas 'telefono' y 'notas' son opcionales y se ignoran."
-    ),
-)
-async def optimize_csv(file: UploadFile = File(...)):
-    """Acepta un CSV, extrae las direcciones (y nombres opcionales) y redirige a optimize()."""
-    raw = await file.read()
-
-    try:
-        df = pd.read_csv(io.BytesIO(raw))
-    except Exception as e:
-        raise HTTPException(400, detail=f"Error leyendo CSV: {e}")
-
-    # ── Buscar columna address (obligatoria, case-insensitive) ──
-    addr_col = None
-    for col in df.columns:
-        if col.strip().lower() in ("address", "direccion", "dirección", "domicilio", "calle"):
-            addr_col = col
-            break
-
-    if addr_col is None:
-        raise HTTPException(
-            400,
-            detail="El CSV debe tener una columna de dirección ('address', 'direccion', 'domicilio' o 'calle')",
-        )
-
-    # ── Buscar columna name (opcional, case-insensitive) ──
-    name_col = None
-    for col in df.columns:
-        if col.strip().lower() in ("name", "nombre", "cliente", "client", "destinatario", "nombre_cliente"):
-            name_col = col
-            break
-
-    addresses = [str(a).strip() for a in df[addr_col] if str(a).strip()]
-    if not addresses:
-        raise HTTPException(400, detail="El CSV no contiene direcciones válidas")
-
-    # Nombres opcionales — valores nulos/vacíos son aceptables
-    client_names = None
-    if name_col is not None:
-        client_names = [
-            str(n).strip() if pd.notna(n) else ""
-            for n in df[name_col]
-        ]
-
-    req = OptimizeRequest(addresses=addresses, client_names=client_names)
-    return await optimize(req)

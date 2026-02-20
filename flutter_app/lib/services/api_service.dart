@@ -105,40 +105,6 @@ class ApiService {
     }
   }
 
-  /// Envía un archivo CSV al endpoint /api/optimize/csv.
-  /// [csvBytes] - Bytes del archivo CSV.
-  /// [fileName] - Nombre del archivo.
-  static Future<OptimizeResponse> optimizeCsv({
-    required List<int> csvBytes,
-    required String fileName,
-  }) async {
-    final uri =
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.optimizeCsvEndpoint}');
-
-    final request = http.MultipartRequest('POST', uri)
-      ..headers.addAll(_defaultHeaders)
-      ..files.add(http.MultipartFile.fromBytes(
-        'file',
-        csvBytes,
-        filename: fileName,
-      ));
-
-    final streamedResponse = await request.send().timeout(ApiConfig.timeout);
-    final response = await http.Response.fromStream(streamedResponse);
-
-    if (response.statusCode == 200) {
-      final json = jsonDecode(response.body) as Map<String, dynamic>;
-      return OptimizeResponse.fromJson(json);
-    } else {
-      String errorMsg = 'Error del servidor (${response.statusCode})';
-      try {
-        final errJson = jsonDecode(response.body);
-        errorMsg = errJson['detail'] ?? errJson['error'] ?? errorMsg;
-      } catch (_) {}
-      throw ApiException(errorMsg, response.statusCode);
-    }
-  }
-
   /// Solicita a OSRM (vía backend) la geometría del tramo entre dos puntos.
   /// Retorna el GeoJSON geometry o null si falla.
   static Future<Map<String, dynamic>?> getRouteSegment({
