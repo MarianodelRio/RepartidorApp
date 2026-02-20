@@ -15,12 +15,12 @@ import 'delivery_screen.dart';
 import 'result_screen.dart';
 
 // ═══════════════════════════════════════════
-//  Pantalla de importación — v8 CSV limpio
+//  Pantalla de importación — v9 validación auto
 //
 //  Flujo:
 //    1. Subir CSV (cliente, direccion, ciudad)
-//    2. Validar (agrupa + geocodifica con Nominatim)
-//    3. Si hay problemas → pin manual en el mapa
+//    2. Validación automática (agrupa + geocodifica con Nominatim)
+//    3. Si hay direcciones sin geocodificar → pin manual
 //    4. Calcular ruta
 // ═══════════════════════════════════════════
 
@@ -48,13 +48,7 @@ class _ImportScreenState extends State<ImportScreen> {
   bool _hasActiveSession = false;
 
   // ── Validación ──
-  ValidationResponse? _validationResult;
-  bool _isValidating = false;
-  bool _hasEverValidated = false;
-
-  // ── Direcciones ──
-  List<String> _addresses = [];
-  List<String> _clientNames = [];
+  ValidationResult? _validationResult;
 
   @override
   void initState() {
@@ -71,32 +65,17 @@ class _ImportScreenState extends State<ImportScreen> {
 
   // ── Getters de estado ──
 
-  int get _stopCount => _addresses.length;
-  int get _totalPackages => _csvData?.totalPackages ?? 0;
+  int get _totalPackages =>
+      _validationResult?.totalPackages ?? _csvData?.totalPackages ?? 0;
 
-  int get _okCount => _validationResult?.okCount ?? 0;
-  int get _problemCount => _validationResult?.problemCount ?? 0;
-  int get _uniqueAddresses => _validationResult?.uniqueAddresses ?? 0;
-
-  bool get _allOk =>
-      _hasEverValidated &&
-      _validationResult != null &&
-      _validationResult!.problemCount == 0;
-
-  bool get _canValidate =>
-      _csvData != null &&
-      _stopCount > 0 &&
-      !_isLoading &&
-      !_isValidating &&
-      _serverOnline;
+  int get _uniqueAddresses =>
+      _validationResult?.uniqueAddresses ?? _csvData?.totalPackages ?? 0;
 
   bool get _canCalculate =>
       _csvData != null &&
-      _stopCount > 0 &&
       !_isLoading &&
-      !_isValidating &&
       _serverOnline &&
-      _hasEverValidated;
+      _validationResult != null;
 
   // ═══════════════════════════════════════════
   //  Servidor / Sesión
@@ -154,18 +133,15 @@ class _ImportScreenState extends State<ImportScreen> {
         return;
       }
 
-      final addresses = csvData.fullAddresses;
-      final clientNames = csvData.clientes;
-
       setState(() {
         _csvData = csvData;
         _fileName = file.name;
-        _addresses = addresses;
-        _clientNames = clientNames;
         _error = null;
         _validationResult = null;
-        _hasEverValidated = false;
       });
+
+      // Auto-trigger validación inmediatamente tras cargar el CSV
+      await _validate();
     } on FormatException catch (e) {
       _showError(e.message);
     } catch (e) {
@@ -177,25 +153,19 @@ class _ImportScreenState extends State<ImportScreen> {
     setState(() {
       _csvData = null;
       _fileName = '';
-      _addresses = [];
-      _clientNames = [];
       _error = null;
       _validationResult = null;
-      _hasEverValidated = false;
     });
   }
 
   // ═══════════════════════════════════════════
-  //  Validación
+  //  Validación automática
   // ═══════════════════════════════════════════
 
   Future<void> _validate() async {
-    if (_addresses.isEmpty) return;
+    if (_csvData == null) return;
 
-    setState(() {
-      _isValidating = true;
-      _error = null;
-    });
+    setState(() => _error = null);
     WakelockPlus.enable();
 
     if (!mounted) return;
@@ -206,31 +176,11 @@ class _ImportScreenState extends State<ImportScreen> {
     );
 
     try {
-      final result = await ApiService.validationStart(
-        addresses: _addresses,
-        clientNames: _clientNames,
-      );
+      final result = await ApiService.validationStart(csvData: _csvData!);
       if (!mounted) return;
       Navigator.of(context).pop();
 
-      setState(() {
-        _validationResult = result;
-        _hasEverValidated = true;
-      });
-
-      if (result.problemCount > 0) {
-        _showProblemsSheet();
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                  '✅ ${result.okCount} direcciones validadas en ${result.elapsedMs.toStringAsFixed(0)}ms'),
-              backgroundColor: AppColors.success,
-            ),
-          );
-        }
-      }
+      setState(() => _validationResult = result);
     } on ApiException catch (e) {
       if (mounted) Navigator.of(context).pop();
       _showError(e.message);
@@ -239,7 +189,6 @@ class _ImportScreenState extends State<ImportScreen> {
       _showError('Error de validación: $e');
     } finally {
       WakelockPlus.disable();
-      if (mounted) setState(() => _isValidating = false);
     }
   }
 
@@ -247,11 +196,11 @@ class _ImportScreenState extends State<ImportScreen> {
   //  Pin manual (situar en el mapa)
   // ═══════════════════════════════════════════
 
-  void _pinStop(StopValidationResult stop) {
-    final latCtrl =
-        TextEditingController(text: (stop.lat ?? 37.802).toStringAsFixed(6));
-    final lonCtrl =
-        TextEditingController(text: (stop.lon ?? -5.105).toStringAsFixed(6));
+  void _pinStop(FailedStop stop) {
+    final latCtrl = TextEditingController(
+        text: (-27.367).toStringAsFixed(6));
+    final lonCtrl = TextEditingController(
+        text: (-55.897).toStringAsFixed(6));
 
     showDialog(
       context: context,
@@ -385,37 +334,27 @@ class _ImportScreenState extends State<ImportScreen> {
     );
   }
 
-  void _applyPin(StopValidationResult stop, double lat, double lon) {
+  void _applyPin(FailedStop stop, double lat, double lon) {
     if (_validationResult == null) return;
 
-    final updatedStops = _validationResult!.stops.map((s) {
-      if (s.index == stop.index) {
-        return StopValidationResult(
-          index: s.index,
-          address: s.address,
-          status: 'ok',
-          lat: lat,
-          lon: lon,
-          packageCount: s.packageCount,
-          clientNames: s.clientNames,
-          reason: '',
-        );
-      }
-      return s;
-    }).toList();
-
-    final newOk = updatedStops.where((s) => s.isOk).length;
-    final newProblem = updatedStops.where((s) => s.isProblem).length;
+    final newGeocoded = GeocodedStop(
+      address: stop.address,
+      clientName:
+          stop.clientNames.firstWhere((n) => n.isNotEmpty, orElse: () => ''),
+      allClientNames: stop.clientNames,
+      packageCount: stop.packageCount,
+      lat: lat,
+      lon: lon,
+    );
 
     setState(() {
-      _validationResult = ValidationResponse(
-        success: true,
-        totalStops: _validationResult!.totalStops,
+      _validationResult = ValidationResult(
+        geocoded: [..._validationResult!.geocoded, newGeocoded],
+        failed: _validationResult!.failed
+            .where((f) => f.address != stop.address)
+            .toList(),
+        totalPackages: _validationResult!.totalPackages,
         uniqueAddresses: _validationResult!.uniqueAddresses,
-        okCount: newOk,
-        problemCount: newProblem,
-        stops: updatedStops,
-        elapsedMs: _validationResult!.elapsedMs,
       );
     });
 
@@ -430,31 +369,14 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   // ═══════════════════════════════════════════
-  //  Bottom Sheet: direcciones con problema
-  // ═══════════════════════════════════════════
-
-  void _showProblemsSheet() {
-    if (_validationResult == null) return;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _ProblemsSheet(
-        validationResult: _validationResult!,
-        onPinStop: (stop) => _pinStop(stop),
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════
   //  Calcular ruta
   // ═══════════════════════════════════════════
 
   Future<void> _calculateRoute() async {
-    if (_addresses.isEmpty) return;
+    if (_validationResult == null) return;
 
-    if (_problemCount > 0) {
+    final failedCount = _validationResult!.failed.length;
+    if (failedCount > 0) {
       final confirmed = await _showUnresolvedConfirmation();
       if (!confirmed) return;
     }
@@ -483,51 +405,28 @@ class _ImportScreenState extends State<ImportScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _RouteProgressDialog(totalAddresses: _addresses.length),
+      builder: (_) => _RouteProgressDialog(
+          totalAddresses: _validationResult!.geocoded.length),
     );
 
     try {
-      // Datos para optimize — se construyen desde la validación si existe
-      List<String> optimizeAddresses;
-      List<String> optimizeClientNames;
-      List<List<double>?>? preResolvedCoords;
-      List<int>? packageCounts;
-      List<List<String>>? allClientNames;
+      final geocoded = _validationResult!.geocoded;
+      if (geocoded.isEmpty) {
+        throw Exception('No hay paradas válidas para calcular la ruta');
+      }
 
-      if (_validationResult != null && _validationResult!.stops.isNotEmpty) {
-        // Enviar las 70 paradas únicas YA agrupadas por la validación.
-        // Cada stop tiene: address, coords, package_count, client_names.
-        final okStops = _validationResult!.stops
-            .where((s) => s.isOk && s.lat != null && s.lon != null)
-            .toList();
+      final optimizeAddresses = <String>[];
+      final optimizeClientNames = <String>[];
+      final preResolvedCoords = <List<double>?>[];
+      final packageCounts = <int>[];
+      final allClientNames = <List<String>>[];
 
-        if (okStops.isEmpty) {
-          throw Exception('No hay paradas válidas para calcular la ruta');
-        }
-
-        optimizeAddresses = [];
-        optimizeClientNames = [];
-        preResolvedCoords = [];
-        packageCounts = [];
-        allClientNames = [];
-
-        for (final st in okStops) {
-          optimizeAddresses.add(st.address);
-          // Nombre principal: primer nombre no vacío
-          final primary = st.clientNames
-              .firstWhere((n) => n.isNotEmpty, orElse: () => '');
-          optimizeClientNames.add(primary);
-          preResolvedCoords.add([st.lat!, st.lon!]);
-          packageCounts.add(st.packageCount);
-          allClientNames.add(st.clientNames);
-        }
-      } else {
-        // Sin validación previa: enviar las direcciones originales
-        optimizeAddresses = _addresses;
-        optimizeClientNames = _clientNames;
-        preResolvedCoords = null;
-        packageCounts = null;
-        allClientNames = null;
+      for (final st in geocoded) {
+        optimizeAddresses.add(st.address);
+        optimizeClientNames.add(st.clientName);
+        preResolvedCoords.add([st.lat, st.lon]);
+        packageCounts.add(st.packageCount);
+        allClientNames.add(st.allClientNames);
       }
 
       final result = await ApiService.optimize(
@@ -559,10 +458,8 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   Future<bool> _showUnresolvedConfirmation() async {
-    final problemAddrs = _validationResult!.stops
-        .where((s) => s.isProblem)
-        .map((s) => s.address)
-        .toList();
+    final failed = _validationResult!.failed;
+    final problemAddrs = failed.map((f) => f.address).toList();
 
     final result = await showDialog<bool>(
       context: context,
@@ -590,7 +487,7 @@ class _ImportScreenState extends State<ImportScreen> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                'Hay $_problemCount dirección${_problemCount > 1 ? 'es' : ''} '
+                'Hay ${failed.length} dirección${failed.length > 1 ? 'es' : ''} '
                 'sin coordenadas.\n\n'
                 'Usa "Situar en el mapa" para resolverlas antes de calcular.',
                 style: TextStyle(
@@ -713,11 +610,10 @@ class _ImportScreenState extends State<ImportScreen> {
                   onModeChanged: (m) => setState(() => _originMode = m),
                   onAddressChanged: (a) => setState(() => _manualAddress = a),
                 ),
-                const SizedBox(height: 20),
-                _buildValidateButton(),
-                if (_hasEverValidated && _validationResult != null) ...[
-                  const SizedBox(height: 12),
-                  _buildValidationSummary(),
+                if (_validationResult != null &&
+                    _validationResult!.failed.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  _buildFailedList(),
                 ],
                 const SizedBox(height: 24),
                 _buildCalculateButton(),
@@ -947,7 +843,7 @@ class _ImportScreenState extends State<ImportScreen> {
               height: 22,
               color: AppColors.primary.withAlpha(40)),
           const SizedBox(width: 12),
-          Text('$_stopCount',
+          Text('$_uniqueAddresses',
               style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
@@ -963,148 +859,95 @@ class _ImportScreenState extends State<ImportScreen> {
     );
   }
 
-  Widget _buildValidateButton() {
-    final label = _isValidating ? 'Validando...' : 'Validar direcciones';
-
-    return SizedBox(
-      height: 48,
-      child: ElevatedButton.icon(
-        onPressed: _canValidate ? _validate : null,
-        icon: _isValidating
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Colors.white),
-              )
-            : const Icon(Icons.fact_check_outlined, size: 20),
-        label: Text(label,
-            style: const TextStyle(
-                fontSize: 15, fontWeight: FontWeight.w600)),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.warning,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: AppColors.textSecondary.withAlpha(180),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-          elevation: 2,
-        ),
+  Widget _buildFailedList() {
+    final failed = _validationResult!.failed;
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.errorSurface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.error.withAlpha(100)),
       ),
-    );
-  }
-
-  Widget _buildValidationSummary() {
-    return GestureDetector(
-      onTap: _allOk ? null : _showProblemsSheet,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: _allOk ? AppColors.successSurface : AppColors.cardLight,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: _allOk
-                ? AppColors.success.withAlpha(150)
-                : AppColors.border,
-          ),
-          boxShadow: [
-            if (!_allOk)
-              BoxShadow(
-                  color: Colors.black.withAlpha(10),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2)),
-          ],
-        ),
-        child: Column(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: _uniqueAddresses > 0
-                    ? _okCount / _uniqueAddresses
-                    : 0,
-                minHeight: 6,
-                backgroundColor: AppColors.border,
-                valueColor: AlwaysStoppedAnimation(
-                  _allOk ? AppColors.success : AppColors.primary,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+            child: Row(
               children: [
-                _statusChip(Icons.check_circle, '$_okCount',
-                    AppColors.success, 'OK'),
-                if (_problemCount > 0)
-                  _statusChip(Icons.error_outline, '$_problemCount',
-                      AppColors.error, 'Sin resolver'),
-                _statusChip(Icons.inventory_2, '$_totalPackages',
-                    AppColors.primary, 'Paquetes'),
+                Icon(Icons.location_off, size: 16, color: AppColors.error),
+                const SizedBox(width: 6),
+                Text(
+                  '${failed.length} dirección${failed.length > 1 ? 'es' : ''} sin geocodificar',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.error),
+                ),
               ],
             ),
-            if (!_allOk) ...[
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.touch_app, size: 14, color: AppColors.primary),
-                  const SizedBox(width: 4),
-                  Text('Toca para situar las direcciones con problema',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w500)),
-                ],
-              ),
-            ],
-            if (_allOk) ...[
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.check_circle, size: 16, color: AppColors.success),
-                  const SizedBox(width: 6),
-                  Text('Todas las direcciones validadas',
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.success,
-                          fontWeight: FontWeight.w600)),
-                ],
-              ),
-            ],
-          ],
-        ),
+          ),
+          const Divider(height: 1),
+          ...failed.map((stop) => _buildFailedTile(stop)),
+        ],
       ),
     );
   }
 
-  Widget _statusChip(
-      IconData icon, String count, Color color, String label) {
-    return Column(
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: color),
-            const SizedBox(width: 4),
-            Text(count,
-                style: TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w700, color: color)),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Text(label,
-            style: TextStyle(fontSize: 10, color: AppColors.textTertiary)),
-      ],
+  Widget _buildFailedTile(FailedStop stop) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  stop.address,
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${stop.packageCount} paquete${stop.packageCount > 1 ? 's' : ''}',
+                  style: TextStyle(
+                      fontSize: 11, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            height: 32,
+            child: ElevatedButton.icon(
+              onPressed: () => _pinStop(stop),
+              icon: const Icon(Icons.add_location_alt, size: 14),
+              label: const Text('Situar', style: TextStyle(fontSize: 12)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.success,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+                elevation: 0,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildCalculateButton() {
-    final hasProblems = _problemCount > 0;
+    final failedCount = _validationResult?.failed.length ?? 0;
+    final hasProblems = failedCount > 0;
     final label = _isLoading
         ? 'Calculando ruta...'
         : hasProblems
-            ? 'Calcular ruta ($_problemCount sin resolver)'
+            ? 'Calcular ruta ($failedCount sin resolver)'
             : 'Calcular ruta óptima';
 
     return SizedBox(
@@ -1344,263 +1187,6 @@ class _RouteProgressDialogState extends State<_RouteProgressDialog> {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════
-//  Bottom Sheet: direcciones con problema
-// ═══════════════════════════════════════════
-
-class _ProblemsSheet extends StatelessWidget {
-  final ValidationResponse validationResult;
-  final void Function(StopValidationResult stop) onPinStop;
-
-  const _ProblemsSheet({
-    required this.validationResult,
-    required this.onPinStop,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final okStops =
-        validationResult.stops.where((s) => s.isOk).toList();
-    final problemStops =
-        validationResult.stops.where((s) => s.isProblem).toList();
-
-    return DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      minChildSize: 0.3,
-      maxChildSize: 0.95,
-      builder: (ctx, scrollCtrl) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          children: [
-            Container(
-              margin: const EdgeInsets.only(top: 10, bottom: 6),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(2)),
-            ),
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-              child: Row(
-                children: [
-                  Icon(Icons.fact_check,
-                      color: AppColors.primary, size: 22),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text('Resultado de validación',
-                        style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary)),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.successSurface,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text('${okStops.length} OK',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.success)),
-                  ),
-                ],
-              ),
-            ),
-            if (problemStops.isNotEmpty)
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppColors.error.withAlpha(20),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                            color: AppColors.error.withAlpha(80)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.error_outline,
-                              size: 14, color: AppColors.error),
-                          const SizedBox(width: 4),
-                          Text(
-                              '${problemStops.length} Sin resolver',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.error)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            const Divider(height: 1),
-            Expanded(
-              child: ListView(
-                controller: scrollCtrl,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                children: [
-                  if (problemStops.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8, top: 4),
-                      child: Text(
-                          '⚠️  Direcciones sin resolver',
-                          style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.error)),
-                    ),
-                    ...problemStops
-                        .map((s) => _problemTile(s, context)),
-                    const SizedBox(height: 16),
-                  ],
-                  if (okStops.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8, top: 4),
-                      child: Text(
-                          '✅  Validadas (${okStops.length})',
-                          style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.success)),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.successSurface,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        okStops.length <= 5
-                            ? okStops
-                                .map((s) =>
-                                    '${s.address} (${s.packageCount} paq.)')
-                                .join('\n')
-                            : '${okStops.length} direcciones validadas correctamente.',
-                        style: TextStyle(
-                            fontSize: 12, color: AppColors.success),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 80),
-                ],
-              ),
-            ),
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.done_all, size: 20),
-                    label: const Text('Cerrar',
-                        style: TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w600)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _problemTile(StopValidationResult stop, BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.errorSurface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.error.withAlpha(100)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.location_off, size: 16, color: AppColors.error),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(stop.address,
-                    style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.only(left: 22),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                    '${stop.packageCount} paquete${stop.packageCount > 1 ? 's' : ''}',
-                    style: TextStyle(
-                        fontSize: 11, color: AppColors.textSecondary)),
-                if (stop.reason.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(stop.reason,
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textTertiary,
-                          fontStyle: FontStyle.italic)),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            height: 34,
-            child: ElevatedButton.icon(
-              onPressed: () {
-                Navigator.of(context).pop();
-                onPinStop(stop);
-              },
-              icon: const Icon(Icons.add_location_alt, size: 14),
-              label: const Text('Situar en el mapa',
-                  style: TextStyle(fontSize: 12)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.success,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-                elevation: 0,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

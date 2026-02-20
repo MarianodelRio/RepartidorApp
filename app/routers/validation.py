@@ -2,15 +2,13 @@
 Router de validación
 
 Flujo: un solo endpoint POST /api/validation/start
-  1. Recibe lista de direcciones
-  2. Agrupa por dirección exacta (misma cadena = misma parada, +1 paquete)
-  3. Geocodifica cada dirección única con Nominatim (geocoding.py)
-  4. Devuelve: dirección, nº paquetes, coordenadas
-
-Sin normalización, sin cache, sin street_db.
+  1. Recibe filas crudas del CSV {cliente, direccion, ciudad}
+  2. Construye dirección completa (direccion + ciudad si procede)
+  3. Agrupa por dirección normalizada (misma parada = +1 paquete)
+  4. Geocodifica cada dirección única con Nominatim
+  5. Devuelve dos listas: geocoded (con coords) y failed (sin coords)
 """
 
-import time
 import unicodedata
 from collections import OrderedDict
 
@@ -23,34 +21,43 @@ router = APIRouter(prefix="/validation", tags=["validation"])
 
 
 # ═══════════════════════════════════════════
-#  Modelos
+#  Modelos de entrada
 # ═══════════════════════════════════════════
 
+class CsvRow(BaseModel):
+    cliente: str = ""
+    direccion: str
+    ciudad: str = ""
+
+
 class StartRequest(BaseModel):
-    addresses: list[str]
-    client_names: list[str] | None = None
+    rows: list[CsvRow]
 
 
-class StopResult(BaseModel):
-    """Resultado por dirección única."""
-    index: int
+# ═══════════════════════════════════════════
+#  Modelos de salida
+# ═══════════════════════════════════════════
+
+class GeocodedStop(BaseModel):
     address: str
-    status: str          # "ok" | "problem"
-    lat: float | None = None
-    lon: float | None = None
-    package_count: int = 1
-    client_names: list[str] = []
-    reason: str = ""
+    client_name: str            # primer nombre no vacío del grupo
+    all_client_names: list[str]
+    package_count: int
+    lat: float
+    lon: float
+
+
+class FailedStop(BaseModel):
+    address: str
+    client_names: list[str]
+    package_count: int
 
 
 class StartResponse(BaseModel):
-    success: bool
-    total_stops: int        # Nº total de filas (paquetes)
-    unique_addresses: int   # Nº de direcciones únicas
-    ok_count: int
-    problem_count: int
-    stops: list[StopResult]
-    elapsed_ms: float
+    geocoded: list[GeocodedStop]
+    failed: list[FailedStop]
+    total_packages: int         # total filas recibidas
+    unique_addresses: int       # len(geocoded) + len(failed)
 
 
 # ═══════════════════════════════════════════
@@ -67,6 +74,16 @@ def _normalize_for_dedup(addr: str) -> str:
     return " ".join(s.split())
 
 
+def _build_full_address(direccion: str, ciudad: str) -> str:
+    """Construye la dirección completa.
+    Si ciudad está vacía o ya aparece en direccion, devuelve solo direccion."""
+    d = direccion.strip()
+    c = ciudad.strip()
+    if not c or c.lower() in d.lower():
+        return d
+    return f"{d}, {c}"
+
+
 # ═══════════════════════════════════════════
 #  Endpoint principal
 # ═══════════════════════════════════════════
@@ -74,71 +91,59 @@ def _normalize_for_dedup(addr: str) -> str:
 @router.post("/start", response_model=StartResponse)
 async def validation_start(req: StartRequest):
     """Valida todas las direcciones:
-    1. Agrupa duplicados
-    2. Geocodifica cada dirección única con Nominatim
-    3. Devuelve resultado con coordenadas y nº de paquetes
+    1. Construye dirección completa desde (direccion, ciudad)
+    2. Agrupa duplicados
+    3. Geocodifica cada dirección única con Nominatim
+    4. Devuelve listas separadas: geocoded y failed
     """
-    t_start = time.time()
+    rows = req.rows
+    total_packages = len(rows)
 
-    addresses = req.addresses
-    client_names = req.client_names or []
-    # Rellenar nombres si faltan
-    while len(client_names) < len(addresses):
-        client_names.append("")
-
-    # ── 1. Agrupar por dirección exacta ──
+    # ── 1. Agrupar por dirección normalizada ──
     groups: OrderedDict[str, dict] = OrderedDict()
 
-    for i, addr in enumerate(addresses):
-        key = _normalize_for_dedup(addr)
+    for row in rows:
+        full_address = _build_full_address(row.direccion, row.ciudad)
+        key = _normalize_for_dedup(full_address)
         if key not in groups:
             groups[key] = {
-                "address": addr.strip(),
-                "indices": [],
+                "address": full_address,
                 "client_names": [],
             }
-        groups[key]["indices"].append(i)
-        groups[key]["client_names"].append(client_names[i])
+        groups[key]["client_names"].append(row.cliente)
 
     # ── 2. Geocodificar cada dirección única ──
-    stops: list[StopResult] = []
-    ok_count = 0
-    problem_count = 0
+    geocoded: list[GeocodedStop] = []
+    failed: list[FailedStop] = []
 
-    for idx, (key, group) in enumerate(groups.items()):
+    for group in groups.values():
         addr = group["address"]
+        client_names = group["client_names"]
+        package_count = len(client_names)
+        primary = next((n for n in client_names if n), "")
+
         coord = geocode(addr)
 
         if coord:
-            status = "ok"
-            ok_count += 1
             lat, lon = coord
-            reason = ""
+            geocoded.append(GeocodedStop(
+                address=addr,
+                client_name=primary,
+                all_client_names=client_names,
+                package_count=package_count,
+                lat=lat,
+                lon=lon,
+            ))
         else:
-            status = "problem"
-            problem_count += 1
-            lat, lon = None, None
-            reason = "No se encontró en Nominatim"
-
-        stops.append(StopResult(
-            index=idx,
-            address=addr,
-            status=status,
-            lat=lat,
-            lon=lon,
-            package_count=len(group["indices"]),
-            client_names=group["client_names"],
-            reason=reason,
-        ))
-
-    elapsed = (time.time() - t_start) * 1000
+            failed.append(FailedStop(
+                address=addr,
+                client_names=client_names,
+                package_count=package_count,
+            ))
 
     return StartResponse(
-        success=True,
-        total_stops=len(addresses),
+        geocoded=geocoded,
+        failed=failed,
+        total_packages=total_packages,
         unique_addresses=len(groups),
-        ok_count=ok_count,
-        problem_count=problem_count,
-        stops=stops,
-        elapsed_ms=round(elapsed, 1),
     )

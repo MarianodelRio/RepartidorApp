@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
+import '../models/csv_data.dart';
 import '../models/route_models.dart';
 import '../models/validation_v3_models.dart';
 
@@ -139,15 +140,17 @@ class ApiService {
   // ═══════════════════════════════════════════
 
   /// Valida todas las direcciones en un solo paso (agrupa + geocodifica).
-  static Future<ValidationResponse> validationStart({
-    required List<String> addresses,
-    List<String>? clientNames,
+  /// Recibe las filas crudas del CSV y devuelve dos listas: geocoded y failed.
+  static Future<ValidationResult> validationStart({
+    required CsvData csvData,
   }) async {
-    final body = <String, dynamic>{
-      'addresses': addresses,
-    };
-    if (clientNames != null && clientNames.isNotEmpty) {
-      body['client_names'] = clientNames;
+    final rows = <Map<String, String>>[];
+    for (int i = 0; i < csvData.direcciones.length; i++) {
+      rows.add({
+        'cliente': i < csvData.clientes.length ? csvData.clientes[i] : '',
+        'direccion': csvData.direcciones[i],
+        'ciudad': i < csvData.ciudades.length ? csvData.ciudades[i] : '',
+      });
     }
 
     final response = await http
@@ -155,13 +158,13 @@ class ApiService {
           Uri.parse(
               '${ApiConfig.baseUrl}${ApiConfig.validationStartEndpoint}'),
           headers: _jsonHeaders,
-          body: jsonEncode(body),
+          body: jsonEncode({'rows': rows}),
         )
         .timeout(ApiConfig.timeout);
 
     if (response.statusCode == 200) {
       final json = jsonDecode(response.body) as Map<String, dynamic>;
-      return ValidationResponse.fromJson(json);
+      return ValidationResult.fromJson(json);
     } else {
       String errorMsg = 'Error del servidor (${response.statusCode})';
       try {

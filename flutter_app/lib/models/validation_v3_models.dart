@@ -2,79 +2,87 @@
 //
 // Reflejan el contrato de POST /api/validation/start.
 
-/// Resultado de una dirección única (agrupada por duplicados).
-class StopValidationResult {
-  final int index;
+/// Parada geocodificada correctamente.
+class GeocodedStop {
   final String address;
-  final String status; // "ok" | "problem"
-  final double? lat;
-  final double? lon;
+  final String clientName;
+  final List<String> allClientNames;
   final int packageCount;
-  final List<String> clientNames;
-  final String reason;
+  final double lat;
+  final double lon;
 
-  const StopValidationResult({
-    required this.index,
+  const GeocodedStop({
     required this.address,
-    required this.status,
-    this.lat,
-    this.lon,
-    this.packageCount = 1,
-    this.clientNames = const [],
-    this.reason = '',
+    required this.clientName,
+    required this.allClientNames,
+    required this.packageCount,
+    required this.lat,
+    required this.lon,
   });
 
-  bool get isOk => status == 'ok';
-  bool get isProblem => status == 'problem';
-
-  factory StopValidationResult.fromJson(Map<String, dynamic> json) {
-    return StopValidationResult(
-      index: json['index'] as int,
+  factory GeocodedStop.fromJson(Map<String, dynamic> json) {
+    return GeocodedStop(
       address: json['address'] as String,
-      status: json['status'] as String,
-      lat: (json['lat'] as num?)?.toDouble(),
-      lon: (json['lon'] as num?)?.toDouble(),
-      packageCount: (json['package_count'] as int?) ?? 1,
-      clientNames: (json['client_names'] as List<dynamic>?)
+      clientName: (json['client_name'] as String?) ?? '',
+      allClientNames: (json['all_client_names'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
           const [],
-      reason: (json['reason'] as String?) ?? '',
+      packageCount: (json['package_count'] as int?) ?? 1,
+      lat: (json['lat'] as num).toDouble(),
+      lon: (json['lon'] as num).toDouble(),
     );
   }
 }
 
-/// Respuesta de /api/validation/start.
-class ValidationResponse {
-  final bool success;
-  final int totalStops;
-  final int uniqueAddresses;
-  final int okCount;
-  final int problemCount;
-  final List<StopValidationResult> stops;
-  final double elapsedMs;
+/// Parada que no pudo geocodificarse.
+class FailedStop {
+  final String address;
+  final List<String> clientNames;
+  final int packageCount;
 
-  const ValidationResponse({
-    required this.success,
-    required this.totalStops,
-    required this.uniqueAddresses,
-    required this.okCount,
-    required this.problemCount,
-    required this.stops,
-    this.elapsedMs = 0,
+  const FailedStop({
+    required this.address,
+    required this.clientNames,
+    required this.packageCount,
   });
 
-  factory ValidationResponse.fromJson(Map<String, dynamic> json) {
-    return ValidationResponse(
-      success: json['success'] as bool,
-      totalStops: json['total_stops'] as int,
-      uniqueAddresses: json['unique_addresses'] as int,
-      okCount: json['ok_count'] as int,
-      problemCount: json['problem_count'] as int,
-      stops: (json['stops'] as List<dynamic>)
-          .map((e) => StopValidationResult.fromJson(e as Map<String, dynamic>))
+  factory FailedStop.fromJson(Map<String, dynamic> json) {
+    return FailedStop(
+      address: json['address'] as String,
+      clientNames: (json['client_names'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          const [],
+      packageCount: (json['package_count'] as int?) ?? 1,
+    );
+  }
+}
+
+/// Resultado completo de /api/validation/start.
+class ValidationResult {
+  final List<GeocodedStop> geocoded;
+  final List<FailedStop> failed;
+  final int totalPackages;
+  final int uniqueAddresses;
+
+  const ValidationResult({
+    required this.geocoded,
+    required this.failed,
+    required this.totalPackages,
+    required this.uniqueAddresses,
+  });
+
+  factory ValidationResult.fromJson(Map<String, dynamic> json) {
+    return ValidationResult(
+      geocoded: (json['geocoded'] as List<dynamic>)
+          .map((e) => GeocodedStop.fromJson(e as Map<String, dynamic>))
           .toList(),
-      elapsedMs: (json['elapsed_ms'] as num?)?.toDouble() ?? 0,
+      failed: (json['failed'] as List<dynamic>)
+          .map((e) => FailedStop.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      totalPackages: (json['total_packages'] as int?) ?? 0,
+      uniqueAddresses: (json['unique_addresses'] as int?) ?? 0,
     );
   }
 }
