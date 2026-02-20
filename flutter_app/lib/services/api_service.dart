@@ -54,24 +54,18 @@ class ApiService {
   /// [addresses] - Lista de direcciones a optimizar.
   /// [clientNames] - Lista de nombres de cliente (opcional, mismo orden).
   /// [startAddress] - Dirección de inicio (opcional, usa la del backend si null).
-  /// [numVehicles] - Número de vehículos/rutas (1 o 2).
   /// [coords] - Coordenadas pre-resueltas [[lat, lon], ...] (opcional).
   ///            Si se proporcionan, el backend omite la geocodificación.
-  ///
-  /// Retorna un [OptimizeResponse] si numVehicles==1,
-  /// o un [MultiRouteResponse] si numVehicles==2.
-  static Future<dynamic> optimize({
+  static Future<OptimizeResponse> optimize({
     required List<String> addresses,
     List<String>? clientNames,
     String? startAddress,
-    int numVehicles = 1,
     List<List<double>?>? coords,
     List<int>? packageCounts,
     List<List<String>>? allClientNames,
   }) async {
     final body = <String, dynamic>{
       'addresses': addresses,
-      'num_vehicles': numVehicles,
     };
     if (clientNames != null && clientNames.isNotEmpty) {
       body['client_names'] = clientNames;
@@ -99,10 +93,6 @@ class ApiService {
 
     if (response.statusCode == 200) {
       final json = jsonDecode(response.body) as Map<String, dynamic>;
-      // Si la respuesta tiene "routes", es multi-ruta
-      if (json.containsKey('routes')) {
-        return MultiRouteResponse.fromJson(json);
-      }
       return OptimizeResponse.fromJson(json);
     } else {
       // Extraer mensaje de error del backend

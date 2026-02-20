@@ -5,7 +5,6 @@ import 'dart:typed_data';
 
 import '../config/app_theme.dart';
 import '../models/csv_data.dart';
-import '../models/route_models.dart';
 import '../models/validation_v3_models.dart';
 import '../services/api_service.dart';
 import '../services/csv_service.dart';
@@ -14,7 +13,6 @@ import '../services/persistence_service.dart';
 import '../widgets/origin_selector.dart';
 import 'delivery_screen.dart';
 import 'result_screen.dart';
-import 'route_picker_screen.dart';
 
 // ═══════════════════════════════════════════
 //  Pantalla de importación — v8 CSV limpio
@@ -41,7 +39,6 @@ class _ImportScreenState extends State<ImportScreen> {
   // ── Configuración de ruta ──
   OriginMode _originMode = OriginMode.defaultAddress;
   String _manualAddress = '';
-  int _numVehicles = 1;
 
   // ── Estado general ──
   bool _isLoading = false;
@@ -537,7 +534,6 @@ class _ImportScreenState extends State<ImportScreen> {
         addresses: optimizeAddresses,
         clientNames: optimizeClientNames,
         startAddress: startAddress,
-        numVehicles: _numVehicles,
         coords: preResolvedCoords,
         packageCounts: packageCounts,
         allClientNames: allClientNames,
@@ -546,18 +542,10 @@ class _ImportScreenState extends State<ImportScreen> {
       Navigator.of(context).pop();
       PersistenceService.clearValidationState();
 
-      if (result is MultiRouteResponse) {
-        Navigator.of(context)
-            .push(MaterialPageRoute(
-                builder: (_) => RoutePickerScreen(multiResponse: result)))
-            .then((_) => _checkActiveSession());
-      } else {
-        Navigator.of(context)
-            .push(MaterialPageRoute(
-                builder: (_) =>
-                    ResultScreen(response: result as OptimizeResponse)))
-            .then((_) => _checkActiveSession());
-      }
+      Navigator.of(context)
+          .push(MaterialPageRoute(
+              builder: (_) => ResultScreen(response: result)))
+          .then((_) => _checkActiveSession());
     } on ApiException catch (e) {
       if (mounted) Navigator.of(context).pop();
       _showError(e.message);
@@ -725,8 +713,6 @@ class _ImportScreenState extends State<ImportScreen> {
                   onModeChanged: (m) => setState(() => _originMode = m),
                   onAddressChanged: (a) => setState(() => _manualAddress = a),
                 ),
-                const SizedBox(height: 16),
-                _buildRouteCountSelector(),
                 const SizedBox(height: 20),
                 _buildValidateButton(),
                 if (_hasEverValidated && _validationResult != null) ...[
@@ -973,87 +959,6 @@ class _ImportScreenState extends State<ImportScreen> {
                   fontWeight: FontWeight.w500,
                   color: AppColors.textSecondary)),
         ],
-      ),
-    );
-  }
-
-  Widget _buildRouteCountSelector() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.cardLight,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withAlpha(13),
-              blurRadius: 10,
-              offset: const Offset(0, 2)),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Icon(Icons.alt_route, size: 20, color: AppColors.primary),
-            const SizedBox(width: 8),
-            Text('Número de rutas',
-                style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary)),
-          ]),
-          const SizedBox(height: 4),
-          Text('Divide el reparto entre 1 o 2 repartidores.',
-              style:
-                  TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-          const SizedBox(height: 12),
-          Row(children: [
-            _routeCountOption(1, '1 Ruta', 'Un solo repartidor'),
-            const SizedBox(width: 10),
-            _routeCountOption(2, '2 Rutas', 'Reparto compartido'),
-          ]),
-        ],
-      ),
-    );
-  }
-
-  Widget _routeCountOption(int count, String title, String subtitle) {
-    final selected = _numVehicles == count;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _numVehicles = count),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
-          decoration: BoxDecoration(
-            color: selected
-                ? AppColors.primarySurface
-                : AppColors.scaffoldLight,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected ? AppColors.primary : AppColors.border,
-              width: selected ? 2 : 1,
-            ),
-          ),
-          child: Column(children: [
-            Text(title,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: selected
-                      ? AppColors.primary
-                      : AppColors.textSecondary,
-                )),
-            const SizedBox(height: 2),
-            Text(subtitle,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: selected
-                      ? AppColors.primary
-                      : AppColors.textSecondary.withAlpha(180),
-                )),
-          ]),
-        ),
       ),
     );
   }

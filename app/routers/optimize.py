@@ -19,7 +19,6 @@ from app.core.config import START_ADDRESS, MAX_STOPS, POSADAS_CENTER
 from app.models import (
     OptimizeRequest,
     OptimizeResponse,
-    MultiRouteResponse,
     ErrorResponse,
     StopInfo,
     RouteSummary,
@@ -102,7 +101,7 @@ def _group_duplicate_addresses(
 
 @router.post(
     "/optimize",
-    response_model=OptimizeResponse | MultiRouteResponse,
+    response_model=OptimizeResponse,
     responses={
         400: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
@@ -112,8 +111,7 @@ def _group_duplicate_addresses(
     description=(
         "Recibe una lista de direcciones, las geocodifica, calcula el orden "
         "óptimo de visita (TSP via VROOM/OSRM) y devuelve la ruta completa "
-        "con geometría, ETAs e instrucciones de navegación. "
-        "Si num_vehicles=2, devuelve una MultiRouteResponse con 2 rutas."
+        "con geometría, ETAs e instrucciones de navegación."
     ),
 )
 async def optimize(req: OptimizeRequest):
@@ -249,21 +247,11 @@ async def optimize(req: OptimizeRequest):
     all_pkg_counts = [0] + ok_pkg_counts
 
     # ── 3. Optimizar orden con VROOM ──────────────────────────
-    vroom_result = optimize_route(all_coords, num_vehicles=req.num_vehicles)
+    vroom_result = optimize_route(all_coords)
     if vroom_result is None:
         raise HTTPException(
             503,
             detail="VROOM no pudo calcular la ruta. ¿Están corriendo los servicios Docker (OSRM + VROOM)?",
-        )
-
-    # ── Caso multi-ruta (2 vehículos) ────────────────────────
-    if vroom_result.get("multi"):
-        return await _build_multi_response(
-            vroom_result, all_coords, all_addresses,
-            all_primary_names, all_names_lists, all_pkg_counts,
-            ok_addresses, t_start,
-            fail_addresses, fail_primary_names, fail_all_names, fail_pkg_counts,
-            total_packages,
         )
 
     # ── 4. Reordenar según resultado de VROOM ─────────────────
@@ -377,147 +365,9 @@ async def optimize(req: OptimizeRequest):
     )
 
 
-async def _build_multi_response(
-    vroom_result: dict,
-    all_coords: list,
-    all_addresses: list,
-    all_primary_names: list,
-    all_names_lists: list[list[str]],
-    all_pkg_counts: list[int],
-    delivery_addresses: list,
-    t_start: float,
-    fail_addresses: list | None = None,
-    fail_primary_names: list | None = None,
-    fail_all_names: list[list[str]] | None = None,
-    fail_pkg_counts: list[int] | None = None,
-    total_packages: int = 0,
-) -> MultiRouteResponse:
-    """Construye la respuesta para 2 rutas (reparto compartido)."""
-    fail_addresses = fail_addresses or []
-    fail_primary_names = fail_primary_names or []
-    fail_all_names = fail_all_names or []
-    fail_pkg_counts = fail_pkg_counts or []
-    route_responses = []
-
-    for route_idx, vr in enumerate(vroom_result["routes"]):
-        wp_order = vr["waypoint_order"]
-        stop_details_map = {
-            sd["original_index"]: sd for sd in vr.get("stop_details", [])
-        }
-
-        ordered_coords = [all_coords[i] for i in wp_order]
-        route_details = get_route_details(ordered_coords)
-        if route_details is None:
-            continue
-
-        stops = []
-        route_packages = 0
-        for seq, orig_idx in enumerate(wp_order):
-            lat, lon = all_coords[orig_idx]
-            addr = all_addresses[orig_idx]
-            cname = all_primary_names[orig_idx] if orig_idx < len(all_primary_names) else ""
-            names_list = all_names_lists[orig_idx] if orig_idx < len(all_names_lists) else []
-            pkg_count = all_pkg_counts[orig_idx] if orig_idx < len(all_pkg_counts) else 1
-
-            if orig_idx == 0:
-                label = "🏠 Origen"
-                stop_type = "origin"
-                dist_m = 0.0
-                pkg_count = 0
-                names_list = []
-            else:
-                if cname:
-                    label = f"📍 {cname}"
-                else:
-                    label = f"📍 Parada {seq}"
-                stop_type = "stop"
-                sd = stop_details_map.get(orig_idx, {})
-                dist_m = sd.get("arrival_distance", 0)
-                route_packages += pkg_count
-
-            stops.append(StopInfo(
-                order=seq,
-                address=addr,
-                label=label,
-                client_name=cname,
-                client_names=[n for n in names_list if n],
-                type=stop_type,
-                lat=lat,
-                lon=lon,
-                distance_meters=round(dist_m),
-                package_count=pkg_count,
-            ))
-
-        num_delivery_stops = len([s for s in stops if s.type == "stop"])
-
-        # Añadir paradas fallidas al final de la primera ruta
-        if route_idx == 0 and fail_addresses:
-            for i, fail_addr in enumerate(fail_addresses):
-                seq_fail = len(stops)
-                fail_cname = fail_primary_names[i] if i < len(fail_primary_names) else ""
-                fail_names = fail_all_names[i] if i < len(fail_all_names) else []
-                fail_pkg = fail_pkg_counts[i] if i < len(fail_pkg_counts) else 1
-
-                if fail_cname:
-                    fail_label = f"⚠️ {fail_cname}"
-                else:
-                    short = fail_addr[:30] + "…" if len(fail_addr) > 30 else fail_addr
-                    fail_label = f"⚠️ {short}"
-                stops.append(StopInfo(
-                    order=seq_fail,
-                    address=fail_addr,
-                    label=fail_label,
-                    client_name=fail_cname,
-                    client_names=[n for n in fail_names if n],
-                    type="stop",
-                    lat=POSADAS_CENTER[0],
-                    lon=POSADAS_CENTER[1],
-                    distance_meters=0,
-                    geocode_failed=True,
-                    package_count=fail_pkg,
-                ))
-            num_delivery_stops += len(fail_addresses)
-            route_packages += sum(fail_pkg_counts)
-
-        total_dist = route_details["total_distance"]
-
-        nav_steps = [
-            RouteStep(
-                text=s["text"],
-                distance_m=s["distance_m"],
-                location=Coordinate(**s["location"]) if s.get("location") else None,
-            )
-            for s in route_details.get("steps", [])
-        ]
-
-        computing_ms = round((time.perf_counter() - t_start) * 1000, 1)
-
-        route_responses.append(OptimizeResponse(
-            success=True,
-            summary=RouteSummary(
-                total_stops=num_delivery_stops,
-                total_packages=route_packages,
-                total_distance_m=total_dist,
-                total_distance_display=_format_distance(total_dist),
-                computing_time_ms=computing_ms,
-            ),
-            stops=stops,
-            geometry=route_details["geometry"],
-            steps=nav_steps,
-            route_index=route_idx,
-            total_routes=len(vroom_result["routes"]),
-        ))
-
-    return MultiRouteResponse(
-        success=True,
-        routes=route_responses,
-        total_routes=len(route_responses),
-    )
-
-
 @router.post(
     "/optimize/csv",
-    response_model=OptimizeResponse | MultiRouteResponse,
+    response_model=OptimizeResponse,
     responses={
         400: {"model": ErrorResponse},
         500: {"model": ErrorResponse},

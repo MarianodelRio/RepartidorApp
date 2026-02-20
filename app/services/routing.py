@@ -83,14 +83,12 @@ def _format_distance(meters: float) -> str:
 
 def optimize_route(
     coords: list[tuple[float, float]],
-    num_vehicles: int = 1,
 ) -> dict | None:
     """
     Optimiza el orden de visita usando VROOM.
 
     Args:
         coords: Lista de (lat, lon). El primer elemento es el origen fijo.
-        num_vehicles: Número de vehículos (1 o 2).
 
     Returns:
         dict con:
@@ -99,7 +97,6 @@ def optimize_route(
           - total_duration: segundos totales
           - computing_time_ms: ms de cómputo
           - steps_per_stop: info de arrivalDistance/duration por cada stop
-          - routes: (solo si num_vehicles > 1) lista de rutas individuales
         o None si falla.
     """
     if len(coords) < 2:
@@ -108,35 +105,22 @@ def optimize_route(
     # Construir request VROOM
     start_lon, start_lat = coords[0][1], coords[0][0]
 
-    num_jobs = len(coords) - 1  # paradas (sin contar el origen)
-
-    vehicles = []
-    for v in range(num_vehicles):
-        vehicle_def: dict = {
-            "id": v,
+    vehicles = [
+        {
+            "id": 0,
             "profile": "car",
             "start": [start_lon, start_lat],
             # Sin "end" → Open Trip
         }
-        # ── Equilibrio por carga (número de paradas) ──────────
-        # Para 2 vehículos: limitar la capacidad de cada uno a
-        # ceil(N/2) para forzar un reparto equitativo en volumen.
-        if num_vehicles > 1:
-            max_per_vehicle = math.ceil(num_jobs / num_vehicles)
-            vehicle_def["capacity"] = [max_per_vehicle]
-        vehicles.append(vehicle_def)
+    ]
 
     # Jobs: todas las paradas excepto el origen
     jobs = []
     for i, (lat, lon) in enumerate(coords[1:], start=1):
-        job_def: dict = {
+        jobs.append({
             "id": i,
             "location": [lon, lat],
-        }
-        # Cada job "pesa" 1 unidad de carga (1 bulto / 1 parada)
-        if num_vehicles > 1:
-            job_def["amount"] = [1]
-        jobs.append(job_def)
+        })
 
     payload = {
         "vehicles": vehicles,
@@ -158,37 +142,6 @@ def optimize_route(
         if data.get("code") != 0:
             print(f"[vroom] Error code {data.get('code')}: {data.get('error', '')}")
             return None
-
-        # Si hay múltiples vehículos, devolver info por ruta
-        if num_vehicles > 1:
-            routes_out = []
-            for route in data.get("routes", []):
-                ordered_ids = [0]
-                stop_details = []
-                cum_dist = 0.0
-                cum_dur = 0.0
-                for step in route.get("steps", []):
-                    if step["type"] == "job":
-                        ordered_ids.append(step["id"])
-                        cum_dist += step.get("distance", 0)
-                        cum_dur += step.get("duration", 0)
-                        stop_details.append({
-                            "original_index": step["id"],
-                            "arrival_distance": cum_dist,
-                            "arrival_duration": cum_dur,
-                        })
-                routes_out.append({
-                    "waypoint_order": ordered_ids,
-                    "stop_details": stop_details,
-                    "total_distance": route.get("distance", 0),
-                    "total_duration": route.get("duration", 0),
-                    "vehicle_id": route.get("vehicle", 0),
-                })
-            return {
-                "multi": True,
-                "routes": routes_out,
-                "computing_time_ms": data.get("summary", {}).get("computing_times", {}).get("solving", 0),
-            }
 
         route = data["routes"][0]
 

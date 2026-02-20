@@ -139,8 +139,6 @@ class OptimizeResponse {
   final List<StopInfo> stops;
   final Map<String, dynamic> geometry; // GeoJSON
   final List<RouteStep> steps;
-  final int routeIndex;
-  final int totalRoutes;
 
   const OptimizeResponse({
     required this.success,
@@ -148,8 +146,6 @@ class OptimizeResponse {
     required this.stops,
     required this.geometry,
     required this.steps,
-    this.routeIndex = 0,
-    this.totalRoutes = 1,
   });
 
   factory OptimizeResponse.fromJson(Map<String, dynamic> json) {
@@ -164,33 +160,6 @@ class OptimizeResponse {
       steps: (json['steps'] as List)
           .map((e) => RouteStep.fromJson(e as Map<String, dynamic>))
           .toList(),
-      routeIndex: (json['route_index'] as int?) ?? 0,
-      totalRoutes: (json['total_routes'] as int?) ?? 1,
-    );
-  }
-}
-
-// ═══════════════════════════════════════════
-//  Respuesta multi-ruta (2 vehículos)
-// ═══════════════════════════════════════════
-class MultiRouteResponse {
-  final bool success;
-  final List<OptimizeResponse> routes;
-  final int totalRoutes;
-
-  const MultiRouteResponse({
-    required this.success,
-    required this.routes,
-    required this.totalRoutes,
-  });
-
-  factory MultiRouteResponse.fromJson(Map<String, dynamic> json) {
-    return MultiRouteResponse(
-      success: json['success'] as bool,
-      routes: (json['routes'] as List)
-          .map((e) => OptimizeResponse.fromJson(e as Map<String, dynamic>))
-          .toList(),
-      totalRoutes: json['total_routes'] as int,
     );
   }
 }

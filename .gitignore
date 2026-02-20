@@ -44,3 +44,6 @@ node_modules/
 
 # files for test 
 data/
+
+# App map
+web_map/

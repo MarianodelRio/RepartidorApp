@@ -29,12 +29,6 @@ class OptimizeRequest(BaseModel):
         default=None,
         description="Dirección de inicio (origen). Si no se indica, se usa la predeterminada.",
     )
-    num_vehicles: int = Field(
-        default=1,
-        ge=1,
-        le=2,
-        description="Número de vehículos/rutas a generar (1 o 2).",
-    )
     coords: list[list[float] | None] | None = Field(
         default=None,
         description=(
@@ -119,15 +113,6 @@ class OptimizeResponse(BaseModel):
     stops: list[StopInfo]
     geometry: dict = Field(..., description="GeoJSON de la polilínea de la ruta")
     steps: list[RouteStep] = Field(default_factory=list, description="Instrucciones de navegación")
-    route_index: int = Field(0, description="Índice de la ruta (0 o 1) cuando hay múltiples")
-    total_routes: int = Field(1, description="Número total de rutas generadas")
-
-
-class MultiRouteResponse(BaseModel):
-    """Respuesta con múltiples rutas (reparto compartido)."""
-    success: bool = True
-    routes: list[OptimizeResponse]
-    total_routes: int
 
 
 class ErrorResponse(BaseModel):
