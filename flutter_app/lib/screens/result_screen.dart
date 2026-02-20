@@ -1,4 +1,8 @@
+import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../config/app_theme.dart';
 import '../models/route_models.dart';
@@ -42,6 +46,12 @@ class _ResultScreenState extends State<ResultScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          // ── Botón de Exportar CSV ──
+          IconButton(
+            onPressed: () => _exportCsv(context),
+            icon: const Icon(Icons.download),
+            tooltip: 'Descargar ruta CSV',
+          ),
           // ── Botón de Ordenar Paquetes ──
           IconButton(
             onPressed: () {
@@ -156,6 +166,49 @@ class _ResultScreenState extends State<ResultScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _exportCsv(BuildContext context) async {
+    final stops = widget.response.stops.where((s) => !s.isOrigin).toList();
+
+    final buffer = StringBuffer();
+    buffer.writeln('cliente,direccion,num_paquetes');
+    for (final stop in stops) {
+      final names = stop.clientNames.where((n) => n.isNotEmpty).toList();
+      final cliente = names.isNotEmpty
+          ? names.join(' / ')
+          : stop.clientName;
+      buffer.writeln(
+          '${_csvEscape(cliente)},${_csvEscape(stop.address)},${stop.packageCount}');
+    }
+
+    try {
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/ruta_optimizada.csv');
+      await file.writeAsString(buffer.toString(), encoding: utf8);
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'text/csv')],
+        subject: 'Ruta optimizada',
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al exportar: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  String _csvEscape(String value) {
+    if (value.contains(',') ||
+        value.contains('"') ||
+        value.contains('\n')) {
+      return '"${value.replaceAll('"', '""')}"';
+    }
+    return value;
   }
 
   Future<void> _startDelivery(BuildContext context) async {

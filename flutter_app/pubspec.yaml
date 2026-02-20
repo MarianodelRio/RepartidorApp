@@ -45,6 +45,8 @@ dependencies:
   hive_flutter: ^1.1.0      # Integración Hive con Flutter
   url_launcher: ^6.2.0      # Abrir Google Maps / Apple Maps
   wakelock_plus: ^1.4.0
+  share_plus: ^10.0.0            # Compartir/exportar archivos
+  path_provider: ^2.1.0          # Directorio temporal en Android/iOS
 
 dev_dependencies:
   flutter_test:
