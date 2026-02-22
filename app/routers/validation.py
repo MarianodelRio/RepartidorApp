@@ -16,7 +16,7 @@ from collections import OrderedDict
 from pydantic import BaseModel
 from fastapi import APIRouter
 
-from app.services.geocoding import geocode, _cache as _geocode_cache
+from app.services.geocoding import geocode, is_cached
 from app.core.config import GEOCODE_DELAY
 
 router = APIRouter(prefix="/validation", tags=["validation"])
@@ -117,8 +117,7 @@ def validation_start(req: StartRequest):
         package_count = len(client_names)
         primary = next((n for n in client_names if n), "")
 
-        key = addr.strip().lower()
-        already_in_cache = key in _geocode_cache
+        already_in_cache = is_cached(addr)
         coord = geocode(addr)
         if not already_in_cache:
             # La dirección requirió una llamada a Nominatim; respetar rate limit
