@@ -27,6 +27,7 @@ from app.services.geocoding import geocode, geocode_batch
 from app.services.routing import (
     optimize_route,
     get_route_details,
+    can_osrm_snap,
     _format_distance,
 )
 
@@ -112,7 +113,7 @@ def _group_duplicate_addresses(
         "con geometría, ETAs e instrucciones de navegación."
     ),
 )
-async def optimize(req: OptimizeRequest):
+def optimize(req: OptimizeRequest):
     t_start = time.perf_counter()
 
     addresses = [a.strip() for a in req.addresses if a.strip()]
@@ -218,21 +219,39 @@ async def optimize(req: OptimizeRequest):
             detail="No se pudo geocodificar ninguna dirección.",
         )
 
-    # Separar datos de las paradas que sí se geocodificaron
+    if geocoded_fail:
+        print(f"[optimize] ⚠ {len(geocoded_fail)} dirección(es) sin geocodificar")
+
+    # ── 3b. Validar que las coords geocodificadas son ruteables por OSRM ──
+    # Evita que VROOM devuelva 500 al recibir coordenadas fuera del mapa de rutas
+    routable_ok = []
+    for item in geocoded_ok:
+        addr, coord, orig_i = item
+        lat, lon = coord
+        if can_osrm_snap(lat, lon):
+            routable_ok.append(item)
+        else:
+            geocoded_fail.append((addr, orig_i))
+            print(f"[optimize] ⚠ Coordenada fuera del mapa OSRM: {addr} ({lat:.4f},{lon:.4f}) → excluida")
+    geocoded_ok = routable_ok
+
+    if not geocoded_ok:
+        raise HTTPException(
+            400,
+            detail="Ninguna dirección se puede rutear. Verifica que las coordenadas están en la zona de cobertura.",
+        )
+
+    # Separar datos de paradas ruteables y fallidas
     ok_addresses = [addr for addr, _, _ in geocoded_ok]
     ok_coords = [coord for _, coord, _ in geocoded_ok]
     ok_primary_names = [unique_primary_names[orig_i] for _, _, orig_i in geocoded_ok]
     ok_all_names = [all_client_names_lists[orig_i] for _, _, orig_i in geocoded_ok]
     ok_pkg_counts = [package_counts[orig_i] for _, _, orig_i in geocoded_ok]
 
-    # Datos de las paradas fallidas
     fail_addresses = [addr for addr, _ in geocoded_fail]
     fail_primary_names = [unique_primary_names[orig_i] for _, orig_i in geocoded_fail]
     fail_all_names = [all_client_names_lists[orig_i] for _, orig_i in geocoded_fail]
     fail_pkg_counts = [package_counts[orig_i] for _, orig_i in geocoded_fail]
-
-    if geocoded_fail:
-        print(f"[optimize] ⚠ {len(geocoded_fail)} dirección(es) sin geocodificar: {fail_addresses}")
 
     # coords[0] = origen, coords[1..n] = paradas geocodificadas
     all_coords = [origin_coord] + ok_coords

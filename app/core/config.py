@@ -18,7 +18,7 @@ NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 NOMINATIM_USER_AGENT = "posadas-route-planner/2.0 (local)"
 
 # ── Zona de trabajo: Posadas, Córdoba ─────────────────────────
-START_ADDRESS = "Calle Callejon de Jesús 1, Posadas, Córdoba, España"
+START_ADDRESS = "Calle Callejon de Jesús 1"
 POSADAS_CENTER = (37.802, -5.105)          # lat, lon
 POSADAS_VIEWBOX = "-5.15,37.78,-5.06,37.83"  # lon1,lat1,lon2,lat2
 

@@ -78,6 +78,37 @@ def _format_distance(meters: float) -> str:
 
 
 # ═══════════════════════════════════════════
+#  OSRM: Validación de coordenadas
+# ═══════════════════════════════════════════
+
+_MAX_SNAP_DISTANCE_M = 2000  # máx. 2 km entre coordenada y nodo de red viaria
+
+
+def can_osrm_snap(lat: float, lon: float) -> bool:
+    """Comprueba si OSRM puede mapear esta coordenada a un nodo de la red viaria
+    a menos de _MAX_SNAP_DISTANCE_M metros.
+
+    OSRM siempre devuelve el nodo más cercano (aunque esté a miles de km),
+    por eso validamos la distancia de snapping. Si supera el umbral la
+    coordenada se considera fuera del mapa de rutas.
+    """
+    try:
+        r = requests.get(
+            f"{OSRM_BASE_URL}/nearest/v1/driving/{lon},{lat}",
+            params={"number": 1},
+            timeout=5,
+        )
+        data = r.json()
+        if data.get("code") != "Ok" or not data.get("waypoints"):
+            return False
+        distance_m = data["waypoints"][0].get("distance", float("inf"))
+        return distance_m <= _MAX_SNAP_DISTANCE_M
+    except Exception as e:
+        print(f"[osrm] Error en nearest para ({lat},{lon}): {e}")
+        return False
+
+
+# ═══════════════════════════════════════════
 #  VROOM: Optimización TSP (Open Trip)
 # ═══════════════════════════════════════════
 
@@ -173,7 +204,11 @@ def optimize_route(
         }
 
     except Exception as e:
-        print(f"[vroom] Error: {e}")
+        # Intentar loguear el body de la respuesta si es un HTTPError
+        try:
+            print(f"[vroom] Error HTTP: {e.response.status_code} — {e.response.text[:300]}")
+        except Exception:
+            print(f"[vroom] Error: {e}")
         return None
 
 

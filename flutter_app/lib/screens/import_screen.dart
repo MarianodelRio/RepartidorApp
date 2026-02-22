@@ -3,6 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'dart:typed_data';
 
+import '../config/api_config.dart';
 import '../config/app_theme.dart';
 import '../models/csv_data.dart';
 import '../models/validation_v3_models.dart';
@@ -164,6 +165,16 @@ class _ImportScreenState extends State<ImportScreen> {
 
   Future<void> _validate() async {
     if (_csvData == null) return;
+
+    // Comprobar que el servidor está disponible antes de intentar la validación
+    if (!_serverOnline) {
+      final online = await ApiService.healthCheck();
+      if (mounted) setState(() => _serverOnline = online);
+      if (!online) {
+        _showError('El servidor no está disponible. Verifica que el backend está activo en ${ApiConfig.baseUrl}');
+        return;
+      }
+    }
 
     setState(() => _error = null);
     WakelockPlus.enable();

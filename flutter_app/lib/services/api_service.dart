@@ -153,25 +153,34 @@ class ApiService {
       });
     }
 
-    final response = await http
-        .post(
-          Uri.parse(
-              '${ApiConfig.baseUrl}${ApiConfig.validationStartEndpoint}'),
-          headers: _jsonHeaders,
-          body: jsonEncode({'rows': rows}),
-        )
-        .timeout(ApiConfig.timeout);
+    try {
+      final response = await http
+          .post(
+            Uri.parse(
+                '${ApiConfig.baseUrl}${ApiConfig.validationStartEndpoint}'),
+            headers: _jsonHeaders,
+            body: jsonEncode({'rows': rows}),
+          )
+          .timeout(ApiConfig.timeout);
 
-    if (response.statusCode == 200) {
-      final json = jsonDecode(response.body) as Map<String, dynamic>;
-      return ValidationResult.fromJson(json);
-    } else {
-      String errorMsg = 'Error del servidor (${response.statusCode})';
-      try {
-        final errJson = jsonDecode(response.body);
-        errorMsg = errJson['detail'] ?? errJson['error'] ?? errorMsg;
-      } catch (_) {}
-      throw ApiException(errorMsg, response.statusCode);
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        return ValidationResult.fromJson(json);
+      } else {
+        String errorMsg = 'Error del servidor (${response.statusCode})';
+        try {
+          final errJson = jsonDecode(response.body);
+          errorMsg = errJson['detail'] ?? errJson['error'] ?? errorMsg;
+        } catch (_) {}
+        throw ApiException(errorMsg, response.statusCode);
+      }
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException(
+        'No se puede conectar con el servidor. Comprueba que el backend está activo.',
+        0,
+      );
     }
   }
 }

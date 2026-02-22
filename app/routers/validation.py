@@ -9,13 +9,15 @@ Flujo: un solo endpoint POST /api/validation/start
   5. Devuelve dos listas: geocoded (con coords) y failed (sin coords)
 """
 
+import time
 import unicodedata
 from collections import OrderedDict
 
 from pydantic import BaseModel
 from fastapi import APIRouter
 
-from app.services.geocoding import geocode
+from app.services.geocoding import geocode, _cache as _geocode_cache
+from app.core.config import GEOCODE_DELAY
 
 router = APIRouter(prefix="/validation", tags=["validation"])
 
@@ -74,22 +76,14 @@ def _normalize_for_dedup(addr: str) -> str:
     return " ".join(s.split())
 
 
-def _build_full_address(direccion: str, ciudad: str) -> str:
-    """Construye la dirección completa.
-    Si ciudad está vacía o ya aparece en direccion, devuelve solo direccion."""
-    d = direccion.strip()
-    c = ciudad.strip()
-    if not c or c.lower() in d.lower():
-        return d
-    return f"{d}, {c}"
-
+# Nota: No usamos _build_full_address porque Posadas, Córdoba se añade manualmente.
 
 # ═══════════════════════════════════════════
 #  Endpoint principal
 # ═══════════════════════════════════════════
 
 @router.post("/start", response_model=StartResponse)
-async def validation_start(req: StartRequest):
+def validation_start(req: StartRequest):
     """Valida todas las direcciones:
     1. Construye dirección completa desde (direccion, ciudad)
     2. Agrupa duplicados
@@ -103,7 +97,8 @@ async def validation_start(req: StartRequest):
     groups: OrderedDict[str, dict] = OrderedDict()
 
     for row in rows:
-        full_address = _build_full_address(row.direccion, row.ciudad)
+        # Usar la dirección tal cual; Posadas, Córdoba se añaden manualmente en los datos
+        full_address = row.direccion.strip()
         key = _normalize_for_dedup(full_address)
         if key not in groups:
             groups[key] = {
@@ -122,7 +117,12 @@ async def validation_start(req: StartRequest):
         package_count = len(client_names)
         primary = next((n for n in client_names if n), "")
 
+        key = addr.strip().lower()
+        already_in_cache = key in _geocode_cache
         coord = geocode(addr)
+        if not already_in_cache:
+            # La dirección requirió una llamada a Nominatim; respetar rate limit
+            time.sleep(GEOCODE_DELAY)
 
         if coord:
             lat, lon = coord
