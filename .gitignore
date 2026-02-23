@@ -16,6 +16,7 @@ osrm/
 
 # IDEs
 .vscode/
+.claude/
 .idea/
 *.iml
 
@@ -43,12 +44,8 @@ node_modules/
 *.sqlite3
 
 # files for test 
-data/
-
-# App map
-web_map/
+data_input/
 
 # Claude 
 CLAUDE*
-claude*
 
