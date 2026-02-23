@@ -3,71 +3,10 @@ Servicio de optimización de rutas con VROOM + OSRM.
 Resuelve el TSP (Problema del Viajante) y devuelve detalles de ruta.
 """
 
-import math
 import requests
 
 from app.core.config import VROOM_BASE_URL, OSRM_BASE_URL, VROOM_TIMEOUT, OSRM_TIMEOUT
 
-
-# ═══════════════════════════════════════════
-#  Traducciones para instrucciones OSRM
-# ═══════════════════════════════════════════
-
-MANEUVER_ES = {
-    "depart": "Salir",
-    "arrive": "Llegar al destino",
-    "continue": "Continuar",
-    "new name": "Continuar",
-    "roundabout": "Entrar en la rotonda",
-    "exit roundabout": "Salir de la rotonda",
-    "rotary": "Entrar en la glorieta",
-    "merge": "Incorporarse",
-    "on ramp": "Tomar la rampa de acceso",
-    "off ramp": "Tomar la salida",
-    "notification": "",
-}
-
-MODIFIER_ES = {
-    "left": "a la izquierda",
-    "right": "a la derecha",
-    "slight left": "ligeramente a la izquierda",
-    "slight right": "ligeramente a la derecha",
-    "sharp left": "fuerte a la izquierda",
-    "sharp right": "fuerte a la derecha",
-    "straight": "de frente",
-    "uturn": "giro en U",
-}
-
-
-def _step_text(mtype: str, modifier: str, name: str) -> str:
-    """Genera texto legible en español para un step de OSRM."""
-    if mtype in MANEUVER_ES:
-        text = MANEUVER_ES[mtype]
-    elif mtype == "turn":
-        text = "Girar " + MODIFIER_ES.get(modifier, modifier)
-    elif mtype == "end of road":
-        text = "Final de calle, girar " + MODIFIER_ES.get(modifier, modifier)
-    elif mtype == "fork":
-        text = "Desvío " + MODIFIER_ES.get(modifier, modifier)
-    else:
-        text = mtype.replace("_", " ").capitalize()
-        if modifier:
-            text += " " + MODIFIER_ES.get(modifier, modifier)
-    if name:
-        text += f" por {name}"
-    return text.strip() or "Continuar"
-
-
-def _format_duration(seconds: float) -> str:
-    """Formatea segundos a texto legible."""
-    mins = math.ceil(seconds / 60)
-    if mins < 60:
-        return f"{mins} min"
-    hours = mins // 60
-    remaining = mins % 60
-    if remaining == 0:
-        return f"{hours} h"
-    return f"{hours} h {remaining} min"
 
 
 def _format_distance(meters: float) -> str:
@@ -220,14 +159,14 @@ def get_route_details(
     coords_ordered: list[tuple[float, float]],
 ) -> dict | None:
     """
-    Dado un orden de coordenadas ya optimizado, obtiene la ruta detallada
-    de OSRM con geometría GeoJSON e instrucciones paso a paso.
+    Dado un orden de coordenadas ya optimizado, obtiene la geometría GeoJSON
+    de la ruta completa desde OSRM.
 
     Args:
         coords_ordered: Lista de (lat, lon) en el orden de visita.
 
     Returns:
-        dict con geometry (GeoJSON), steps, total_distance, total_duration
+        dict con geometry (GeoJSON), total_distance, total_duration
         o None si falla.
     """
     if len(coords_ordered) < 2:
@@ -238,7 +177,6 @@ def get_route_details(
     params = {
         "overview": "full",
         "geometries": "geojson",
-        "steps": "true",
     }
 
     try:
@@ -252,32 +190,8 @@ def get_route_details(
 
         route = data["routes"][0]
 
-        # Extraer instrucciones (sin duration_s — no es fiable por paradas físicas)
-        steps_out = []
-        for leg in route.get("legs", []):
-            for step in leg.get("steps", []):
-                man = step.get("maneuver", {})
-                mtype = man.get("type", "")
-                modifier = man.get("modifier", "")
-                name = step.get("name", "")
-                dist = step.get("distance", 0)
-                man_loc = man.get("location")
-
-                text = _step_text(mtype, modifier, name)
-
-                item = {
-                    "text": text,
-                    "distance_m": round(dist),
-                }
-                if man_loc and len(man_loc) >= 2:
-                    item["location"] = {"lat": man_loc[1], "lon": man_loc[0]}
-
-                if dist > 0 or mtype == "arrive":
-                    steps_out.append(item)
-
         return {
             "geometry": route["geometry"],
-            "steps": steps_out,
             "total_distance": round(route.get("distance", 0)),
             "total_duration": round(route.get("duration", 0)),
         }

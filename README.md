@@ -1,9 +1,9 @@
 # 📦 Repartidor App
 
-> **Sistema completo de optimización de rutas de reparto para Posadas, Córdoba**  
+> **Sistema completo de optimización de rutas de reparto para Posadas, Córdoba**
 > Backend FastAPI + Flutter App + OSRM + VROOM
 
-**Versión:** 1.0.0  
+**Versión:** 1.1.0
 **Última actualización:** Febrero 2026
 
 

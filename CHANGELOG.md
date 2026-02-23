@@ -1,8 +1,31 @@
-# Changelog — RepartidorApp v1.0.0
-
-**Fecha de versión:** Febrero 2026
+# Changelog — RepartidorApp
 
 ---
+
+## [1.1.0] — Febrero 2026
+
+### Added
+- **Geocodificación con matching difuso**: cuando Nominatim no encuentra una dirección exacta, se busca la calle más parecida en el catálogo real de OSM usando `token_set_ratio` (stdlib `difflib`). Maneja artículos extra, abreviaciones y variaciones de nombre sin reglas idiomáticas específicas.
+- **Catálogo de calles OSM via Overpass API**: se descarga automáticamente (174 calles de Posadas) y se persiste en `app/data/osm_streets.json` con TTL de 7 días. Se recarga solo cuando caduca.
+- **Caché persistente de geocodificación** (`app/data/geocode_cache.json`): los resultados sobreviven reinicios del backend. Clave canónica: `normalize(calle)#normalize(número)`.
+- **CSV de referencia `data/paradas_limpio.csv`**: fichero con 103 direcciones bien formateadas como plantilla y requisito de calidad para futuras importaciones.
+- **Botón para exportar ruta en CSV** (Flutter): nueva acción en `ResultScreen` que permite guardar la secuencia de paradas optimizada como fichero CSV.
+- **Función pública `is_cached(address)`** en el servicio de geocodificación, para consultar la caché sin exponer el dict interno.
+
+### Changed
+- **Parser de direcciones mejorado** (`_parse_address`): maneja correctamente `nº`, `número`, `n°`, `n17`, `N21`, números compuestos (`2-1`), indicadores de piso/planta (`bajo`, `1 planta`, `local`, etc.), sufijos de ciudad separados por coma y contenido entre paréntesis (cerrados y abiertos).
+- **Estrategia de geocodificación multi-paso**: directo Nominatim → corrección difusa + reintento → último recurso sin número. Resultado: 94.9 % de éxito (74/78 direcciones únicas) sobre el CSV de prueba.
+- **Pantalla de importación renovada** (Flutter `ImportScreen`): simplificación del flujo de validación y mejoras visuales en `ApiService`.
+- **Endpoint de validación** (`/api/validation/start`): nuevo método de validación con mejor agrupación de duplicados y respuesta de estado enriquecida.
+
+### Removed
+- `app/data/geocode_overrides.json`: sustituido por la nueva caché persistente `geocode_cache.json` con estructura y claves mejoradas.
+
+---
+
+## [1.0.0] — Febrero 2026
+
+**Esta versión 1.0.0 es la base funcional estable. Todos los cambios futuros deben documentarse aquí.**
 
 ## Versión 1.0.0
 **Esta versión 1.0.0 es la base funcional estable. Todos los cambios futuros deben documentarse aquí.**
@@ -47,7 +70,7 @@
 - Geocodificación multi-estrategia (texto libre, estructurada, bounded, etc.)
 - Soporte para overrides manuales de coordenadas
 - Respuestas detalladas con `package_count` y `client_names` por parada
-- Sin caché persistente de geocoding (solo en memoria mientras el backend está vivo)
+- Sin caché persistente de geocoding en v1.0.0 (solo en memoria mientras el backend está vivo)
 
 ### Frontend (Flutter)
 

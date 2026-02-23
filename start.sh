@@ -3,7 +3,7 @@
 #####################################################################
 # 🚀 Repartidor App - Script de Inicio Automático                  #
 #####################################################################
-# Versión: 3.0.0                                                    #
+# Versión: ver variable SCRIPT_VERSION                              #
 # Descripción: Inicia servicios Docker (OSRM+VROOM), backend       #
 #              FastAPI y túnel ngrok con verificación completa.     #
 # Uso: ./start.sh [opción]                                          #
@@ -26,6 +26,7 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # ── Configuración ──
+SCRIPT_VERSION="3.0.0"
 PROJECT_DIR="/home/mariano/Desktop/app_repartir"
 VENV_PATH="$PROJECT_DIR/venv/bin/activate"
 BACKEND_LOG="$PROJECT_DIR/backend.log"
@@ -40,7 +41,7 @@ NGROK_API_PORT=4040
 print_header() {
     echo -e "${CYAN}${BOLD}"
     echo "════════════════════════════════════════════════════════════"
-    echo "  🚀 Repartidor App - Inicio de Servicios v3.0.0"
+    echo "  🚀 Repartidor App - Inicio de Servicios v${SCRIPT_VERSION}"
     echo "════════════════════════════════════════════════════════════"
     echo -e "${NC}"
 }
@@ -80,7 +81,7 @@ wait_for_service() {
     local check_cmd="$2"
     local max_attempts="${3:-30}"
     local attempt=0
-    
+
     echo -n "  Esperando a $name"
     while [ $attempt -lt $max_attempts ]; do
         if eval "$check_cmd" &>/dev/null; then
@@ -89,24 +90,27 @@ wait_for_service() {
         fi
         echo -n "."
         sleep 1
-        ((attempt++))
+        attempt=$((attempt + 1))
     done
     echo -e " ${RED}✗ TIMEOUT${NC}"
     return 1
 }
 
 get_ngrok_url() {
+    # Consulta la API local de ngrok (más fiable que parsear el log)
     local max_attempts=10
     local attempt=0
-    
+
     while [ $attempt -lt $max_attempts ]; do
-        local url=$(grep -Eo 'url=https?://[^ ]+' "$NGROK_LOG" 2>/dev/null | head -n 1 | cut -d'=' -f2)
+        local url
+        url=$(curl -s "http://127.0.0.1:${NGROK_API_PORT}/api/tunnels" 2>/dev/null \
+              | grep -o '"public_url":"https://[^"]*"' | head -n 1 | cut -d'"' -f4)
         if [ -n "$url" ]; then
             echo "$url"
             return 0
         fi
         sleep 1
-        ((attempt++))
+        attempt=$((attempt + 1))
     done
     return 1
 }
@@ -118,7 +122,15 @@ check_requirements() {
     local all_ok=true
     
     check_command docker || all_ok=false
-    check_command docker-compose || check_command docker compose || all_ok=false
+    # docker compose puede ser plugin (docker compose) o standalone (docker-compose)
+    if docker compose version &>/dev/null; then
+        print_success "docker compose disponible"
+    elif command -v docker-compose &>/dev/null; then
+        print_success "docker-compose disponible"
+    else
+        print_error "docker compose no está disponible (instala Docker Desktop o el plugin Compose)"
+        all_ok=false
+    fi
     check_command python3 || all_ok=false
     check_command ngrok || all_ok=false
     
@@ -329,15 +341,15 @@ stop_services() {
         print_info "ngrok no estaba corriendo"
     fi
     
-    # Detener backend
-    local backend_pid=$(lsof -Pi :$BACKEND_PORT -sTCP:LISTEN -t 2>/dev/null)
-    if [ -n "$backend_pid" ]; then
-        kill "$backend_pid" 2>/dev/null
+    # Detener backend (lsof puede devolver varios PIDs: padre + workers)
+    local backend_pids
+    backend_pids=$(lsof -Pi :$BACKEND_PORT -sTCP:LISTEN -t 2>/dev/null || true)
+    if [ -n "$backend_pids" ]; then
+        echo "$backend_pids" | xargs kill 2>/dev/null || true
         sleep 1
-        if kill -0 "$backend_pid" 2>/dev/null; then
-            kill -9 "$backend_pid" 2>/dev/null
-        fi
-        print_success "Backend detenido (PID: $backend_pid)"
+        # Forzar si alguno sigue vivo
+        echo "$backend_pids" | xargs kill -9 2>/dev/null || true
+        print_success "Backend detenido (PID: $(echo "$backend_pids" | tr '\n' ' '))"
     else
         print_info "Backend no estaba corriendo"
     fi
@@ -437,14 +449,28 @@ main() {
             print_header
             show_status
             ;;
+        logs)
+            echo -e "${BOLD}=== Backend (últimas 50 líneas) ===${NC}"
+            tail -n 50 "$BACKEND_LOG" 2>/dev/null || echo "(sin log de backend)"
+            echo ""
+            echo -e "${BOLD}=== ngrok (últimas 20 líneas) ===${NC}"
+            tail -n 20 "$NGROK_LOG" 2>/dev/null || echo "(sin log de ngrok)"
+            echo ""
+            echo -e "${BOLD}=== OSRM (últimas 20 líneas) ===${NC}"
+            docker logs osrm-posadas --tail 20 2>/dev/null || echo "(OSRM no está corriendo)"
+            echo ""
+            echo -e "${BOLD}=== VROOM (últimas 20 líneas) ===${NC}"
+            docker logs vroom-posadas --tail 20 2>/dev/null || echo "(VROOM no está corriendo)"
+            ;;
         *)
-            echo "Uso: $0 {start|stop|restart|status}"
+            echo "Uso: $0 {start|stop|restart|status|logs}"
             echo ""
             echo "Opciones:"
             echo "  start    - Inicia todos los servicios (por defecto)"
             echo "  stop     - Detiene todos los servicios"
             echo "  restart  - Reinicia todos los servicios"
             echo "  status   - Muestra el estado de los servicios"
+            echo "  logs     - Muestra los últimos logs de todos los servicios"
             exit 1
             ;;
     esac

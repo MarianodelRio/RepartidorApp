@@ -337,8 +337,7 @@ class RouteMapState extends State<RouteMap> {
           ],
         ),
 
-        // Controles flotantes eliminados: el mapa en modo reparto siempre muestra
-        // el recuadro que encuadra GPS + siguiente parada.
+        // En modo reparto el mapa encuadra automáticamente GPS + siguiente parada.
       ],
     );
   }
@@ -554,47 +553,3 @@ class _GpsMarkerState extends State<_GpsMarker>
   }
 }
 
-/// Botón flotante sobre el mapa.
-class _MapButton extends StatelessWidget {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-  final bool isActive;
-
-  const _MapButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-    this.isActive = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Material(
-      elevation: 4,
-      shape: const CircleBorder(),
-      clipBehavior: Clip.hardEdge,
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: isActive
-                ? AppColors.primary
-                : (isDark ? AppColors.cardDark : Colors.white),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(
-            icon,
-            size: 22,
-            color: isActive
-                ? Colors.white
-                : (isDark ? AppColors.textSecondaryDark : AppColors.textSecondary),
-          ),
-        ),
-      ),
-    );
-  }
-}

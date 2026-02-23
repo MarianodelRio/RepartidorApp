@@ -20,8 +20,6 @@ from app.models import (
     ErrorResponse,
     StopInfo,
     RouteSummary,
-    RouteStep,
-    Coordinate,
 )
 from app.services.geocoding import geocode, geocode_batch
 from app.services.routing import (
@@ -354,16 +352,6 @@ def optimize(req: OptimizeRequest):
             package_count=fail_pkg,
         ))
 
-    # Steps de navegación (sin duration_s)
-    nav_steps = [
-        RouteStep(
-            text=s["text"],
-            distance_m=s["distance_m"],
-            location=Coordinate(**s["location"]) if s.get("location") else None,
-        )
-        for s in route_details.get("steps", [])
-    ]
-
     total_dist = route_details["total_distance"]
     computing_ms = round((time.perf_counter() - t_start) * 1000, 1)
 
@@ -378,7 +366,6 @@ def optimize(req: OptimizeRequest):
         ),
         stops=stops,
         geometry=route_details["geometry"],
-        steps=nav_steps,
     )
 
 

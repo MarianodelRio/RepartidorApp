@@ -16,7 +16,7 @@ import 'delivery_screen.dart';
 import 'result_screen.dart';
 
 // ═══════════════════════════════════════════
-//  Pantalla de importación — v9 validación auto
+//  Pantalla de importación
 //
 //  Flujo:
 //    1. Subir CSV (cliente, direccion, ciudad)

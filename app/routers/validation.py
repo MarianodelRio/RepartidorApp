@@ -76,8 +76,6 @@ def _normalize_for_dedup(addr: str) -> str:
     return " ".join(s.split())
 
 
-# Nota: No usamos _build_full_address porque Posadas, Córdoba se añade manualmente.
-
 # ═══════════════════════════════════════════
 #  Endpoint principal
 # ═══════════════════════════════════════════

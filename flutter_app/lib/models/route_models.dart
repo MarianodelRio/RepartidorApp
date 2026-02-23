@@ -2,23 +2,6 @@
 library;
 
 // ═══════════════════════════════════════════
-//  Coordenada
-// ═══════════════════════════════════════════
-class Coordinate {
-  final double lat;
-  final double lon;
-
-  const Coordinate({required this.lat, required this.lon});
-
-  factory Coordinate.fromJson(Map<String, dynamic> json) {
-    return Coordinate(
-      lat: (json['lat'] as num).toDouble(),
-      lon: (json['lon'] as num).toDouble(),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════
 //  Parada en la ruta optimizada
 // ═══════════════════════════════════════════
 class StopInfo {
@@ -106,31 +89,6 @@ class RouteSummary {
 }
 
 // ═══════════════════════════════════════════
-//  Instrucción de navegación
-// ═══════════════════════════════════════════
-class RouteStep {
-  final String text;
-  final double distanceM;
-  final Coordinate? location;
-
-  const RouteStep({
-    required this.text,
-    required this.distanceM,
-    this.location,
-  });
-
-  factory RouteStep.fromJson(Map<String, dynamic> json) {
-    return RouteStep(
-      text: json['text'] as String,
-      distanceM: (json['distance_m'] as num).toDouble(),
-      location: json['location'] != null
-          ? Coordinate.fromJson(json['location'] as Map<String, dynamic>)
-          : null,
-    );
-  }
-}
-
-// ═══════════════════════════════════════════
 //  Respuesta completa de /optimize
 // ═══════════════════════════════════════════
 class OptimizeResponse {
@@ -138,14 +96,12 @@ class OptimizeResponse {
   final RouteSummary summary;
   final List<StopInfo> stops;
   final Map<String, dynamic> geometry; // GeoJSON
-  final List<RouteStep> steps;
 
   const OptimizeResponse({
     required this.success,
     required this.summary,
     required this.stops,
     required this.geometry,
-    required this.steps,
   });
 
   factory OptimizeResponse.fromJson(Map<String, dynamic> json) {
@@ -157,9 +113,6 @@ class OptimizeResponse {
           .map((e) => StopInfo.fromJson(e as Map<String, dynamic>))
           .toList(),
       geometry: json['geometry'] as Map<String, dynamic>,
-      steps: (json['steps'] as List)
-          .map((e) => RouteStep.fromJson(e as Map<String, dynamic>))
-          .toList(),
     );
   }
 }

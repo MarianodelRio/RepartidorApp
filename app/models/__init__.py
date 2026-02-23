@@ -56,11 +56,6 @@ class OptimizeRequest(BaseModel):
 #  Modelos de salida (Response)
 # ═══════════════════════════════════════════
 
-class Coordinate(BaseModel):
-    lat: float
-    lon: float
-
-
 class StopInfo(BaseModel):
     """Una parada en la ruta optimizada.
 
@@ -99,20 +94,12 @@ class RouteSummary(BaseModel):
     computing_time_ms: float = Field(0, description="Tiempo de cómputo de la optimización en ms")
 
 
-class RouteStep(BaseModel):
-    """Instrucción de navegación paso a paso."""
-    text: str
-    distance_m: float
-    location: Coordinate | None = None
-
-
 class OptimizeResponse(BaseModel):
     """Respuesta del endpoint /optimize."""
     success: bool = True
     summary: RouteSummary
     stops: list[StopInfo]
     geometry: dict = Field(..., description="GeoJSON de la polilínea de la ruta")
-    steps: list[RouteStep] = Field(default_factory=list, description="Instrucciones de navegación")
 
 
 class ErrorResponse(BaseModel):

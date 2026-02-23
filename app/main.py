@@ -1,7 +1,7 @@
 """
-Posadas Route Planner — Backend FastAPI v2.2
-=============================================
-API REST profesional para optimización de rutas de reparto.
+Posadas Route Planner — Backend FastAPI
+=======================================
+API REST para optimización de rutas de reparto.
 
 Arquitectura:
   • core/config.py    → Configuración centralizada
@@ -25,7 +25,7 @@ from app.routers import optimize, validation
 app = FastAPI(
     title="Posadas Route Planner",
     description="API de optimización de rutas de reparto para Posadas (Córdoba)",
-    version="2.3.0",
+    version="1.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
