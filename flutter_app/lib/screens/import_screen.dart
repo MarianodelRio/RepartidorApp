@@ -89,6 +89,11 @@ class _ImportScreenState extends State<ImportScreen> {
     if (mounted) setState(() => _hasActiveSession = has);
   }
 
+  Future<void> _discardSession() async {
+    await PersistenceService.clearSession();
+    if (mounted) setState(() => _hasActiveSession = false);
+  }
+
   Future<void> _resumeDelivery() async {
     final session = await PersistenceService.loadSession();
     if (session == null || !mounted) return;
@@ -556,49 +561,72 @@ class _ImportScreenState extends State<ImportScreen> {
               offset: const Offset(0, 4)),
         ],
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: _resumeDelivery,
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withAlpha(40),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.play_arrow,
-                      color: Colors.white, size: 28),
+      child: Stack(
+        children: [
+          // ── Área principal tappable ──
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: _resumeDelivery,
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withAlpha(40),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.play_arrow,
+                          color: Colors.white, size: 28),
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Continuar Ruta',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700)),
+                          SizedBox(height: 2),
+                          Text(
+                              'Tienes un reparto en curso. Toca para retomarlo.',
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios,
+                        color: Colors.white70, size: 18),
+                  ],
                 ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Continuar Ruta',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700)),
-                      SizedBox(height: 2),
-                      Text(
-                          'Tienes un reparto en curso. Toca para retomarlo.',
-                          style:
-                              TextStyle(color: Colors.white70, fontSize: 12)),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.arrow_forward_ios,
-                    color: Colors.white70, size: 18),
-              ],
+              ),
             ),
           ),
-        ),
+          // ── Botón X para descartar ──
+          Positioned(
+            top: 6,
+            right: 6,
+            child: GestureDetector(
+              onTap: _discardSession,
+              child: Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: Colors.black.withAlpha(50),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close,
+                    color: Colors.white, size: 14),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
