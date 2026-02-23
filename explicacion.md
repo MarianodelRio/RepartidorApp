@@ -81,7 +81,7 @@ static const String baseUrl = 'https://xxxx-xxx.ngrok-free.app';
    - [config/api_config.dart](#32-configapi_configdart)
    - [config/app_theme.dart](#33-configapp_themedart)
    - [models/route_models.dart](#34-modelsroute_modelsdart)
-   - [models/validation_v3_models.dart](#35-modelsvalidation_v3_modelsdart)
+   - [models/validation_models.dart](#35-modelsvalidation_modelsdart)
    - [models/delivery_state.dart](#36-modelsdelivery_statedart)
    - [models/csv_data.dart](#37-modelscsv_datadart)
    - [services/api_service.dart](#38-servicesapi_servicedart)
@@ -479,7 +479,7 @@ Modelos Dart que reflejan los contratos del backend.
 
 ---
 
-### 3.5 `models/validation_v3_models.dart`
+### 3.5 `models/validation_models.dart`
 
 Modelos para la respuesta de `/api/validation/start`.
 

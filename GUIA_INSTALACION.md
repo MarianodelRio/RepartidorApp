@@ -2,6 +2,8 @@
 
 Guía completa para replicar el entorno de desarrollo en un ordenador nuevo, desde cero, partiendo del repositorio Git.
 
+Compatible con **Linux (Ubuntu/Debian)** y **Windows 10/11 con WSL2**.
+
 ---
 
 ## Índice
@@ -21,23 +23,22 @@ Guía completa para replicar el entorno de desarrollo en un ordenador nuevo, des
 
 ## 1. Requisitos previos
 
-### Herramientas a instalar
+### Herramientas necesarias
 
-| Herramienta | Versión mínima | Instalar |
-|---|---|---|
-| **Git** | cualquiera | `sudo apt install git` |
-| **Python** | 3.10+ | `sudo apt install python3 python3-venv python3-pip` |
-| **Docker Engine** | 24+ | ver abajo |
-| **Docker Compose** | v2 (plugin) | incluido con Docker Engine |
-| **Flutter SDK** | 3.38+ | ver abajo |
-| **ngrok** | 3.x | ver abajo |
+| Herramienta | Versión mínima | Linux | Windows (WSL2) |
+|---|---|---|---|
+| **Git** | cualquiera | `sudo apt install git` | incluido en WSL2 |
+| **Python** | 3.10+ | `sudo apt install python3 python3-venv` | en WSL2 (ver abajo) |
+| **Docker** | 24+ | Docker Engine (ver abajo) | Docker Desktop (ver abajo) |
+| **Flutter SDK** | 3.38+ | en terminal Linux | instalación nativa Windows |
+| **ngrok** | 3.x | en terminal Linux | en WSL2 (ver abajo) |
 
 > **RAM recomendada:** mínimo 8 GB (el procesado OSRM de Andalucía requiere ~4-6 GB libres).
-> **Disco:** reserva ~2 GB para los datos OSRM procesados + imágenes Docker.
+> **Disco:** reserva ~2 GB para los datos OSRM + imágenes Docker.
 
 ---
 
-### Instalar Docker Engine (Linux)
+### 🐧 Linux — Instalar Docker Engine
 
 ```bash
 # Eliminar instalaciones antiguas si las hay
@@ -65,7 +66,7 @@ sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin dock
 sudo usermod -aG docker $USER
 ```
 
-Verifica la instalación:
+Verifica:
 ```bash
 docker --version          # Docker version 24.x o superior
 docker compose version    # Docker Compose version v2.x
@@ -73,50 +74,131 @@ docker compose version    # Docker Compose version v2.x
 
 ---
 
-### Instalar Flutter SDK
+### 🪟 Windows — Preparar WSL2 + Docker Desktop
+
+El backend, Docker y ngrok se ejecutan **dentro de WSL2**. Flutter se instala de forma nativa en Windows.
+
+#### Paso 1: Instalar WSL2 con Ubuntu
+
+Abre **PowerShell como administrador** y ejecuta:
+
+```powershell
+wsl --install -d Ubuntu
+```
+
+Esto instala WSL2 y la distribución Ubuntu. Reinicia el ordenador cuando lo pida.
+
+Al volver a encender, se abrirá un terminal Ubuntu pidiéndote nombre de usuario y contraseña para WSL2. Créalos.
+
+Verifica la versión:
+```powershell
+wsl --list --verbose
+# Ubuntu debe aparecer con VERSION 2
+```
+
+> Si Ubuntu ya estaba instalado con WSL1, actualiza:
+> `wsl --set-version Ubuntu 2`
+
+#### Paso 2: Instalar Docker Desktop
+
+1. Descarga Docker Desktop desde [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/)
+2. Instala con las opciones por defecto
+3. Abre Docker Desktop → **Settings → General** → activa **"Use the WSL 2 based engine"**
+4. Ve a **Settings → Resources → WSL Integration** → activa la integración con tu distribución Ubuntu
+
+Verifica desde el terminal WSL2 (Ubuntu):
+```bash
+docker --version
+docker compose version
+```
+
+#### Paso 3: Instalar dependencias en WSL2
+
+Abre el terminal de Ubuntu (busca "Ubuntu" en el menú inicio) y ejecuta:
 
 ```bash
-# Descargar e instalar Flutter (ajusta la versión si hay una más nueva)
+sudo apt update
+sudo apt install python3 python3-venv python3-pip git curl wget
+```
+
+#### Paso 4: Instalar ngrok en WSL2
+
+```bash
+curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+sudo apt update && sudo apt install ngrok
+```
+
+---
+
+### 🐧 Linux — Instalar Flutter SDK
+
+```bash
 cd ~
 git clone https://github.com/flutter/flutter.git -b stable
 
 # Añadir al PATH (añade esta línea a ~/.bashrc o ~/.zshrc)
 export PATH="$HOME/flutter/bin:$PATH"
-
-# Recargar configuración
 source ~/.bashrc
 
-# Verificar
 flutter doctor
-```
-
-Flutter pedirá aceptar las licencias de Android SDK. Si solo necesitas compilar APK:
-```bash
 flutter doctor --android-licenses
 ```
 
 ---
 
-### Instalar ngrok
+### 🪟 Windows — Instalar Flutter (nativo)
+
+Flutter se instala nativamente en Windows para aprovechar el SDK de Android sin problemas de compatibilidad.
+
+1. Descarga el instalador desde [docs.flutter.dev/get-started/install/windows](https://docs.flutter.dev/get-started/install/windows)
+2. Extrae en una ruta sin espacios, por ejemplo `C:\flutter`
+3. Añade `C:\flutter\bin` al **PATH** del sistema:
+   - Busca "Variables de entorno" en el menú inicio
+   - En "Variables del sistema" → `Path` → Nuevo → `C:\flutter\bin`
+4. Abre una terminal nueva (PowerShell o CMD) y verifica:
+
+```powershell
+flutter doctor
+flutter doctor --android-licenses
+```
+
+> **Nota:** Los comandos de Flutter se ejecutan en **PowerShell o CMD de Windows**, no en WSL2.
+
+---
+
+### 🐧 Linux — Instalar ngrok
 
 ```bash
-# Descargar e instalar
 curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
 echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
 sudo apt update && sudo apt install ngrok
-
-# Verificar
-ngrok version   # ngrok version 3.x
+ngrok version
 ```
 
 ---
 
 ## 2. Clonar el repositorio
 
+### 🐧 Linux
+
 ```bash
 git clone <URL-del-repositorio> app_repartir
 cd app_repartir
 ```
+
+### 🪟 Windows (WSL2)
+
+Clona **dentro del sistema de ficheros de WSL2** (no en `/mnt/c/`), para que Docker tenga acceso directo y el rendimiento sea óptimo:
+
+```bash
+# En el terminal de Ubuntu (WSL2):
+cd ~
+git clone <URL-del-repositorio> app_repartir
+cd app_repartir
+```
+
+> ⚠️ No clones en `/mnt/c/Users/...`. El acceso a la carpeta de Windows desde WSL2 es mucho más lento y puede causar problemas con Docker volumes.
 
 Estructura tras clonar:
 
@@ -137,6 +219,8 @@ app_repartir/
 
 ## 3. Backend Python
 
+> Ejecuta estos comandos en **terminal Linux** o **terminal WSL2 (Ubuntu)**.
+
 ```bash
 # Desde la raíz del proyecto
 python3 -m venv venv
@@ -145,7 +229,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Verifica que funciona:
+Verifica:
 ```bash
 uvicorn app.main:app --port 8000
 # Debe mostrar: INFO: Application startup complete.
@@ -158,6 +242,8 @@ uvicorn app.main:app --port 8000
 
 > ⚠️ Esta carpeta **no está en el repositorio** por su tamaño (774 MB).
 > Hay que descargar el mapa de Andalucía y procesarlo con Docker. Solo hay que hacerlo **una vez**.
+>
+> Ejecuta estos comandos en **terminal Linux** o **terminal WSL2 (Ubuntu)**.
 
 ### Paso 1: Crear la carpeta y descargar el mapa
 
@@ -171,8 +257,6 @@ wget -O andalucia-latest.osm.pbf \
 
 cd ..
 ```
-
-> El archivo `.osm.pbf` de Andalucía ocupa ~450 MB. Si la conexión es lenta, puedes usar `curl -L -o osrm/andalucia-latest.osm.pbf <URL>`.
 
 ### Paso 2: Procesar el mapa (solo una vez, tarda ~10-20 min)
 
@@ -201,7 +285,6 @@ Tras completarse, la carpeta `osrm/` tendrá ~774 MB con todos los índices nece
 ### Paso 3: Verificar
 
 ```bash
-# Levantar OSRM temporalmente para probar
 docker run --rm -p 5000:5000 \
   -v "$(pwd)/osrm:/data" \
   osrm/osrm-backend \
@@ -209,12 +292,10 @@ docker run --rm -p 5000:5000 \
 
 sleep 5
 
-# Probar una ruta en Posadas
 curl -s "http://localhost:5000/route/v1/driving/-5.105,37.802;-5.110,37.800?overview=false" \
   | grep '"code"'
 # Debe responder: "code":"Ok"
 
-# Parar el contenedor de prueba
 docker stop $(docker ps -q --filter ancestor=osrm/osrm-backend)
 ```
 
@@ -222,7 +303,7 @@ docker stop $(docker ps -q --filter ancestor=osrm/osrm-backend)
 
 ## 5. Servicios Docker (OSRM + VROOM)
 
-Con los datos OSRM ya preparados, los servicios se gestionan con `docker-compose.yml`:
+> Ejecuta en **terminal Linux** o **terminal WSL2 (Ubuntu)**.
 
 ```bash
 # Arrancar OSRM (puerto 5000) y VROOM (puerto 3000)
@@ -232,27 +313,29 @@ docker compose up -d
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 ```
 
-Los servicios están configurados con `restart: unless-stopped`, por lo que se reanudan automáticamente al reiniciar el ordenador.
+Los servicios están configurados con `restart: unless-stopped`, por lo que se reanudan automáticamente al reiniciar.
+
+> **Windows:** Docker Desktop debe estar abierto (o configurado para arrancar con Windows) para que los contenedores funcionen.
 
 ---
 
 ## 6. Configurar ngrok
 
-ngrok crea un túnel público para que la app móvil (en el teléfono) alcance el backend que corre en tu ordenador. Es necesario para probar con APK en un dispositivo real.
+ngrok crea un túnel público para que la app móvil (en el teléfono) alcance el backend. Necesario para probar con APK en un dispositivo real.
 
 ### Paso 1: Crear cuenta y obtener auth token
 
 1. Regístrate en [ngrok.com](https://ngrok.com) (plan gratuito es suficiente)
 2. En el panel: **Your Authtoken** → copia el token
-3. Configura ngrok con tu token:
+3. Configura ngrok con tu token (en terminal Linux o WSL2):
 
 ```bash
 ngrok config add-authtoken <tu-token-aquí>
 ```
 
-### Paso 2: (Solo para uso con APK) Actualizar la URL en la app
+### Paso 2: (Solo para APK) Actualizar la URL en la app
 
-Cuando el backend esté corriendo y ngrok activo, obtendrás una URL pública del tipo `https://xxxx-xxx.ngrok-free.app`.
+Cuando ngrok esté activo, obtendrás una URL del tipo `https://xxxx-xxx.ngrok-free.app`.
 
 Edita [`flutter_app/lib/config/api_config.dart`](flutter_app/lib/config/api_config.dart):
 
@@ -264,70 +347,91 @@ static const String baseUrl = 'http://127.0.0.1:8000';
 static const String baseUrl = 'https://xxxx-xxx.ngrok-free.app';
 ```
 
-> **Nota:** La URL de ngrok cambia cada vez que reinicias ngrok (plan gratuito). Para una URL fija, ngrok ofrece dominios estáticos de pago, o puedes usar una URL fija propia.
+> **Nota:** La URL de ngrok cambia cada vez que reinicias ngrok (plan gratuito).
 
 ---
 
 ## 7. App Flutter
 
+### 🐧 Linux
+
 ```bash
 cd flutter_app
-
-# Instalar dependencias Dart/Flutter
 flutter pub get
+flutter run                    # en dispositivo/emulador conectado
+flutter run -d web-server --web-port=8080   # en navegador (para depurar)
+```
 
-# Ejecutar en dispositivo/emulador conectado
+### 🪟 Windows
+
+Los comandos de Flutter se ejecutan en **PowerShell o CMD de Windows** (no en WSL2), apuntando a la carpeta del proyecto dentro de WSL2:
+
+```powershell
+# Opción A: accede al proyecto desde Windows usando la ruta \\wsl$
+cd \\wsl$\Ubuntu\home\<tu-usuario>\app_repartir\flutter_app
+flutter pub get
 flutter run
-
-# Ejecutar como app de escritorio Linux (útil para depurar)
-flutter run -d linux
 ```
 
-### Depurar en el navegador (recomendado para desarrollo rápido)
+O, más cómodo, copia la carpeta `flutter_app` a Windows si prefieres tenerla en `C:\`:
 
-La forma más cómoda de depurar sin compilar APK ni conectar un dispositivo es correr la app como web app:
+```powershell
+cd C:\ruta\a\flutter_app
+flutter pub get
+flutter run
+```
 
-```bash
-cd flutter_app
+Para depurar en el navegador:
+```powershell
 flutter run -d web-server --web-port=8080
-# Abre http://localhost:8080 en tu navegador
+# Abre http://localhost:8080
 ```
 
-> **Requisito:** Antes de lanzar, asegúrate de que `flutter_app/lib/config/api_config.dart` tiene la URL del backend local:
-> ```dart
-> static const String baseUrl = 'http://127.0.0.1:8000';
+> El backend corre en WSL2. Desde Flutter en Windows, accede a él usando la IP de WSL2 en lugar de `127.0.0.1`. Para encontrarla:
+> ```bash
+> # En terminal WSL2:
+> hostname -I   # algo como 172.x.x.x
 > ```
-> El backend debe estar corriendo (`./start.sh start` o `uvicorn app.main:app --port 8000`).
+> Actualiza `api_config.dart` con esa IP durante el desarrollo local en Windows.
+> En producción (APK), usa siempre la URL de ngrok.
 
-### Compilar APK para Android
+### Compilar APK para Android (Linux y Windows)
 
 ```bash
-cd flutter_app
-
-# Antes de compilar, asegúrate de que api_config.dart apunta a la URL de ngrok:
-# static const String baseUrl = 'https://xxxx-xxx.ngrok-free.app';
-
+# Asegúrate de que api_config.dart tiene la URL de ngrok antes de compilar
 flutter build apk --release
-# APK resultante en: build/app/outputs/flutter-apk/app-release.apk
+# APK en: build/app/outputs/flutter-apk/app-release.apk
 ```
 
-Para instalar el APK en un teléfono Android:
-1. Activa **Opciones de desarrollador** → **Depuración USB** en el teléfono
-2. Conecta el teléfono por USB y acepta la solicitud de depuración
-3. `flutter install` o copia el APK manualmente y permite "fuentes desconocidas"
+Para instalar en el teléfono:
+1. Activa **Opciones de desarrollador** → **Depuración USB**
+2. Conecta por USB y acepta la solicitud
+3. `flutter install` o copia el APK manualmente
 
 ---
 
 ## 8. Arrancar todo
 
-Una vez completada la instalación, el arranque diario es un solo comando:
+### 🐧 Linux
 
 ```bash
 cd /ruta/a/app_repartir
 ./start.sh start
 ```
 
-Esto hace automáticamente:
+### 🪟 Windows (WSL2)
+
+Abre el terminal de Ubuntu (WSL2) y ejecuta:
+
+```bash
+cd ~/app_repartir
+./start.sh start
+```
+
+> Docker Desktop debe estar abierto antes de ejecutar `start.sh`.
+> Los servicios quedan corriendo en WSL2. Para pararlos: `./start.sh stop`.
+
+`start.sh` hace automáticamente:
 1. Verifica requisitos (Docker, Python, ngrok)
 2. Arranca los contenedores OSRM + VROOM
 3. Espera a que OSRM y VROOM estén operativos
@@ -339,12 +443,14 @@ Otros comandos:
 ./start.sh stop     # Detener todo
 ./start.sh restart  # Reiniciar todo
 ./start.sh status   # Ver estado de cada servicio
-./start.sh logs     # Ver últimos logs de todos los servicios
+./start.sh logs     # Ver últimos logs
 ```
 
 ---
 
 ## 9. Verificación
+
+> Ejecuta en terminal Linux o WSL2.
 
 ```bash
 # 1. Backend
@@ -363,7 +469,7 @@ curl -I http://localhost:3000/health
 curl -s http://127.0.0.1:4040/api/tunnels | grep public_url
 # → "public_url":"https://xxxx.ngrok-free.app"
 
-# 5. Swagger UI (documentación interactiva de la API)
+# 5. Swagger UI
 # Abre en el navegador: http://localhost:8000/docs
 ```
 
@@ -384,47 +490,64 @@ curl -s http://127.0.0.1:4040/api/tunnels | grep public_url
 El fichero `.osrm` no existe. Repite el paso 4 (procesado del mapa).
 
 ### Backend falla al importar módulos
-Asegúrate de que el entorno virtual está activado antes de arrancar:
+Activa el entorno virtual antes de arrancar:
 ```bash
 source venv/bin/activate
 uvicorn app.main:app --port 8000
 ```
 El `start.sh` lo hace automáticamente.
 
-### `docker compose up -d` falla: "permission denied"
-El usuario no está en el grupo `docker`. Ejecuta:
+### `docker compose up -d` falla: "permission denied" (Linux)
 ```bash
 sudo usermod -aG docker $USER
-# Cierra sesión y vuelve a entrar, o ejecuta:
 newgrp docker
 ```
 
+### Docker no funciona desde WSL2 (Windows)
+- Verifica que Docker Desktop está abierto
+- Ve a Docker Desktop → Settings → Resources → WSL Integration → activa Ubuntu
+- Reinicia Docker Desktop
+
+### WSL2 se queda sin memoria con el procesado OSRM
+WSL2 tiene un límite de RAM por defecto. Auméntalo creando `C:\Users\<usuario>\.wslconfig`:
+```ini
+[wsl2]
+memory=6GB
+processors=4
+```
+Reinicia WSL2: `wsl --shutdown` en PowerShell, luego abre Ubuntu de nuevo.
+
+### Flutter en Windows no conecta al backend en WSL2
+WSL2 tiene su propia IP de red, diferente de `127.0.0.1`. Obtén la IP:
+```bash
+# En terminal WSL2:
+hostname -I
+```
+Usa esa IP en `api_config.dart` durante el desarrollo. En producción (APK en móvil) usa siempre la URL de ngrok.
+
 ### ngrok: "authentication failed" o "ERR_NGROK_105"
-El auth token no está configurado:
 ```bash
 ngrok config add-authtoken <tu-token>
 ```
 
 ### La app Flutter no conecta al backend (APK en móvil)
 - Verifica que ngrok está corriendo: `./start.sh status`
-- Comprueba que `api_config.dart` tiene la URL de ngrok (no `127.0.0.1`)
-- Recuerda recompilar el APK después de cambiar la URL: `flutter build apk --release`
+- Comprueba que `api_config.dart` tiene la URL de ngrok (no `127.0.0.1` ni la IP de WSL2)
+- Recompila el APK después de cambiar la URL: `flutter build apk --release`
 
 ### VROOM responde 500 en optimizaciones con muchas paradas
-VROOM usa `network_mode: host` para comunicarse con OSRM. Verifica que los dos contenedores ven el puerto 5000:
+Verifica que los dos contenedores ven el puerto 5000:
 ```bash
 docker exec vroom-posadas curl -s http://localhost:5000/health
 ```
 
 ### El geocoding falla en muchas direcciones
-- El catálogo de calles OSM se descarga de Overpass API al primer uso y se cachea 7 días en `app/data/osm_streets.json`. Si hay problemas de red, puede fallar.
+- La caché OSM se descarga de Overpass API al primer uso y se guarda en `app/data/osm_streets.json`.
 - La caché de geocodificación está en `app/data/geocode_cache.json`. Si está corrupta, bórrala y se regenerará.
 
 ---
 
 ## Formato del CSV de entrada
-
-La app espera un CSV con exactamente estas tres columnas:
 
 ```
 cliente,direccion,ciudad
@@ -435,8 +558,8 @@ María López,Avenida Blas Infante 37,Posadas
 Requisitos:
 - Separador: coma (`,`)
 - Codificación: UTF-8
-- La columna `ciudad` debe ser `Posadas` (la geocodificación está limitada a esa área)
-- Consulta `data/paradas_limpio.csv` como referencia de formato correcto
+- La columna `ciudad` debe ser `Posadas`
+- Consulta `data_input/prueba1.csv` como referencia
 
 ---
 

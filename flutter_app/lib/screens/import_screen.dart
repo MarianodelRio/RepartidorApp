@@ -6,7 +6,7 @@ import 'dart:typed_data';
 import '../config/api_config.dart';
 import '../config/app_theme.dart';
 import '../models/csv_data.dart';
-import '../models/validation_v3_models.dart';
+import '../models/validation_models.dart';
 import '../services/api_service.dart';
 import '../services/csv_service.dart';
 import '../services/location_service.dart';
@@ -209,9 +209,9 @@ class _ImportScreenState extends State<ImportScreen> {
 
   void _pinStop(FailedStop stop) {
     final latCtrl = TextEditingController(
-        text: (-27.367).toStringAsFixed(6));
+        text: (37.802).toStringAsFixed(6));
     final lonCtrl = TextEditingController(
-        text: (-55.897).toStringAsFixed(6));
+        text: (-5.105).toStringAsFixed(6));
 
     showDialog(
       context: context,

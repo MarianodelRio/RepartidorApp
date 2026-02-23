@@ -142,12 +142,11 @@ def optimize_route(
             "computing_time_ms": data.get("summary", {}).get("computing_times", {}).get("solving", 0),
         }
 
+    except requests.exceptions.HTTPError as e:
+        print(f"[vroom] Error HTTP: {e.response.status_code} — {e.response.text[:300]}")
+        return None
     except Exception as e:
-        # Intentar loguear el body de la respuesta si es un HTTPError
-        try:
-            print(f"[vroom] Error HTTP: {e.response.status_code} — {e.response.text[:300]}")
-        except Exception:
-            print(f"[vroom] Error: {e}")
+        print(f"[vroom] Error: {e}")
         return None
 
 

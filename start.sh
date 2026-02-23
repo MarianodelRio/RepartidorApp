@@ -124,11 +124,14 @@ check_requirements() {
     check_command docker || all_ok=false
     # docker compose puede ser plugin (docker compose) o standalone (docker-compose)
     if docker compose version &>/dev/null; then
-        print_success "docker compose disponible"
+        print_success "docker compose disponible (plugin v2)"
+        COMPOSE_CMD="docker compose"
     elif command -v docker-compose &>/dev/null; then
-        print_success "docker-compose disponible"
+        print_success "docker-compose disponible (v1)"
+        COMPOSE_CMD="docker-compose"
     else
-        print_error "docker compose no está disponible (instala Docker Desktop o el plugin Compose)"
+        print_error "docker compose no está disponible"
+        print_info "Instala con: sudo apt install docker-compose-v2"
         all_ok=false
     fi
     check_command python3 || all_ok=false
@@ -168,7 +171,7 @@ start_docker_services() {
         print_warning "Servicios Docker ya están corriendo"
         docker ps --format "table {{.Names}}\t{{.Status}}" | grep -E "osrm|vroom"
     else
-        docker compose up -d
+        $COMPOSE_CMD up -d
         if [ $? -eq 0 ]; then
             print_success "Servicios Docker iniciados"
         else
@@ -357,7 +360,7 @@ stop_services() {
     # Detener Docker
     cd "$PROJECT_DIR"
     if docker ps --format '{{.Names}}' | grep -q "osrm-posadas\|vroom-posadas"; then
-        docker compose down
+        $COMPOSE_CMD down
         print_success "Servicios Docker detenidos"
     else
         print_info "Servicios Docker no estaban corriendo"

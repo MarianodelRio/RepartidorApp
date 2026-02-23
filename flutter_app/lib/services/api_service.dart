@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import '../models/csv_data.dart';
 import '../models/route_models.dart';
-import '../models/validation_v3_models.dart';
+import '../models/validation_models.dart';
 
 /// Servicio de comunicación con el backend FastAPI.
 class ApiService {
