@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'dart:typed_data';
 
@@ -13,6 +14,7 @@ import '../services/location_service.dart';
 import '../services/persistence_service.dart';
 import '../widgets/origin_selector.dart';
 import 'delivery_screen.dart';
+import 'map_picker_screen.dart';
 import 'result_screen.dart';
 
 // ═══════════════════════════════════════════
@@ -207,142 +209,15 @@ class _ImportScreenState extends State<ImportScreen> {
   //  Pin manual (situar en el mapa)
   // ═══════════════════════════════════════════
 
-  void _pinStop(FailedStop stop) {
-    final latCtrl = TextEditingController(
-        text: (37.805503).toStringAsFixed(6));
-    final lonCtrl = TextEditingController(
-        text: (-5.099805).toStringAsFixed(6));
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Icon(Icons.add_location_alt, color: AppColors.primary),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text('Situar en el mapa',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
-            ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.warningSurface,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.location_off,
-                        size: 16, color: AppColors.warning),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(stop.address,
-                          style: TextStyle(
-                              fontSize: 12, color: AppColors.textPrimary)),
-                    ),
-                  ],
-                ),
-              ),
-              if (stop.packageCount > 1) ...[
-                const SizedBox(height: 6),
-                Text(
-                    '${stop.packageCount} paquetes en esta dirección',
-                    style: TextStyle(
-                        fontSize: 11, color: AppColors.textSecondary)),
-              ],
-              const SizedBox(height: 16),
-              const Text('Introduce las coordenadas:',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-              const SizedBox(height: 10),
-              TextField(
-                controller: latCtrl,
-                keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true, signed: true),
-                decoration: InputDecoration(
-                  labelText: 'Latitud',
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                  prefixIcon: Icon(Icons.north,
-                      size: 18, color: AppColors.textSecondary),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: lonCtrl,
-                keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true, signed: true),
-                decoration: InputDecoration(
-                  labelText: 'Longitud',
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                  prefixIcon: Icon(Icons.east,
-                      size: 18, color: AppColors.textSecondary),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.primarySurface,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.lightbulb_outline,
-                        size: 14, color: AppColors.primary),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Busca la dirección en Google Maps, mantén pulsado y copia las coordenadas.',
-                        style:
-                            TextStyle(fontSize: 11, color: AppColors.primary),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () {
-              final parsedLat = double.tryParse(latCtrl.text);
-              final parsedLon = double.tryParse(lonCtrl.text);
-              if (parsedLat == null || parsedLon == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('Coordenadas inválidas'),
-                    backgroundColor: AppColors.error,
-                  ),
-                );
-                return;
-              }
-              Navigator.of(ctx).pop();
-              _applyPin(stop, parsedLat, parsedLon);
-            },
-            icon: const Icon(Icons.save, size: 18),
-            label: const Text('Guardar'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-          ),
-        ],
+  Future<void> _pinStop(FailedStop stop) async {
+    final result = await Navigator.of(context).push<LatLng>(
+      MaterialPageRoute(
+        builder: (_) => MapPickerScreen(address: stop.address),
       ),
     );
+    if (result != null) {
+      _applyPin(stop, result.latitude, result.longitude);
+    }
   }
 
   void _applyPin(FailedStop stop, double lat, double lon) {
