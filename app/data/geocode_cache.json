@@ -1,0 +1,1185 @@
+{
+  "calle santiago#30": {
+    "lat": 37.8021949,
+    "lon": -5.1098474,
+    "street": "Calle Santiago",
+    "number": "30",
+    "display_name": "Calle Santiago, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Santiago",
+    "osm_house_number": null
+  },
+  "calle fernandez de santiago#96": {
+    "lat": 37.8011903,
+    "lon": -5.1086066,
+    "street": "Calle Fernández de Santiago",
+    "number": "96",
+    "display_name": "Calle Fernandez de Santiago, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Fernandez de Santiago",
+    "osm_house_number": null
+  },
+  "calle rosalia de castro#4": {
+    "lat": 37.8005381,
+    "lon": -5.1011199,
+    "street": "Calle Rosalía de Castro",
+    "number": "4",
+    "display_name": "Calle Rosalía de Castro, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Rosalía de Castro",
+    "osm_house_number": null
+  },
+  "calle gaitan#24": {
+    "lat": 37.8021293,
+    "lon": -5.1057187,
+    "street": "Calle Gaitán",
+    "number": "24",
+    "display_name": "Calle Gaitán, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Gaitán",
+    "osm_house_number": null
+  },
+  "calle gran capitan#7": {
+    "lat": 37.8021357,
+    "lon": -5.1131002,
+    "street": "Calle Gran Capitán",
+    "number": "7",
+    "display_name": "Calle Gran Capitán, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Gran Capitán",
+    "osm_house_number": null
+  },
+  "calle jose aumente baena#6": {
+    "lat": 37.806202,
+    "lon": -5.1012977,
+    "street": "Calle José Aumente Baena",
+    "number": "6",
+    "display_name": "Calle José Aumente Baena, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle José Aumente Baena",
+    "osm_house_number": null
+  },
+  "calle callejon de jesus#1": {
+    "lat": 37.8020817,
+    "lon": -5.1008295,
+    "street": "Calle Callejon de Jesús",
+    "number": "1",
+    "display_name": "Calle Callejón de Jesús, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Callejón de Jesús",
+    "osm_house_number": null
+  },
+  "carretera cordoba palma del rio#31": {
+    "lat": 37.8141032,
+    "lon": -5.0739404,
+    "street": "Carretera Córdoba Palma del Río",
+    "number": "31",
+    "display_name": "Carretera de Córdoba a Lora del Río, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Carretera de Córdoba a Lora del Río",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Carretera de Córdoba a Lora del Río"
+  },
+  "calle huerta pinero#9": {
+    "lat": 37.8032476,
+    "lon": -5.1099288,
+    "street": "Calle Huerta Piñero",
+    "number": "9",
+    "display_name": "Calle Huerta Piñero, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Huerta Piñero",
+    "osm_house_number": null
+  },
+  "calle dona marina#2": {
+    "lat": 37.8000601,
+    "lon": -5.1057554,
+    "street": "Calle Doña Marina",
+    "number": "2",
+    "display_name": "Calle Doña Marina, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Doña Marina",
+    "osm_house_number": null
+  },
+  "calle fernando iii el santo#2": {
+    "lat": 37.8031769,
+    "lon": -5.1132463,
+    "street": "Calle Fernando III el Santo",
+    "number": "2",
+    "display_name": "Calle Fernando III el Santo, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Fernando III el Santo",
+    "osm_house_number": null
+  },
+  "calle gaitan#43": {
+    "lat": 37.8021293,
+    "lon": -5.1057187,
+    "street": "Calle Gaitán",
+    "number": "43",
+    "display_name": "Calle Gaitán, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Gaitán",
+    "osm_house_number": null
+  },
+  "calle gaitan#68": {
+    "lat": 37.8021293,
+    "lon": -5.1057187,
+    "street": "Calle Gaitán",
+    "number": "68",
+    "display_name": "Calle Gaitán, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Gaitán",
+    "osm_house_number": null
+  },
+  "calle maria isabel salas#1": {
+    "lat": 37.8011834,
+    "lon": -5.1060521,
+    "street": "Calle María Isabel Salas",
+    "number": "1",
+    "display_name": "Calle María Isabel Salas, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle María Isabel Salas",
+    "osm_house_number": null
+  },
+  "calle maestro musico rafael siles#": {
+    "lat": 37.8012225,
+    "lon": -5.1009405,
+    "street": "Calle Maestro Músico Rafael Siles",
+    "number": null,
+    "display_name": "Calle del Maestro Músico Rafael Siles Rubio, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle del Maestro Músico Rafael Siles Rubio",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle del Maestro Músico Rafael Siles Rubio"
+  },
+  "calle maestro musico rafael siles rubio#12": {
+    "lat": 37.8012225,
+    "lon": -5.1009405,
+    "street": "Calle Maestro Músico Rafael Siles Rubio",
+    "number": "12",
+    "display_name": "Calle del Maestro Músico Rafael Siles Rubio, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle del Maestro Músico Rafael Siles Rubio",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle del Maestro Músico Rafael Siles Rubio"
+  },
+  "calle antonio gala#3": {
+    "lat": 37.8015595,
+    "lon": -5.1042093,
+    "street": "Calle Antonio Gala",
+    "number": "3",
+    "display_name": "Calle Antonio Gala, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Antonio Gala",
+    "osm_house_number": null
+  },
+  "calle alejandro goicoechea#": {
+    "lat": 37.8095235,
+    "lon": -5.1042703,
+    "street": "Calle Alejandro Goicoechea",
+    "number": null,
+    "display_name": "Calle Alejandro Goicoechea, Polígono Industrial La Sierrezuela, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Alejandro Goicoechea",
+    "osm_house_number": null
+  },
+  "calle mesones#": {
+    "lat": 37.8017225,
+    "lon": -5.1074858,
+    "street": "Calle Mesones",
+    "number": null,
+    "display_name": "Calle Mesones, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Mesones",
+    "osm_house_number": null
+  },
+  "avenida de blas infante#37": {
+    "lat": 37.8005024,
+    "lon": -5.1065697,
+    "street": "Avenida de Blas Infante",
+    "number": "37",
+    "display_name": "Avenida de Blas Infante, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Blas Infante",
+    "osm_house_number": null
+  },
+  "avenida de andalucia#26": {
+    "lat": 37.8032393,
+    "lon": -5.1009297,
+    "street": "Avenida de Andalucía",
+    "number": "26",
+    "display_name": "Avenida de Andalucía, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Andalucía",
+    "osm_house_number": null
+  },
+  "calle gran capitan#8": {
+    "lat": 37.8021357,
+    "lon": -5.1131002,
+    "street": "Calle Gran Capitán",
+    "number": "8",
+    "display_name": "Calle Gran Capitán, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Gran Capitán",
+    "osm_house_number": null
+  },
+  "avenida de maria auxiliadora#": {
+    "lat": 37.8063799,
+    "lon": -5.0975044,
+    "street": "Avenida de María Auxiliadora",
+    "number": null,
+    "display_name": "Avenida de María Auxiliadora, Mohedas, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de María Auxiliadora",
+    "osm_house_number": null
+  },
+  "avenida de andalucia#": {
+    "lat": 37.8032393,
+    "lon": -5.1009297,
+    "street": "Avenida de Andalucía",
+    "number": null,
+    "display_name": "Avenida de Andalucía, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Andalucía",
+    "osm_house_number": null
+  },
+  "calle gaitan#26": {
+    "lat": 37.8021293,
+    "lon": -5.1057187,
+    "street": "Calle Gaitán",
+    "number": "26",
+    "display_name": "Calle Gaitán, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Gaitán",
+    "osm_house_number": null
+  },
+  "calle santiago#11": {
+    "lat": 37.8021489,
+    "lon": -5.1094594,
+    "street": "Calle Santiago",
+    "number": "11",
+    "display_name": "Calle Santiago, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Santiago",
+    "osm_house_number": null
+  },
+  "calle gaitan#37": {
+    "lat": 37.8021293,
+    "lon": -5.1057187,
+    "street": "Calle Gaitán",
+    "number": "37",
+    "display_name": "Calle Gaitán, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Gaitán",
+    "osm_house_number": null
+  },
+  "calle isaac peral#73": {
+    "lat": 37.807107,
+    "lon": -5.1057198,
+    "street": "Calle Isaac Peral",
+    "number": "73",
+    "display_name": "Calle Isaac Peral, Polígono Industrial La Sierrezuela, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Isaac Peral",
+    "osm_house_number": null
+  },
+  "calle antonio vicente mosquete#14": {
+    "lat": 37.801555,
+    "lon": -5.1009899,
+    "street": "Calle Antonio Vicente Mosquete",
+    "number": "14",
+    "display_name": "Calle Antonio Vicente Mosquete, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Antonio Vicente Mosquete",
+    "osm_house_number": null
+  },
+  "calle jose maria garcia benavides#6": {
+    "lat": 37.8016284,
+    "lon": -5.1087073,
+    "street": "Calle José María García Benavides",
+    "number": "6",
+    "display_name": "Calle José María García Benavides, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle José María García Benavides",
+    "osm_house_number": null
+  },
+  "calle palma del rio#3": {
+    "lat": 37.8010444,
+    "lon": -5.102018,
+    "street": "Calle Palma del Río",
+    "number": "3",
+    "display_name": "Calle Palma del Río, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Palma del Río",
+    "osm_house_number": null
+  },
+  "calle almeria#11": {
+    "lat": 37.8002619,
+    "lon": -5.1045172,
+    "street": "Calle Almería",
+    "number": "11",
+    "display_name": "Calle Almería, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Almería",
+    "osm_house_number": null
+  },
+  "calle fernandez de santiago#80": {
+    "lat": 37.8012217,
+    "lon": -5.1085069,
+    "street": "Calle Fernández de Santiago",
+    "number": "80",
+    "display_name": "Calle Fernandez de Santiago, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Fernandez de Santiago",
+    "osm_house_number": null
+  },
+  "calle alcalde rossi reyes#25": {
+    "lat": 37.8016619,
+    "lon": -5.1139872,
+    "street": "Calle Alcalde Rossi Reyes",
+    "number": "25",
+    "display_name": "Calle Alcalde Rossi Reyes, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Alcalde Rossi Reyes",
+    "osm_house_number": null
+  },
+  "calle guadalcazar#12": {
+    "lat": 37.8009197,
+    "lon": -5.1029447,
+    "street": "Calle Guadalcázar",
+    "number": "12",
+    "display_name": "Calle Guadalcázar, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Guadalcázar",
+    "osm_house_number": null
+  },
+  "calle jose maria garcia benavides#21": {
+    "lat": 37.8016284,
+    "lon": -5.1087073,
+    "street": "Calle José María García Benavides",
+    "number": "21",
+    "display_name": "Calle José María García Benavides, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle José María García Benavides",
+    "osm_house_number": null
+  },
+  "calle pablo neruda#2": {
+    "lat": 37.8018115,
+    "lon": -5.1065084,
+    "street": "Calle Pablo Neruda",
+    "number": "2",
+    "display_name": "Calle Pablo Neruda, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Pablo Neruda",
+    "osm_house_number": null
+  },
+  "avenida de andalucia#18": {
+    "lat": 37.8055969,
+    "lon": -5.0999615,
+    "street": "Avenida de Andalucía",
+    "number": "18",
+    "display_name": "Avenida de Andalucía, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Andalucía",
+    "osm_house_number": null
+  },
+  "calle guadalcazar#2": {
+    "lat": 37.8009217,
+    "lon": -5.1029263,
+    "street": "Calle Guadalcázar",
+    "number": "2",
+    "display_name": "Calle Guadalcázar, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Guadalcázar",
+    "osm_house_number": null
+  },
+  "calle gaitan#29": {
+    "lat": 37.8021293,
+    "lon": -5.1057187,
+    "street": "Calle Gaitán",
+    "number": "29",
+    "display_name": "Calle Gaitán, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Gaitán",
+    "osm_house_number": null
+  },
+  "calle triana#22": {
+    "lat": 37.8019418,
+    "lon": -5.1095989,
+    "street": "Calle Triana",
+    "number": "22",
+    "display_name": "Calle Triana, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Triana",
+    "osm_house_number": null
+  },
+  "calle teodoro dominguez#1": {
+    "lat": 37.7999306,
+    "lon": -5.106223,
+    "street": "Calle Teodoro Domínguez",
+    "number": "1",
+    "display_name": "Calle Teodoro Domínguez, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Teodoro Domínguez",
+    "osm_house_number": null
+  },
+  "calle los hornos#23": {
+    "lat": 37.8001019,
+    "lon": -5.1050808,
+    "street": "Calle Los Hornos",
+    "number": "23",
+    "display_name": "Calle Hornos, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Hornos",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Hornos"
+  },
+  "avenida soldevilla vazquez#38": {
+    "lat": 37.8033533,
+    "lon": -5.1047996,
+    "street": "Avenida Soldevilla Vázquez",
+    "number": "38",
+    "display_name": "Avenida de Soldevilla Vázquez, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Soldevilla Vázquez",
+    "osm_house_number": null
+  },
+  "calle poeta gabriel celaya#15": {
+    "lat": 37.8013112,
+    "lon": -5.1172137,
+    "street": "Calle Poeta Gabriel Celaya",
+    "number": "15",
+    "display_name": "Calle Poeta Gabriel Celaya, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Poeta Gabriel Celaya",
+    "osm_house_number": null
+  },
+  "calle isaac albeniz#12": {
+    "lat": 37.8032111,
+    "lon": -5.108344,
+    "street": "Calle Isaac Albéniz",
+    "number": "12",
+    "display_name": "Calle Isaac Albéniz, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Isaac Albéniz",
+    "osm_house_number": null
+  },
+  "calle el alamo#3": {
+    "lat": 37.8021866,
+    "lon": -5.1163709,
+    "street": "Calle El Álamo",
+    "number": "3",
+    "display_name": "Calle Álamo, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Álamo",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Álamo"
+  },
+  "calle gustavo adolfo becquer#1": {
+    "lat": 37.8025229,
+    "lon": -5.1094076,
+    "street": "Calle Gustavo Adolfo Bécquer",
+    "number": "1",
+    "display_name": "Calle Gustavo Adolfo Becquer, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Gustavo Adolfo Becquer",
+    "osm_house_number": null
+  },
+  "avenida soldevilla vazquez#17": {
+    "lat": 37.8033533,
+    "lon": -5.1047996,
+    "street": "Avenida Soldevilla Vázquez",
+    "number": "17",
+    "display_name": "Avenida de Soldevilla Vázquez, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Soldevilla Vázquez",
+    "osm_house_number": null
+  },
+  "calle joaquin turina#4": {
+    "lat": 37.8032037,
+    "lon": -5.107995,
+    "street": "Calle Joaquín Turina",
+    "number": "4",
+    "display_name": "Calle Joaquín Turina, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Joaquín Turina",
+    "osm_house_number": null
+  },
+  "calle del emigrante#19": {
+    "lat": 37.8013378,
+    "lon": -5.116384,
+    "street": "Calle del Emigrante",
+    "number": "19",
+    "display_name": "Calle Emigrante, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Emigrante",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Emigrante"
+  },
+  "calle la villa#17": {
+    "lat": 37.8015779,
+    "lon": -5.1100462,
+    "street": "Calle La Villa",
+    "number": "17",
+    "display_name": "Calle Lonja de la Iglesia, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Lonja de la Iglesia",
+    "osm_house_number": null
+  },
+  "calle pintor pablo picasso#8": {
+    "lat": 37.8027713,
+    "lon": -5.1045085,
+    "street": "Calle Pintor Pablo Picasso",
+    "number": "8",
+    "display_name": "Calle Pintor Pablo Picasso, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Pintor Pablo Picasso",
+    "osm_house_number": null
+  },
+  "avenida soldevilla vazquez#15": {
+    "lat": 37.8033533,
+    "lon": -5.1047996,
+    "street": "Avenida Soldevilla Vázquez",
+    "number": "15",
+    "display_name": "Avenida de Soldevilla Vázquez, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Soldevilla Vázquez",
+    "osm_house_number": null
+  },
+  "calle profesor tierno galvan#4": {
+    "lat": 37.8013846,
+    "lon": -5.1163198,
+    "street": "Calle Profesor Tierno Galván",
+    "number": "4",
+    "display_name": "Calle Profesor Tierno Galván, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Profesor Tierno Galván",
+    "osm_house_number": null
+  },
+  "calle las adelfas#2": {
+    "lat": 37.8010677,
+    "lon": -5.1158861,
+    "street": "Calle Las Adelfas",
+    "number": "2",
+    "display_name": "Calle Adelfas, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Adelfas",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Adelfas"
+  },
+  "calle dona elvira serrano#2": {
+    "lat": 37.8035622,
+    "lon": -5.1043553,
+    "street": "Calle Doña Elvira Serrano",
+    "number": "2",
+    "display_name": "Calle Doña Elvira Serrano, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Doña Elvira Serrano",
+    "osm_house_number": null
+  },
+  "calle cordoba#19": {
+    "lat": 37.8019499,
+    "lon": -5.1123545,
+    "street": "Calle Córdoba",
+    "number": "19",
+    "display_name": "Calle Córdoba, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Córdoba",
+    "osm_house_number": null
+  },
+  "calle gustavo adolfo becquer#6": {
+    "lat": 37.8025229,
+    "lon": -5.1094076,
+    "street": "Calle Gustavo Adolfo Bécquer",
+    "number": "6",
+    "display_name": "Calle Gustavo Adolfo Becquer, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Gustavo Adolfo Becquer",
+    "osm_house_number": null
+  },
+  "calle pintor juan miro#4": {
+    "lat": 37.8029514,
+    "lon": -5.1042447,
+    "street": "Calle Pintor Juan Miró",
+    "number": "4",
+    "display_name": "Calle Pintor Juan Miró, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Pintor Juan Miró",
+    "osm_house_number": null
+  },
+  "calle la villa#7": {
+    "lat": 37.8015811,
+    "lon": -5.1100472,
+    "street": "Calle La Villa",
+    "number": "7",
+    "display_name": "Calle Lonja de la Iglesia, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Lonja de la Iglesia",
+    "osm_house_number": null
+  },
+  "pasaje ciudad de rubi#5": {
+    "lat": 37.7999907,
+    "lon": -5.1071438,
+    "street": "Pasaje Ciudad de Rubí",
+    "number": "5",
+    "display_name": "Pasaje Ciudad de Rubí, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Pasaje Ciudad de Rubí",
+    "osm_house_number": null
+  },
+  "avenida de blas infante#78": {
+    "lat": 37.8005024,
+    "lon": -5.1065697,
+    "street": "Avenida de Blas Infante",
+    "number": "78",
+    "display_name": "Avenida de Blas Infante, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Blas Infante",
+    "osm_house_number": null
+  },
+  "calle los naranjos#5": {
+    "lat": 37.7930444,
+    "lon": -5.1431485,
+    "street": "Calle Los Naranjos",
+    "number": "5",
+    "display_name": "Calle Naranjos, Rivero de Posadas, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Naranjos",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Naranjos"
+  },
+  "calle gaitan#28": {
+    "lat": 37.8021293,
+    "lon": -5.1057187,
+    "street": "Calle Gaitán",
+    "number": "28",
+    "display_name": "Calle Gaitán, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Gaitán",
+    "osm_house_number": null
+  },
+  "calle julio romero de torres#17": {
+    "lat": 37.8015672,
+    "lon": -5.1145965,
+    "street": "Calle Julio Romero de Torres",
+    "number": "17",
+    "display_name": "Calle Julio Romero de Torres, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Julio Romero de Torres",
+    "osm_house_number": null
+  },
+  "rosalia de castro#4": {
+    "lat": 37.8005381,
+    "lon": -5.1011199,
+    "street": "Rosalía de Castro",
+    "number": "4",
+    "display_name": "Calle Rosalía de Castro, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Rosalía de Castro",
+    "osm_house_number": null
+  },
+  "calle dona marina#2b": {
+    "lat": 37.8000601,
+    "lon": -5.1057554,
+    "street": "Calle Doña Marina",
+    "number": "2b",
+    "display_name": "Calle Doña Marina, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Doña Marina",
+    "osm_house_number": null
+  },
+  "calle fernandez de santiago ero#96": {
+    "lat": 37.8012217,
+    "lon": -5.1085069,
+    "street": "Calle Fernández de Santiago ero",
+    "number": "96",
+    "display_name": "Calle Fernandez de Santiago, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Fernandez de Santiago",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Fernandez de Santiago"
+  },
+  "calle gaitan 43 local#": {
+    "lat": 37.8021293,
+    "lon": -5.1057187,
+    "street": "Calle Gaitán 43 LOCAL",
+    "number": null,
+    "display_name": "Calle Gaitán, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Gaitán",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Gaitán"
+  },
+  "maria isabel salas#1": {
+    "lat": 37.8011834,
+    "lon": -5.1060521,
+    "street": "María Isabel Salas",
+    "number": "1",
+    "display_name": "Calle María Isabel Salas, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle María Isabel Salas",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle María Isabel Salas"
+  },
+  "calle del maestro musico rafael#": {
+    "lat": 37.8012225,
+    "lon": -5.1009405,
+    "street": "CALLE DEL MAESTRO MÚSICO RAFAEL",
+    "number": null,
+    "display_name": "Calle del Maestro Músico Rafael Siles Rubio, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle del Maestro Músico Rafael Siles Rubio",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle del Maestro Músico Rafael Siles Rubio"
+  },
+  "calle de antonio gala, 3 1ob#": {
+    "lat": 37.8015595,
+    "lon": -5.1042093,
+    "street": "Calle de Antonio Gala, 3 1ºB",
+    "number": null,
+    "display_name": "Calle Antonio Gala, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Antonio Gala",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Antonio Gala"
+  },
+  "blas infante#37b": {
+    "lat": 37.8005024,
+    "lon": -5.1065697,
+    "street": "Blas Infante",
+    "number": "37b",
+    "display_name": "Avenida de Blas Infante, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Blas Infante",
+    "osm_house_number": null
+  },
+  "av. de andalucia#26": {
+    "lat": 37.8055969,
+    "lon": -5.0999615,
+    "street": "Av. de Andalucía",
+    "number": "26",
+    "display_name": "Avenida de Andalucía, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Andalucía",
+    "osm_house_number": null
+  },
+  "calle duque de rivas 1 posadas#1": {
+    "lat": 37.8016829,
+    "lon": -5.1143276,
+    "street": "Calle duque de rivas 1 posadas",
+    "number": "1",
+    "display_name": "Calle Duque de Rivas, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Duque de Rivas",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Duque de Rivas"
+  },
+  "maria auxiliadora#sn": {
+    "lat": 37.8063799,
+    "lon": -5.0975044,
+    "street": "María auxiliadora",
+    "number": "sn",
+    "display_name": "Avenida de María Auxiliadora, Mohedas, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de María Auxiliadora",
+    "osm_house_number": null
+  },
+  "avda andalucia#sn": {
+    "lat": 37.8055969,
+    "lon": -5.0999615,
+    "street": "AVDA Andalucía",
+    "number": "sn",
+    "display_name": "Avenida de Andalucía, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Andalucía",
+    "osm_house_number": null
+  },
+  "avenida blas infante 72 1 planta#": {
+    "lat": 37.8005591,
+    "lon": -5.1064728,
+    "street": "Avenida Blas Infante 72 1 planta",
+    "number": null,
+    "display_name": "Avenida de Blas Infante, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Blas Infante",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Avenida de Blas Infante"
+  },
+  "calle seneca#2": {
+    "lat": 37.8029423,
+    "lon": -5.113052,
+    "street": "Calle Séneca",
+    "number": "2",
+    "display_name": "Calle Séneca, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Séneca",
+    "osm_house_number": null
+  },
+  "calle de antonio vicente mosquete#14": {
+    "lat": 37.801555,
+    "lon": -5.1009899,
+    "street": "Calle de Antonio Vicente Mosquete",
+    "number": "14",
+    "display_name": "Calle Antonio Vicente Mosquete, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Antonio Vicente Mosquete",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Antonio Vicente Mosquete"
+  },
+  "calle jose m garcia benavides, 6 casa#": {
+    "lat": 37.8016284,
+    "lon": -5.1087073,
+    "street": "Calle Jose M Garcia Benavides, 6 Casa",
+    "number": null,
+    "display_name": "Calle José María García Benavides, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle José María García Benavides",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle José María García Benavides"
+  },
+  "calle de la palma del rio n#3": {
+    "lat": 37.7913319,
+    "lon": -5.1426774,
+    "street": "Calle de la Palma del Río n",
+    "number": "3",
+    "display_name": "Calle Palma, Rivero de Posadas, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Palma",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Palma"
+  },
+  "almeria#11a": {
+    "lat": 37.8002619,
+    "lon": -5.1045172,
+    "street": "Almería",
+    "number": "11a",
+    "display_name": "Calle Almería, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Almería",
+    "osm_house_number": null
+  },
+  "fernandez de santiago#80": {
+    "lat": 37.8012217,
+    "lon": -5.1085069,
+    "street": "Fernández de Santiago",
+    "number": "80",
+    "display_name": "Calle Fernandez de Santiago, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Fernandez de Santiago",
+    "osm_house_number": null
+  },
+  "alcade rossi reyes n25 n25#": {
+    "lat": 37.8016619,
+    "lon": -5.1139872,
+    "street": "Alcade Rossi Reyes n25 n25",
+    "number": null,
+    "display_name": "Calle Alcalde Rossi Reyes, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Alcalde Rossi Reyes",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Alcalde Rossi Reyes"
+  },
+  "calle jose maria garcia benavides n21#": {
+    "lat": 37.8015201,
+    "lon": -5.1087164,
+    "street": "Calle José María García Benavides N21",
+    "number": null,
+    "display_name": "Calle José María García Benavides, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle José María García Benavides",
+    "osm_house_number": null
+  },
+  "calle guadalcazar 2.#": {
+    "lat": 37.8009217,
+    "lon": -5.1029263,
+    "street": "Calle Guadalcázar 2.",
+    "number": null,
+    "display_name": "Calle Guadalcázar, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Guadalcázar",
+    "osm_house_number": null
+  },
+  "calle dona marina ero 2-1#": {
+    "lat": 37.8001932,
+    "lon": -5.1057832,
+    "street": "Calle Doña Marina ero 2-1",
+    "number": null,
+    "display_name": "Calle Doña Marina, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Doña Marina",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Doña Marina"
+  },
+  "calle gaitan 29 - oficina de mapfre#": {
+    "lat": 37.8021293,
+    "lon": -5.1057187,
+    "street": "Calle Gaitán 29 - OFICINA DE MAPFRE",
+    "number": null,
+    "display_name": "Calle Gaitán, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Gaitán",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Gaitán"
+  },
+  "avenida blas infante 95 casa#": {
+    "lat": 37.8005024,
+    "lon": -5.1065697,
+    "street": "Avenida Blas Infante 95 Casa",
+    "number": null,
+    "display_name": "Avenida de Blas Infante, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Blas Infante",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Avenida de Blas Infante"
+  },
+  "avenida maria auxiliadora s, n (bar#": {
+    "lat": 37.8063799,
+    "lon": -5.0975044,
+    "street": "AVENIDA MARÍA AUXILIADORA S, N (BAR",
+    "number": null,
+    "display_name": "Avenida de María Auxiliadora, Mohedas, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de María Auxiliadora",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Avenida de María Auxiliadora"
+  },
+  "calle teodoro dominguez1a#": {
+    "lat": 37.7999306,
+    "lon": -5.106223,
+    "street": "Calle teodoro dominguez1a",
+    "number": null,
+    "display_name": "Calle Teodoro Domínguez, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Teodoro Domínguez",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Teodoro Domínguez"
+  },
+  "av. soldevilla vazquez 38#1d": {
+    "lat": 37.8033533,
+    "lon": -5.1047996,
+    "street": "Av. Soldevilla Vazquez 38",
+    "number": "1d",
+    "display_name": "Avenida de Soldevilla Vázquez, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Soldevilla Vázquez",
+    "osm_house_number": null
+  },
+  "calle poeta gabriel zelaya n15 calle poeta#": {
+    "lat": 37.8016415,
+    "lon": -5.1172314,
+    "street": "Calle Poeta Gabriel Zelaya n15 Calle Poeta",
+    "number": null,
+    "display_name": "Calle Poeta Gabriel Celaya, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Poeta Gabriel Celaya",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Poeta Gabriel Celaya"
+  },
+  "calle de miguel hernandez 7#2b": {
+    "lat": 37.8027832,
+    "lon": -5.1054773,
+    "street": "Calle de Miguel Hernandez 7",
+    "number": "2b",
+    "display_name": "Calle Miguel Hernández, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Miguel Hernández",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Miguel Hernández"
+  },
+  "isaac albeniz#12-d": {
+    "lat": 37.8032111,
+    "lon": -5.108344,
+    "street": "isaac albeniz",
+    "number": "12-d",
+    "display_name": "Calle Isaac Albéniz, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Isaac Albéniz",
+    "osm_house_number": null
+  },
+  "calle alamo#3": {
+    "lat": 37.8020024,
+    "lon": -5.1163586,
+    "street": "Calle Alamo",
+    "number": "3",
+    "display_name": "Calle Álamo, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Álamo",
+    "osm_house_number": null
+  },
+  "calle la villa n17#": {
+    "lat": 37.8028702,
+    "lon": -5.107283,
+    "street": "calle La Villa n17",
+    "number": null,
+    "display_name": "Calle Villa, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Villa",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Villa"
+  },
+  "calle del pintor pablo picasso#8": {
+    "lat": 37.8027713,
+    "lon": -5.1045085,
+    "street": "Calle del Pintor Pablo Picasso",
+    "number": "8",
+    "display_name": "Calle Pintor Pablo Picasso, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Pintor Pablo Picasso",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Pintor Pablo Picasso"
+  },
+  "avenida soldevilla vazquez 15 1o b#": {
+    "lat": 37.8033533,
+    "lon": -5.1047996,
+    "street": "AVENIDA SOLDEVILLA VÁZQUEZ 15 1º B",
+    "number": null,
+    "display_name": "Avenida de Soldevilla Vázquez, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Soldevilla Vázquez",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Avenida de Soldevilla Vázquez"
+  },
+  "-, profesor tierno galvan#4": {
+    "lat": 37.80134,
+    "lon": -5.116317,
+    "street": "-, Profesor tierno Galván",
+    "number": "4",
+    "display_name": "Calle Profesor Tierno Galván, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Profesor Tierno Galván",
+    "osm_house_number": null
+  },
+  "calledona elvira serrano#2": {
+    "lat": 37.8035622,
+    "lon": -5.1043553,
+    "street": "CalleDona Elvira Serrano",
+    "number": "2",
+    "display_name": "Calle Doña Elvira Serrano, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Doña Elvira Serrano",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Doña Elvira Serrano"
+  },
+  "gustavo adofo becquer 6 bajo1#": {
+    "lat": 37.8025229,
+    "lon": -5.1094076,
+    "street": "Gustavo adofo becquer 6 Bajo1",
+    "number": null,
+    "display_name": "Calle Gustavo Adolfo Becquer, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Gustavo Adolfo Becquer",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Gustavo Adolfo Becquer"
+  },
+  "calle del pintor juan miro n4#1a": {
+    "lat": 37.8029514,
+    "lon": -5.1042447,
+    "street": "Calle DEL Pintor Juan Miró N4",
+    "number": "1a",
+    "display_name": "Calle Pintor Juan Miró, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Pintor Juan Miró",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Pintor Juan Miró"
+  },
+  "calle la villa 7 pta izq#": {
+    "lat": 37.8028702,
+    "lon": -5.107283,
+    "street": "CALLE LA VILLA 7 PTA IZQ",
+    "number": null,
+    "display_name": "Calle Villa, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Villa",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Villa"
+  },
+  "avenida blas infante78#": {
+    "lat": 37.8005591,
+    "lon": -5.1064728,
+    "street": "Avenida Blas Infante78",
+    "number": null,
+    "display_name": "Avenida de Blas Infante, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Blas Infante",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Avenida de Blas Infante"
+  },
+  "los naranjos#5": {
+    "lat": 37.7930444,
+    "lon": -5.1431485,
+    "street": "Los naranjos",
+    "number": "5",
+    "display_name": "Calle Naranjos, Rivero de Posadas, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Naranjos",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Naranjos"
+  },
+  "c gaitan#28": {
+    "lat": 37.8021483,
+    "lon": -5.1054018,
+    "street": "C Gaitán",
+    "number": "28",
+    "display_name": "Calle Gaitán, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Gaitán",
+    "osm_house_number": null
+  },
+  "calle de julio romero de torres#17": {
+    "lat": 37.8015672,
+    "lon": -5.1145965,
+    "street": "Calle de Julio Romero de Torres",
+    "number": "17",
+    "display_name": "Calle Julio Romero de Torres, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Julio Romero de Torres",
+    "osm_house_number": null
+  },
+  "calle de antonio gala#3": {
+    "lat": 37.8015595,
+    "lon": -5.1042093,
+    "street": "Calle de Antonio Gala",
+    "number": "3",
+    "display_name": "Calle Antonio Gala, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Antonio Gala",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Antonio Gala"
+  },
+  "calle el almendro#6": {
+    "lat": 37.8010823,
+    "lon": -5.1154465,
+    "street": "Calle El Almendro",
+    "number": "6",
+    "display_name": "Calle Almendro, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Almendro",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Almendro"
+  },
+  "calle duque de rivas#1": {
+    "lat": 37.8015568,
+    "lon": -5.1142506,
+    "street": "Calle Duque de Rivas",
+    "number": "1",
+    "display_name": "Calle Duque de Rivas, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Duque de Rivas",
+    "osm_house_number": null
+  },
+  "avenida blas infante#72": {
+    "lat": 37.8005024,
+    "lon": -5.1065697,
+    "street": "Avenida Blas Infante",
+    "number": "72",
+    "display_name": "Avenida de Blas Infante, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Blas Infante",
+    "osm_house_number": null
+  },
+  "calle jose m garcia benavides#6": {
+    "lat": 37.8016284,
+    "lon": -5.1087073,
+    "street": "Calle Jose M Garcia Benavides",
+    "number": "6",
+    "display_name": "Calle José María García Benavides, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle José María García Benavides",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle José María García Benavides"
+  },
+  "calle de la palma del rio#3": {
+    "lat": 37.7913319,
+    "lon": -5.1426774,
+    "street": "Calle de la Palma del Río",
+    "number": "3",
+    "display_name": "Calle Palma, Rivero de Posadas, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Palma",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Palma"
+  },
+  "calle dona marina#2-1": {
+    "lat": 37.8000601,
+    "lon": -5.1057554,
+    "street": "Calle Doña Marina",
+    "number": "2-1",
+    "display_name": "Calle Doña Marina, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Doña Marina",
+    "osm_house_number": null
+  },
+  "avenida blas infante#95": {
+    "lat": 37.8005024,
+    "lon": -5.1065697,
+    "street": "Avenida Blas Infante",
+    "number": "95",
+    "display_name": "Avenida de Blas Infante, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Blas Infante",
+    "osm_house_number": null
+  },
+  "avenida maria auxiliadora#sn": {
+    "lat": 37.8063799,
+    "lon": -5.0975044,
+    "street": "Avenida María Auxiliadora",
+    "number": "sn",
+    "display_name": "Avenida de María Auxiliadora, Mohedas, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de María Auxiliadora",
+    "osm_house_number": null
+  },
+  "calle miguel hernandez#7": {
+    "lat": 37.8027832,
+    "lon": -5.1054773,
+    "street": "Calle Miguel Hernández",
+    "number": "7",
+    "display_name": "Calle Miguel Hernández, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Miguel Hernández",
+    "osm_house_number": null
+  },
+  "avda. soldevilla vazquez#17": {
+    "lat": 37.8033533,
+    "lon": -5.1047996,
+    "street": "Avda. Soldevilla Vazquez",
+    "number": "17",
+    "display_name": "Avenida de Soldevilla Vázquez, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Soldevilla Vázquez",
+    "osm_house_number": null
+  },
+  "calle once#4": {
+    "lat": 37.8028754,
+    "lon": -5.105684,
+    "street": "Calle Once",
+    "number": "4",
+    "display_name": "Calle Once, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Once",
+    "osm_house_number": null
+  },
+  "calle once#1": {
+    "lat": 37.8028754,
+    "lon": -5.105684,
+    "street": "Calle Once",
+    "number": "1",
+    "display_name": "Calle Once, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Once",
+    "osm_house_number": null
+  },
+  "calle adelfas#2": {
+    "lat": 37.8010677,
+    "lon": -5.1158861,
+    "street": "Calle Adelfas",
+    "number": "2",
+    "display_name": "Calle Adelfas, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Adelfas",
+    "osm_house_number": null
+  },
+  "gustavo adofo becquer#6": {
+    "lat": 37.8025229,
+    "lon": -5.1094076,
+    "street": "Gustavo adofo becquer",
+    "number": "6",
+    "display_name": "Calle Gustavo Adolfo Becquer, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Gustavo Adolfo Becquer",
+    "osm_house_number": null,
+    "fuzzy_corrected_to": "Calle Gustavo Adolfo Becquer"
+  },
+  "avenida blas infante#78": {
+    "lat": 37.8005024,
+    "lon": -5.1065697,
+    "street": "Avenida Blas Infante",
+    "number": "78",
+    "display_name": "Avenida de Blas Infante, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Avenida de Blas Infante",
+    "osm_house_number": null
+  },
+  "calle guadalbaida#2": {
+    "lat": 37.8000065,
+    "lon": -5.1088604,
+    "street": "Calle Guadalbaida",
+    "number": "2",
+    "display_name": "Calle Guadalbaida, Posadas, Córdoba, Andalucía, 14730, España",
+    "osm_road": "Calle Guadalbaida",
+    "osm_house_number": null
+  }
+}

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mapa - Posadas (Córdoba)</title>
+  <link rel="stylesheet" href="lib/leaflet.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Posadas · Córdoba, Andalucía</h1>
+      <div id="controls">
+        <input id="street-input" placeholder="Nombre de calle (ej: San Martín)" autocomplete="off" />
+        <button id="search-btn">Buscar</button>
+        <button id="clear-btn">Limpiar</button>
+      </div>
+      <div id="status-bar">
+        <span id="message"></span>
+        <span id="coords-display"></span>
+      </div>
+    </header>
+
+    <main>
+      <div id="map"></div>
+    </main>
+
+    <footer>
+      Geocodificación: <a href="https://nominatim.openstreetmap.org" target="_blank">Nominatim</a> ·
+      Tiles: <a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap</a> ·
+      Clic en el mapa para obtener coordenadas
+    </footer>
+  </div>
+
+  <script src="lib/leaflet.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
