@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
+
 import '../config/app_theme.dart';
+import '../screens/map_picker_screen.dart';
 
 /// Modos de selección de origen.
 enum OriginMode {
@@ -9,8 +12,10 @@ enum OriginMode {
 }
 
 /// Selector del punto de inicio de la ruta.
-class OriginSelector extends StatelessWidget {
+class OriginSelector extends StatefulWidget {
   final OriginMode mode;
+
+  /// Cadena "lat,lon" cuando el usuario ya seleccionó un punto. Vacía si no.
   final String manualAddress;
   final ValueChanged<OriginMode> onModeChanged;
   final ValueChanged<String> onAddressChanged;
@@ -24,7 +29,39 @@ class OriginSelector extends StatelessWidget {
   });
 
   @override
+  State<OriginSelector> createState() => _OriginSelectorState();
+}
+
+class _OriginSelectorState extends State<OriginSelector> {
+  Future<void> _openMapPicker() async {
+    final result = await Navigator.of(context).push<LatLng>(
+      MaterialPageRoute(
+        builder: (_) =>
+            const MapPickerScreen(address: 'Punto de inicio de la ruta'),
+      ),
+    );
+    if (result != null && mounted) {
+      widget.onAddressChanged(
+          '${result.latitude},${result.longitude}');
+    }
+  }
+
+  /// Parsea "lat,lon" → (lat, lon) o null si el formato no es válido.
+  (double, double)? _parseCoords() {
+    final parts = widget.manualAddress.split(',');
+    if (parts.length == 2) {
+      final lat = double.tryParse(parts[0]);
+      final lon = double.tryParse(parts[1]);
+      if (lat != null && lon != null) return (lat, lon);
+    }
+    return null;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final coords = _parseCoords();
+    final hasCoords = coords != null;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -67,8 +104,8 @@ class OriginSelector extends StatelessWidget {
             icon: Icons.home,
             title: 'Taller (predeterminado)',
             subtitle: 'Av. de Andalucía, Posadas',
-            isSelected: mode == OriginMode.defaultAddress,
-            onTap: () => onModeChanged(OriginMode.defaultAddress),
+            isSelected: widget.mode == OriginMode.defaultAddress,
+            onTap: () => widget.onModeChanged(OriginMode.defaultAddress),
           ),
 
           const SizedBox(height: 8),
@@ -78,51 +115,92 @@ class OriginSelector extends StatelessWidget {
             icon: Icons.my_location,
             title: 'Mi ubicación actual',
             subtitle: 'Usar GPS del dispositivo',
-            isSelected: mode == OriginMode.gps,
-            onTap: () => onModeChanged(OriginMode.gps),
+            isSelected: widget.mode == OriginMode.gps,
+            onTap: () => widget.onModeChanged(OriginMode.gps),
           ),
 
           const SizedBox(height: 8),
 
-          // ── Opción: Dirección manual ──
+          // ── Opción: Marcar en el mapa ──
           _OriginOption(
-            icon: Icons.edit_location_alt,
-            title: 'Dirección manual',
-            subtitle: 'Escribir una dirección personalizada',
-            isSelected: mode == OriginMode.manual,
-            onTap: () => onModeChanged(OriginMode.manual),
+            icon: Icons.add_location_alt,
+            title: 'Marcar en el mapa',
+            subtitle: hasCoords
+                ? '${coords.$1.toStringAsFixed(5)}, ${coords.$2.toStringAsFixed(5)}'
+                : 'Toca el mapa para elegir el punto de inicio',
+            isSelected: widget.mode == OriginMode.manual,
+            onTap: () => widget.onModeChanged(OriginMode.manual),
           ),
 
-          // ── Campo de texto para dirección manual ──
-          if (mode == OriginMode.manual) ...[
-            const SizedBox(height: 12),
-            TextField(
-              onChanged: onAddressChanged,
-              decoration: InputDecoration(
-                hintText: 'Ej: Calle Mayor 5, Posadas',
-                hintStyle:
-                    TextStyle(fontSize: 13, color: AppColors.textTertiary),
-                filled: true,
-                fillColor: AppColors.scaffoldLight,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: AppColors.border),
+          // ── Botón / estado de la selección en mapa ──
+          if (widget.mode == OriginMode.manual) ...[
+            const SizedBox(height: 10),
+            if (!hasCoords)
+              // Sin selección: botón para abrir el mapa
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _openMapPicker,
+                  icon: const Icon(Icons.map_outlined, size: 18),
+                  label: const Text('Abrir mapa y marcar punto'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: const BorderSide(color: AppColors.primary),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
                 ),
-                enabledBorder: OutlineInputBorder(
+              )
+            else
+              // Con selección: mostrar coords + botón de cambiar
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.successSurface,
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: AppColors.border),
+                  border: Border.all(color: AppColors.success),
                 ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: AppColors.primary),
+                child: Row(
+                  children: [
+                    Icon(Icons.location_on,
+                        size: 18, color: AppColors.success),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Lat: ${coords.$1.toStringAsFixed(6)}',
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textPrimary),
+                          ),
+                          Text(
+                            'Lon: ${coords.$2.toStringAsFixed(6)}',
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textPrimary),
+                          ),
+                        ],
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _openMapPicker,
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('Cambiar',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
                 ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                prefixIcon: Icon(Icons.search,
-                    size: 18, color: AppColors.textTertiary),
               ),
-              style: const TextStyle(fontSize: 14),
-            ),
           ],
         ],
       ),

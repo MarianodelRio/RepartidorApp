@@ -390,13 +390,22 @@ def geocode(address: str) -> GeoResult | None:
     """
     Geocodifica una dirección y devuelve (lat, lon) o None.
 
-    1. Consulta caché (incluye overrides manuales).
-    2. Llama a Nominatim directamente.
-    3. Si falla, hace fuzzy matching contra el catálogo OSM y reintenta.
-    4. Último recurso: intenta sin número de portal.
+    1. Si la cadena es directamente "lat,lon" (ej. coordenadas GPS), la devuelve sin llamada HTTP.
+    2. Consulta caché (incluye overrides manuales).
+    3. Llama a Nominatim directamente.
+    4. Si falla, hace fuzzy matching contra el catálogo OSM y reintenta.
+    5. Último recurso: intenta sin número de portal.
     """
     if not address or not address.strip():
         return None
+
+    # Detectar formato "lat,lon" — usado por GPS y por el selector de mapa manual
+    coord_match = re.match(
+        r'^\s*([-+]?\d+\.?\d*)\s*,\s*([-+]?\d+\.?\d*)\s*$',
+        address.strip(),
+    )
+    if coord_match:
+        return (float(coord_match.group(1)), float(coord_match.group(2)))
 
     street, number = _parse_address(address.strip())
     key = _cache_key(street, number)
