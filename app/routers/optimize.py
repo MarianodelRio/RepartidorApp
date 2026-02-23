@@ -13,7 +13,7 @@ from collections import OrderedDict
 
 from fastapi import APIRouter, HTTPException
 
-from app.core.config import START_ADDRESS, MAX_STOPS, POSADAS_CENTER
+from app.core.config import START_ADDRESS, MAX_STOPS, POSADAS_CENTER, DEPOT_LAT, DEPOT_LON
 from app.models import (
     OptimizeRequest,
     OptimizeResponse,
@@ -131,6 +131,7 @@ def optimize(req: OptimizeRequest):
     origin_addr = req.start_address or START_ADDRESS
 
     # ── 1. Agrupar direcciones duplicadas ─────────────────────
+
     # Si vienen package_counts, las direcciones ya están agrupadas (de validación)
     pre_grouped = (
         req.package_counts is not None
@@ -166,13 +167,18 @@ def optimize(req: OptimizeRequest):
                 f"paradas únicas ({merged} duplicadas fusionadas)"
             )
 
-    # ── 2. Geocodificar origen ────────────────────────────────
-    origin_coord = geocode(origin_addr)
-    if origin_coord is None:
-        raise HTTPException(
-            400,
-            detail=f"No se pudo geocodificar el origen: {origin_addr}",
-        )
+    # ── 2. Origen ─────────────────────────────────────────────
+    # Si no se indica dirección personalizada, usar coords exactas del depósito
+    # (más rápido y fiable que geocodificar en cada petición)
+    if req.start_address:
+        origin_coord = geocode(origin_addr)
+        if origin_coord is None:
+            raise HTTPException(
+                400,
+                detail=f"No se pudo geocodificar el origen: {origin_addr}",
+            )
+    else:
+        origin_coord = (DEPOT_LAT, DEPOT_LON)
 
     # ── 3. Geocodificar paradas (únicas) ──────────────────────
     if pre_grouped and req.coords and len(req.coords) == len(unique_addresses):

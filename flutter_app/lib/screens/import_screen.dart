@@ -209,9 +209,9 @@ class _ImportScreenState extends State<ImportScreen> {
 
   void _pinStop(FailedStop stop) {
     final latCtrl = TextEditingController(
-        text: (37.802).toStringAsFixed(6));
+        text: (37.805503).toStringAsFixed(6));
     final lonCtrl = TextEditingController(
-        text: (-5.105).toStringAsFixed(6));
+        text: (-5.099805).toStringAsFixed(6));
 
     showDialog(
       context: context,

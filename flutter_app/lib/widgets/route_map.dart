@@ -271,7 +271,7 @@ class RouteMapState extends State<RouteMap> {
                     (bounds.north + bounds.south) / 2,
                     (bounds.east + bounds.west) / 2,
                   )
-                : const LatLng(37.802, -5.105),
+                : const LatLng(37.805503, -5.099805),
             initialZoom: 15,
             // Si el usuario mueve el mapa con gesto, desactivar el auto-follow/auto-fit
             onPositionChanged: (position, hasGesture) {

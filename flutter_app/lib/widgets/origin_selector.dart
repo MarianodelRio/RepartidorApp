@@ -66,7 +66,7 @@ class OriginSelector extends StatelessWidget {
           _OriginOption(
             icon: Icons.home,
             title: 'Taller (predeterminado)',
-            subtitle: 'C/ Callejón de Jesús 1, Posadas',
+            subtitle: 'Av. de Andalucía, Posadas',
             isSelected: mode == OriginMode.defaultAddress,
             onTap: () => onModeChanged(OriginMode.defaultAddress),
           ),
