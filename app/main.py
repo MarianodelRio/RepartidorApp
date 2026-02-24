@@ -25,7 +25,7 @@ from app.routers import optimize, validation
 app = FastAPI(
     title="Posadas Route Planner",
     description="API de optimización de rutas de reparto para Posadas (Córdoba)",
-    version="1.1.0",
+    version="1.2.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )

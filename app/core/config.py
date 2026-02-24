@@ -15,7 +15,7 @@ VROOM_BASE_URL = "http://localhost:3000"
 
 # ── Geocodificación (Nominatim) ───────────────────────────────
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-NOMINATIM_USER_AGENT = "posadas-route-planner/1.1.0 (local)"
+NOMINATIM_USER_AGENT = "posadas-route-planner/1.2.0 (local)"
 
 # ── Zona de trabajo: Posadas, Córdoba ─────────────────────────
 # Depósito/taller de salida: Avenida de Andalucía, Posadas
