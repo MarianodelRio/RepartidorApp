@@ -57,13 +57,14 @@ class ApiService {
   /// [startAddress] - Dirección de inicio (opcional, usa la del backend si null).
   /// [coords] - Coordenadas pre-resueltas [[lat, lon], ...] (opcional).
   ///            Si se proporcionan, el backend omite la geocodificación.
+  /// [packagesPerStop] - Lista de listas de Package (cliente + nota) por parada.
   static Future<OptimizeResponse> optimize({
     required List<String> addresses,
     List<String>? clientNames,
     String? startAddress,
     List<List<double>?>? coords,
     List<int>? packageCounts,
-    List<List<String>>? allClientNames,
+    List<List<Package>>? packagesPerStop,
   }) async {
     final body = <String, dynamic>{
       'addresses': addresses,
@@ -80,8 +81,9 @@ class ApiService {
     if (packageCounts != null && packageCounts.isNotEmpty) {
       body['package_counts'] = packageCounts;
     }
-    if (allClientNames != null && allClientNames.isNotEmpty) {
-      body['all_client_names'] = allClientNames;
+    if (packagesPerStop != null && packagesPerStop.isNotEmpty) {
+      body['packages_per_stop'] =
+          packagesPerStop.map((pkgs) => pkgs.map((p) => p.toJson()).toList()).toList();
     }
 
     final response = await http
@@ -150,6 +152,7 @@ class ApiService {
         'cliente': i < csvData.clientes.length ? csvData.clientes[i] : '',
         'direccion': csvData.direcciones[i],
         'ciudad': i < csvData.ciudades.length ? csvData.ciudades[i] : '',
+        'nota': i < csvData.notas.length ? csvData.notas[i] : '',
       });
     }
 

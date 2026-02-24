@@ -7,6 +7,16 @@ from pydantic import BaseModel, Field
 
 
 # ═══════════════════════════════════════════
+#  Modelos compartidos
+# ═══════════════════════════════════════════
+
+class Package(BaseModel):
+    """Un paquete individual dentro de una parada: cliente + nota de entrega."""
+    client_name: str = Field("", description="Nombre del destinatario")
+    nota: str = Field("", description="Nota de entrega (piso, instrucciones, etc.)")
+
+
+# ═══════════════════════════════════════════
 #  Modelos de entrada (Request)
 # ═══════════════════════════════════════════
 
@@ -50,6 +60,13 @@ class OptimizeRequest(BaseModel):
             "Complementa package_counts cuando las direcciones ya vienen agrupadas."
         ),
     )
+    packages_per_stop: list[list[Package]] | None = Field(
+        default=None,
+        description=(
+            "Lista de listas de Package por dirección (cliente + nota). "
+            "Reemplaza a all_client_names cuando se envía."
+        ),
+    )
 
 
 # ═══════════════════════════════════════════
@@ -73,6 +90,7 @@ class StopInfo(BaseModel):
     label: str
     client_name: str = Field("", description="Nombre del cliente/destinatario (identidad principal)")
     client_names: list[str] = Field(default_factory=list, description="Lista de todos los destinatarios en esta dirección")
+    packages: list[Package] = Field(default_factory=list, description="Paquetes individuales con cliente y nota")
     type: str = Field(..., description="'origin' o 'stop'")
     lat: float
     lon: float

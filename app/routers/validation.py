@@ -18,6 +18,7 @@ from fastapi import APIRouter
 
 from app.services.geocoding import geocode, is_cached
 from app.core.config import GEOCODE_DELAY
+from app.models import Package
 
 router = APIRouter(prefix="/validation", tags=["validation"])
 
@@ -30,6 +31,7 @@ class CsvRow(BaseModel):
     cliente: str = ""
     direccion: str
     ciudad: str = ""
+    nota: str = ""
 
 
 class StartRequest(BaseModel):
@@ -43,7 +45,8 @@ class StartRequest(BaseModel):
 class GeocodedStop(BaseModel):
     address: str
     client_name: str            # primer nombre no vacío del grupo
-    all_client_names: list[str]
+    all_client_names: list[str] # retrocompat — derivado de packages
+    packages: list[Package]
     package_count: int
     lat: float
     lon: float
@@ -51,7 +54,8 @@ class GeocodedStop(BaseModel):
 
 class FailedStop(BaseModel):
     address: str
-    client_names: list[str]
+    client_names: list[str]     # retrocompat — derivado de packages
+    packages: list[Package]
     package_count: int
 
 
@@ -101,9 +105,9 @@ def validation_start(req: StartRequest):
         if key not in groups:
             groups[key] = {
                 "address": full_address,
-                "client_names": [],
+                "packages": [],
             }
-        groups[key]["client_names"].append(row.cliente)
+        groups[key]["packages"].append(Package(client_name=row.cliente, nota=row.nota))
 
     # ── 2. Geocodificar cada dirección única ──
     geocoded: list[GeocodedStop] = []
@@ -111,9 +115,10 @@ def validation_start(req: StartRequest):
 
     for group in groups.values():
         addr = group["address"]
-        client_names = group["client_names"]
-        package_count = len(client_names)
-        primary = next((n for n in client_names if n), "")
+        packages: list[Package] = group["packages"]
+        package_count = len(packages)
+        client_names = [p.client_name for p in packages]
+        primary = next((p.client_name for p in packages if p.client_name), "")
 
         already_in_cache = is_cached(addr)
         coord = geocode(addr)
@@ -127,6 +132,7 @@ def validation_start(req: StartRequest):
                 address=addr,
                 client_name=primary,
                 all_client_names=client_names,
+                packages=packages,
                 package_count=package_count,
                 lat=lat,
                 lon=lon,
@@ -135,6 +141,7 @@ def validation_start(req: StartRequest):
             failed.append(FailedStop(
                 address=addr,
                 client_names=client_names,
+                packages=packages,
                 package_count=package_count,
             ))
 

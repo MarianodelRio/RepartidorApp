@@ -3,6 +3,8 @@
 /// Diseñados para ser serializables a Hive (base de datos local).
 library;
 
+import 'route_models.dart';
+
 // ═══════════════════════════════════════════
 //  Estado de una parada
 // ═══════════════════════════════════════════
@@ -42,6 +44,7 @@ class DeliveryStop {
   final String label;
   final String clientName;
   final List<String> clientNames;
+  final List<Package> packages;
   final String type;
   final double lat;
   final double lon;
@@ -59,6 +62,7 @@ class DeliveryStop {
     required this.label,
     this.clientName = '',
     this.clientNames = const [],
+    this.packages = const [],
     required this.type,
     required this.lat,
     required this.lon,
@@ -87,6 +91,7 @@ class DeliveryStop {
         'label': label,
         'clientName': clientName,
         'clientNames': clientNames,
+        'packages': packages.map((p) => p.toMap()).toList(),
         'type': type,
         'lat': lat,
         'lon': lon,
@@ -108,6 +113,10 @@ class DeliveryStop {
               ?.map((e) => e.toString())
               .toList() ??
           [],
+      packages: (map['packages'] as List<dynamic>?)
+              ?.map((e) => Package.fromMap(e as Map<dynamic, dynamic>))
+              .toList() ??
+          const [],
       type: map['type'] as String,
       lat: (map['lat'] as num).toDouble(),
       lon: (map['lon'] as num).toDouble(),

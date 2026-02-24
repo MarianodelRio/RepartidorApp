@@ -2,6 +2,38 @@
 library;
 
 // ═══════════════════════════════════════════
+//  Paquete individual (cliente + nota)
+// ═══════════════════════════════════════════
+
+/// Un paquete individual dentro de una parada: cliente + nota de entrega.
+class Package {
+  final String clientName;
+  final String nota;
+
+  const Package({this.clientName = '', this.nota = ''});
+
+  factory Package.fromJson(Map<String, dynamic> json) => Package(
+        clientName: (json['client_name'] as String?) ?? '',
+        nota: (json['nota'] as String?) ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {
+        'client_name': clientName,
+        'nota': nota,
+      };
+
+  Map<String, dynamic> toMap() => {
+        'client_name': clientName,
+        'nota': nota,
+      };
+
+  factory Package.fromMap(Map<dynamic, dynamic> map) => Package(
+        clientName: (map['client_name'] as String?) ?? '',
+        nota: (map['nota'] as String?) ?? '',
+      );
+}
+
+// ═══════════════════════════════════════════
 //  Parada en la ruta optimizada
 // ═══════════════════════════════════════════
 class StopInfo {
@@ -10,6 +42,7 @@ class StopInfo {
   final String label;
   final String clientName;
   final List<String> clientNames;
+  final List<Package> packages;
   final String type; // 'origin' | 'stop'
   final double lat;
   final double lon;
@@ -23,6 +56,7 @@ class StopInfo {
     required this.label,
     this.clientName = '',
     this.clientNames = const [],
+    this.packages = const [],
     required this.type,
     required this.lat,
     required this.lon,
@@ -47,6 +81,10 @@ class StopInfo {
       clientName: (json['client_name'] as String?) ?? '',
       clientNames: (json['client_names'] as List<dynamic>?)
               ?.map((e) => e as String)
+              .toList() ??
+          [],
+      packages: (json['packages'] as List<dynamic>?)
+              ?.map((e) => Package.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
       type: json['type'] as String,

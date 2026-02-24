@@ -18,6 +18,7 @@ from app.models import (
     OptimizeRequest,
     OptimizeResponse,
     ErrorResponse,
+    Package,
     StopInfo,
     RouteSummary,
 )
@@ -53,47 +54,44 @@ def _normalize_for_dedup(addr: str) -> str:
 
 def _group_duplicate_addresses(
     addresses: list[str],
-    client_names: list[str],
-) -> tuple[list[str], list[str], list[list[str]], list[int]]:
+    packages_in: list[Package],
+) -> tuple[list[str], list[str], list[list[str]], list[list[Package]], list[int]]:
     """Agrupa filas con la misma dirección normalizada.
 
     Devuelve:
-        unique_addresses: lista de direcciones únicas (texto original del
-                          primer representante de cada grupo).
-        unique_primary_names: nombre del cliente principal por grupo (el
-                              primero no vacío, o "").
-        all_client_names: lista de listas con todos los nombres de cada grupo.
-        package_counts: número de paquetes (filas) por grupo.
+        unique_addresses: lista de direcciones únicas.
+        unique_primary_names: nombre del cliente principal por grupo.
+        all_client_names: lista de listas con todos los nombres (retrocompat).
+        all_packages: lista de listas de Package por grupo.
+        package_counts: número de paquetes por grupo.
     """
-    # OrderedDict para preservar el orden de primera aparición
     groups: OrderedDict[str, dict] = OrderedDict()
 
-    for addr, cname in zip(addresses, client_names):
+    for addr, pkg in zip(addresses, packages_in):
         key = _normalize_for_dedup(addr)
         if key not in groups:
             groups[key] = {
-                "address": addr,       # texto original de la primera aparición
-                "client_names": [],
-                "count": 0,
+                "address": addr,
+                "packages": [],
             }
-        groups[key]["client_names"].append(cname)
-        groups[key]["count"] += 1
+        groups[key]["packages"].append(pkg)
 
     unique_addresses = []
     unique_primary_names = []
     all_client_names_out = []
+    all_packages_out = []
     package_counts = []
 
     for g in groups.values():
         unique_addresses.append(g["address"])
-        # Nombre principal: primer nombre no vacío
-        names = g["client_names"]
-        primary = next((n for n in names if n), "")
+        pkgs: list[Package] = g["packages"]
+        primary = next((p.client_name for p in pkgs if p.client_name), "")
         unique_primary_names.append(primary)
-        all_client_names_out.append(names)
-        package_counts.append(g["count"])
+        all_client_names_out.append([p.client_name for p in pkgs])
+        all_packages_out.append(pkgs)
+        package_counts.append(len(pkgs))
 
-    return unique_addresses, unique_primary_names, all_client_names_out, package_counts
+    return unique_addresses, unique_primary_names, all_client_names_out, all_packages_out, package_counts
 
 
 @router.post(
@@ -141,13 +139,24 @@ def optimize(req: OptimizeRequest):
     if pre_grouped:
         unique_addresses = addresses
         package_counts = req.package_counts  # type: ignore[assignment]
-        # client_names aquí es el nombre "principal" por parada
         unique_primary_names = client_names
-        # Lista de todos los nombres por parada
-        if req.all_client_names and len(req.all_client_names) == len(addresses):
+
+        # Packages por parada: usar packages_per_stop si viene, si no derivar
+        if req.packages_per_stop and len(req.packages_per_stop) == len(addresses):
+            all_packages_lists: list[list[Package]] = req.packages_per_stop
+            all_client_names_lists = [[p.client_name for p in pkgs] for pkgs in all_packages_lists]
+        elif req.all_client_names and len(req.all_client_names) == len(addresses):
             all_client_names_lists = req.all_client_names
+            all_packages_lists = [
+                [Package(client_name=n) for n in names]
+                for names in all_client_names_lists
+            ]
         else:
             all_client_names_lists = [[cn] if cn else [] for cn in client_names]
+            all_packages_lists = [
+                [Package(client_name=cn)] if cn else []
+                for cn in client_names
+            ]
 
         total_packages = sum(package_counts)
         print(
@@ -155,8 +164,10 @@ def optimize(req: OptimizeRequest):
             f"pre-agrupadas ({total_packages} paquetes totales)"
         )
     else:
-        unique_addresses, unique_primary_names, all_client_names_lists, package_counts = \
-            _group_duplicate_addresses(addresses, client_names)
+        # Construir Package por fila desde client_names (sin nota — llamada legacy)
+        packages_in = [Package(client_name=cn) for cn in client_names]
+        unique_addresses, unique_primary_names, all_client_names_lists, all_packages_lists, package_counts = \
+            _group_duplicate_addresses(addresses, packages_in)
 
         total_packages = sum(package_counts)
 
@@ -250,21 +261,21 @@ def optimize(req: OptimizeRequest):
     ok_coords = [coord for _, coord, _ in geocoded_ok]
     ok_primary_names = [unique_primary_names[orig_i] for _, _, orig_i in geocoded_ok]
     ok_all_names = [all_client_names_lists[orig_i] for _, _, orig_i in geocoded_ok]
+    ok_packages = [all_packages_lists[orig_i] for _, _, orig_i in geocoded_ok]
     ok_pkg_counts = [package_counts[orig_i] for _, _, orig_i in geocoded_ok]
 
     fail_addresses = [addr for addr, _ in geocoded_fail]
     fail_primary_names = [unique_primary_names[orig_i] for _, orig_i in geocoded_fail]
     fail_all_names = [all_client_names_lists[orig_i] for _, orig_i in geocoded_fail]
+    fail_packages = [all_packages_lists[orig_i] for _, orig_i in geocoded_fail]
     fail_pkg_counts = [package_counts[orig_i] for _, orig_i in geocoded_fail]
 
     # coords[0] = origen, coords[1..n] = paradas geocodificadas
     all_coords = [origin_coord] + ok_coords
     all_addresses = [origin_addr] + ok_addresses
-    # Nombre del cliente principal: "" para el origen + nombres de cada parada
     all_primary_names = [""] + ok_primary_names
-    # Todos los nombres de cliente por parada
     all_names_lists: list[list[str]] = [[]] + ok_all_names
-    # Paquetes por parada
+    all_packages_per_stop: list[list[Package]] = [[]] + ok_packages
     all_pkg_counts = [0] + ok_pkg_counts
 
     # ── 3. Optimizar orden con VROOM ──────────────────────────
@@ -298,6 +309,7 @@ def optimize(req: OptimizeRequest):
         addr = all_addresses[orig_idx]
         cname = all_primary_names[orig_idx] if orig_idx < len(all_primary_names) else ""
         names_list = all_names_lists[orig_idx] if orig_idx < len(all_names_lists) else []
+        pkgs = all_packages_per_stop[orig_idx] if orig_idx < len(all_packages_per_stop) else []
         pkg_count = all_pkg_counts[orig_idx] if orig_idx < len(all_pkg_counts) else 1
 
         if orig_idx == 0:
@@ -306,12 +318,11 @@ def optimize(req: OptimizeRequest):
             dist_m = 0.0
             pkg_count = 0
             names_list = []
+            pkgs = []
         else:
-            # Identidad: usar nombre del cliente si existe, sino dirección
             if cname:
                 label = f"📍 {cname}"
             else:
-                # Usar dirección abreviada en vez de "Parada X"
                 short_addr = addr[:30] + "…" if len(addr) > 30 else addr
                 label = f"📍 {short_addr}"
             stop_type = "stop"
@@ -323,7 +334,8 @@ def optimize(req: OptimizeRequest):
             address=addr,
             label=label,
             client_name=cname,
-            client_names=[n for n in names_list if n],  # solo nombres no vacíos
+            client_names=[n for n in names_list if n],
+            packages=pkgs,
             type=stop_type,
             lat=lat,
             lon=lon,
@@ -336,6 +348,7 @@ def optimize(req: OptimizeRequest):
         seq_fail = len(stops)
         fail_cname = fail_primary_names[i]
         fail_names = fail_all_names[i]
+        fail_pkgs = fail_packages[i]
         fail_pkg = fail_pkg_counts[i]
 
         if fail_cname:
@@ -350,6 +363,7 @@ def optimize(req: OptimizeRequest):
             label=fail_label,
             client_name=fail_cname,
             client_names=[n for n in fail_names if n],
+            packages=fail_pkgs,
             type="stop",
             lat=POSADAS_CENTER[0],
             lon=POSADAS_CENTER[1],

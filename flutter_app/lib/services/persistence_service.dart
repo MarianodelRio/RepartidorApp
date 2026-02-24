@@ -84,6 +84,7 @@ class PersistenceService {
           label: s.label,
           clientName: s.clientName,
           clientNames: s.clientNames,
+          packages: s.packages,
           type: s.type,
           lat: s.lat,
           lon: s.lon,

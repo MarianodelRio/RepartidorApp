@@ -2,11 +2,14 @@
 //
 // Reflejan el contrato de POST /api/validation/start.
 
+import 'route_models.dart';
+
 /// Parada geocodificada correctamente.
 class GeocodedStop {
   final String address;
   final String clientName;
   final List<String> allClientNames;
+  final List<Package> packages;
   final int packageCount;
   final double lat;
   final double lon;
@@ -15,6 +18,7 @@ class GeocodedStop {
     required this.address,
     required this.clientName,
     required this.allClientNames,
+    this.packages = const [],
     required this.packageCount,
     required this.lat,
     required this.lon,
@@ -28,6 +32,10 @@ class GeocodedStop {
               ?.map((e) => e as String)
               .toList() ??
           const [],
+      packages: (json['packages'] as List<dynamic>?)
+              ?.map((e) => Package.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
       packageCount: (json['package_count'] as int?) ?? 1,
       lat: (json['lat'] as num).toDouble(),
       lon: (json['lon'] as num).toDouble(),
@@ -39,11 +47,13 @@ class GeocodedStop {
 class FailedStop {
   final String address;
   final List<String> clientNames;
+  final List<Package> packages;
   final int packageCount;
 
   const FailedStop({
     required this.address,
     required this.clientNames,
+    this.packages = const [],
     required this.packageCount,
   });
 
@@ -52,6 +62,10 @@ class FailedStop {
       address: json['address'] as String,
       clientNames: (json['client_names'] as List<dynamic>?)
               ?.map((e) => e as String)
+              .toList() ??
+          const [],
+      packages: (json['packages'] as List<dynamic>?)
+              ?.map((e) => Package.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
       packageCount: (json['package_count'] as int?) ?? 1,

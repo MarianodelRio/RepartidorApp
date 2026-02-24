@@ -6,7 +6,7 @@ import '../models/csv_data.dart';
 /// Servicio para parsear archivos CSV de paradas.
 ///
 /// Formato esperado:
-///   cliente,direccion,ciudad
+///   cliente,direccion,ciudad[,nota]
 ///
 /// Cada fila = 1 paquete.
 class CsvService {
@@ -16,7 +16,7 @@ class CsvService {
     final lines = const LineSplitter().convert(text);
 
     if (lines.isEmpty) {
-      return const CsvData(clientes: [], direcciones: [], ciudades: []);
+      return const CsvData(clientes: [], direcciones: [], ciudades: [], notas: []);
     }
 
     // Detectar columnas desde la cabecera
@@ -34,6 +34,7 @@ class CsvService {
     final clientes = <String>[];
     final direcciones = <String>[];
     final ciudades = <String>[];
+    final notas = <String>[];
 
     for (int i = 1; i < lines.length; i++) {
       final line = lines[i].trim();
@@ -46,18 +47,20 @@ class CsvService {
       clientes.add(_safeGet(fields, colMap['cliente']!).trim());
       direcciones.add(dir);
       ciudades.add(_safeGet(fields, colMap['ciudad']!).trim());
+      notas.add(_safeGet(fields, colMap['nota']!).trim());
     }
 
     return CsvData(
       clientes: clientes,
       direcciones: direcciones,
       ciudades: ciudades,
+      notas: notas,
     );
   }
 
-  /// Detecta las columnas cliente, direccion, ciudad por nombre.
+  /// Detecta las columnas cliente, direccion, ciudad, nota por nombre.
   static Map<String, int> _detectColumns(List<String> headers) {
-    int clienteIdx = -1, direccionIdx = -1, ciudadIdx = -1;
+    int clienteIdx = -1, direccionIdx = -1, ciudadIdx = -1, notaIdx = -1;
 
     for (int i = 0; i < headers.length; i++) {
       final h = headers[i].toLowerCase().trim();
@@ -77,12 +80,18 @@ class CsvService {
            h.contains('poblac'))) {
         ciudadIdx = i;
       }
+      if (notaIdx < 0 &&
+          (h == 'nota' || h == 'notas' || h == 'note' || h == 'notes' ||
+           h == 'obs' || h.contains('observac'))) {
+        notaIdx = i;
+      }
     }
 
     return {
       'cliente': clienteIdx,
       'direccion': direccionIdx,
       'ciudad': ciudadIdx,
+      'nota': notaIdx,
     };
   }
 

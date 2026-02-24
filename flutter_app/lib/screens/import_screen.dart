@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import '../config/api_config.dart';
 import '../config/app_theme.dart';
 import '../models/csv_data.dart';
+import '../models/route_models.dart';
 import '../models/validation_models.dart';
 import '../services/api_service.dart';
 import '../services/csv_service.dart';
@@ -233,6 +234,7 @@ class _ImportScreenState extends State<ImportScreen> {
       clientName:
           stop.clientNames.firstWhere((n) => n.isNotEmpty, orElse: () => ''),
       allClientNames: stop.clientNames,
+      packages: stop.packages,
       packageCount: stop.packageCount,
       lat: lat,
       lon: lon,
@@ -310,14 +312,14 @@ class _ImportScreenState extends State<ImportScreen> {
       final optimizeClientNames = <String>[];
       final preResolvedCoords = <List<double>?>[];
       final packageCounts = <int>[];
-      final allClientNames = <List<String>>[];
+      final packagesPerStop = <List<Package>>[];
 
       for (final st in geocoded) {
         optimizeAddresses.add(st.address);
         optimizeClientNames.add(st.clientName);
         preResolvedCoords.add([st.lat, st.lon]);
         packageCounts.add(st.packageCount);
-        allClientNames.add(st.allClientNames);
+        packagesPerStop.add(st.packages);
       }
 
       final result = await ApiService.optimize(
@@ -326,7 +328,7 @@ class _ImportScreenState extends State<ImportScreen> {
         startAddress: startAddress,
         coords: preResolvedCoords,
         packageCounts: packageCounts,
-        allClientNames: allClientNames,
+        packagesPerStop: packagesPerStop,
       );
       if (!mounted) return;
       Navigator.of(context).pop();

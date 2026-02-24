@@ -762,6 +762,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
               distanceMeters: s.distanceMeters,
               geocodeFailed: s.geocodeFailed,
               packageCount: s.packageCount,
+              packages: s.packages,
             ))
         .toList();
   }
@@ -1046,21 +1047,24 @@ class _NextStopCard extends StatelessWidget {
                               ),
                           ],
                         ),
-                        // Show all client names when there are multiple packages
-                        if (stop.hasMultiplePackages && stop.clientNames.length > 1)
+                        if (!stop.hasMultiplePackages &&
+                            stop.packages.isNotEmpty &&
+                            stop.packages.first.nota.isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.only(top: 2),
                             child: Text(
-                              '👥 ${stop.clientNames.join(', ')}',
+                              stop.packages.first.nota,
                               style: const TextStyle(
                                 fontSize: 11,
                                 color: AppColors.textTertiary,
-                                fontStyle: FontStyle.italic,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                        if (stop.hasMultiplePackages &&
+                            stop.packages.isNotEmpty)
+                          _PackagesExpandable(packages: stop.packages),
                       ],
                     ),
                   ),
@@ -1226,6 +1230,23 @@ class _CompletedTile extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
+            if (stop.hasMultiplePackages && stop.packages.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: stop.packages
+                      .map((p) => Text(
+                            '· ${p.clientName}${p.nota.isNotEmpty ? '  ${p.nota}' : ''}',
+                            style: const TextStyle(
+                                fontSize: 10,
+                                color: AppColors.textTertiary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ))
+                      .toList(),
+                ),
+              ),
           ],
         ),
         trailing: stop.completedAt != null
@@ -1236,6 +1257,85 @@ class _CompletedTile extends StatelessWidget {
                     fontSize: 11, color: Color(0xFF94A3B8)),
               )
             : null,
+      ),
+    );
+  }
+}
+
+/// Lista de paquetes expandible/colapsable para la tarjeta de siguiente parada.
+class _PackagesExpandable extends StatefulWidget {
+  final List<Package> packages;
+
+  const _PackagesExpandable({required this.packages});
+
+  @override
+  State<_PackagesExpandable> createState() => _PackagesExpandableState();
+}
+
+class _PackagesExpandableState extends State<_PackagesExpandable> {
+  late bool _expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = widget.packages.length <= 4;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.inventory_2,
+                    size: 13, color: AppColors.textTertiary),
+                const SizedBox(width: 4),
+                Text(
+                  '${widget.packages.length} paquetes',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textTertiary,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                Icon(
+                  _expanded
+                      ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down,
+                  size: 14,
+                  color: AppColors.textTertiary,
+                ),
+              ],
+            ),
+          ),
+          if (_expanded)
+            Padding(
+              padding: const EdgeInsets.only(top: 2, left: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: widget.packages
+                    .map((p) => Padding(
+                          padding: const EdgeInsets.only(top: 1),
+                          child: Text(
+                            '· ${p.clientName}${p.nota.isNotEmpty ? '  ${p.nota}' : ''}',
+                            style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textSecondary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ))
+                    .toList(),
+              ),
+            ),
+        ],
       ),
     );
   }

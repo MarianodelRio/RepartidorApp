@@ -1,16 +1,18 @@
 /// Modelo de datos de un CSV de paradas.
 ///
-/// Formato esperado: cliente,direccion,ciudad
+/// Formato esperado: cliente,direccion,ciudad[,nota]
 /// Cada fila = 1 paquete. Las agrupaciones se hacen después.
 class CsvData {
   final List<String> clientes;
   final List<String> direcciones;
   final List<String> ciudades;
+  final List<String> notas;
 
   const CsvData({
     required this.clientes,
     required this.direcciones,
     required this.ciudades,
+    this.notas = const [],
   });
 
   /// Nº total de filas (= nº de paquetes).
