@@ -46,12 +46,17 @@ class RouteMap extends StatefulWidget {
   State<RouteMap> createState() => RouteMapState();
 }
 
-class RouteMapState extends State<RouteMap> {
+class RouteMapState extends State<RouteMap> with TickerProviderStateMixin {
   final MapController _mapController = MapController();
   StreamSubscription<Position>? _positionStream;
   LatLng? _currentPosition;
   bool _followGps = true;
   bool _gpsActive = false;
+
+  // ── Animación de cámara (fly-to) ──
+  late AnimationController _cameraAnimController;
+  double _camStartLat = 0, _camStartLon = 0, _camStartZoom = 15;
+  double _camEndLat = 0, _camEndLon = 0, _camEndZoom = 15;
 
   /// Posición GPS actual expuesta para que DeliveryScreen pueda usarla.
   LatLng? get currentPosition => _currentPosition;
@@ -59,14 +64,46 @@ class RouteMapState extends State<RouteMap> {
   @override
   void initState() {
     super.initState();
+    _cameraAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..addListener(_onCameraAnimTick);
     _startGpsTracking();
   }
 
   @override
   void dispose() {
+    _cameraAnimController.dispose();
     _positionStream?.cancel();
     _mapController.dispose();
     super.dispose();
+  }
+
+  /// Tick de la animación de cámara — interpola posición y zoom con easeInOutCubic.
+  void _onCameraAnimTick() {
+    final t = Curves.easeInOutCubic.transform(_cameraAnimController.value);
+    _mapController.move(
+      LatLng(
+        _camStartLat + (_camEndLat - _camStartLat) * t,
+        _camStartLon + (_camEndLon - _camStartLon) * t,
+      ),
+      _camStartZoom + (_camEndZoom - _camStartZoom) * t,
+    );
+  }
+
+  /// Vuela suavemente la cámara para encuadrar los [bounds] dados.
+  /// Interrumpe cualquier animación previa limpiamente.
+  void _animateToBounds(LatLngBounds bounds,
+      {EdgeInsets padding = const EdgeInsets.all(60)}) {
+    final targetCamera =
+        CameraFit.bounds(bounds: bounds, padding: padding).fit(_mapController.camera);
+    _camStartLat = _mapController.camera.center.latitude;
+    _camStartLon = _mapController.camera.center.longitude;
+    _camStartZoom = _mapController.camera.zoom;
+    _camEndLat = targetCamera.center.latitude;
+    _camEndLon = targetCamera.center.longitude;
+    _camEndZoom = targetCamera.zoom;
+    _cameraAnimController.forward(from: 0.0);
   }
 
   @override
@@ -112,8 +149,8 @@ class RouteMapState extends State<RouteMap> {
     }
   }
 
-  /// Encuadra GPS actual + siguiente parada en un bounding box.
-  /// Si no hay GPS, hace flyToStop del destino.
+  /// Encuadra GPS actual + siguiente parada con animación suave (fly-to).
+  /// Si no hay GPS, vuela solo al destino.
   void fitGpsAndNextStop() {
     final nextIdx = widget.nextStopIndex;
     if (nextIdx == null || nextIdx < 0 || nextIdx >= widget.stops.length) {
@@ -125,30 +162,29 @@ class RouteMapState extends State<RouteMap> {
     final destPoint = LatLng(stop.lat, stop.lon);
 
     if (_currentPosition == null) {
-      // Sin GPS: centrar solo en el destino
-      _mapController.move(destPoint, 16.0);
+      // Sin GPS: animar solo al destino añadiendo un pequeño margen alrededor del punto.
+      const delta = 0.002; // ~200 m de margen
+      _animateToBounds(
+        LatLngBounds(
+          LatLng(destPoint.latitude - delta, destPoint.longitude - delta),
+          LatLng(destPoint.latitude + delta, destPoint.longitude + delta),
+        ),
+        padding: const EdgeInsets.all(40),
+      );
       setState(() => _followGps = false);
       return;
     }
 
     final gps = _currentPosition!;
 
-    // Calcular bounding box que incluya GPS + destino
+    // Bounding box GPS + destino
     final minLat = gps.latitude < destPoint.latitude ? gps.latitude : destPoint.latitude;
     final maxLat = gps.latitude > destPoint.latitude ? gps.latitude : destPoint.latitude;
     final minLon = gps.longitude < destPoint.longitude ? gps.longitude : destPoint.longitude;
     final maxLon = gps.longitude > destPoint.longitude ? gps.longitude : destPoint.longitude;
 
-    final bounds = LatLngBounds(
-      LatLng(minLat, minLon),
-      LatLng(maxLat, maxLon),
-    );
-
-    _mapController.fitCamera(
-      CameraFit.bounds(
-        bounds: bounds,
-        padding: const EdgeInsets.all(60),
-      ),
+    _animateToBounds(
+      LatLngBounds(LatLng(minLat, minLon), LatLng(maxLat, maxLon)),
     );
     setState(() => _followGps = false);
   }

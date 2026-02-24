@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -29,6 +31,9 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
   /// Geometría del segmento GPS → siguiente parada.
   Map<String, dynamic>? _segmentGeometry;
 
+  /// Timer que refresca el segmento de ruta cada 30 s mientras el usuario conduce.
+  Timer? _segmentTimer;
+
   @override
   void initState() {
     super.initState();
@@ -44,6 +49,17 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
         });
       }
     });
+
+    // Refrescar el tramo de ruta cada 30 s (el punto GPS se mueve mientras conduce)
+    _segmentTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted && _session.currentStop != null) _fetchSegmentFromGps();
+    });
+  }
+
+  @override
+  void dispose() {
+    _segmentTimer?.cancel();
+    super.dispose();
   }
 
   // ═══════════════════════════════════════════
@@ -170,9 +186,11 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
       setState(() => _segmentGeometry = null);
       if (mounted) _showFinishedDialog();
     } else {
-      // Encuadrar GPS + siguiente destino y recalcular segmento
+      // Limpiar polígono viejo inmediatamente para evitar artefactos visuales,
+      // pedir nuevo segmento y volar suavemente a la nueva parada.
+      setState(() => _segmentGeometry = null);
       _fetchSegmentFromGps();
-      Future.delayed(const Duration(milliseconds: 500), () {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _mapKey.currentState?.fitGpsAndNextStop();
       });
     }
@@ -585,8 +603,9 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
 
     // Centrar mapa en la nueva parada actual
     if (_session.currentStop != null) {
+      setState(() => _segmentGeometry = null);
       _fetchSegmentFromGps();
-      Future.delayed(const Duration(milliseconds: 500), () {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _mapKey.currentState?.fitGpsAndNextStop();
       });
     }
