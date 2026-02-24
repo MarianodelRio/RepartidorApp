@@ -2,6 +2,31 @@
 
 ---
 
+## [1.2.0] — Febrero 2026
+
+### Added
+- **Columna `nota` en CSV**: el fichero de entrada ahora admite una cuarta columna opcional `nota` (piso, puerta, instrucciones como "dejar en portal", referencia de negocio, etc.). Si no existe la columna, la app funciona igual que antes (retrocompatibilidad total).
+- **Modelo `Package`** (backend + Flutter): cada paquete dentro de una parada lleva `client_name` y `nota` independientes. Una parada agrupa N paquetes de la misma dirección física; la nota no afecta a geocodificación ni a la caché.
+- **UI de paquetes en pantalla de reparto** (`DeliveryScreen`):
+  - 1 paquete con nota → nota en gris debajo del nombre en la tarjeta de siguiente parada.
+  - N paquetes → lista expandible `📦 N paquetes ▼` con filas `· cliente  nota`; expandida por defecto si ≤ 4 paquetes.
+- **UI de paquetes en lista de paradas** (`StopsListScreen`): lista compacta con `· cliente  nota` bajo la dirección de cada parada multi-paquete.
+- **Ruta GPS actualizada periódicamente**: el tramo OSRM entre posición actual y siguiente parada se refresca automáticamente cada **30 segundos** mientras el repartidor conduce, sin necesidad de interacción.
+- **Transición animada de cámara** (`RouteMap`): al avanzar a la siguiente parada o reordenar, la cámara vuela suavemente (900 ms, `easeInOutCubic`) enmarcando GPS + nueva parada. Se elimina el salto brusco anterior.
+- **CSVs de prueba**: `data_input/test_nota.csv` (5 filas de ejemplo con nota) y `data_input/prueba1_nuevo.csv` (67 envíos reales con notas extraídas del PDF GLS).
+
+### Changed
+- **`_markStop()` y `_applyReorder()`**: reemplazan el `Future.delayed(500 ms)` por `addPostFrameCallback`, lo que garantiza que la animación de cámara arranca en el primer frame tras el cambio de parada (sin espera artificial).
+- El polígono de ruta antiguo se limpia inmediatamente al marcar una parada, evitando el artefacto de "polígono apuntando a la parada ya completada" durante la transición.
+- **`packages_per_stop`** en el endpoint `/api/optimize`: sustituye a la lista plana `all_client_names` para transportar clientes + notas sin pérdida de información.
+
+### Technical
+- `RouteMapState` añade `TickerProviderStateMixin` + `AnimationController _cameraAnimController`.
+- `_DeliveryScreenState` añade `Timer? _segmentTimer` con cancelación correcta en `dispose()`.
+- Persistencia Hive (`DeliveryStop`) incluye `packages` con deserialización retrocompatible (fallback `[]` para sesiones antiguas).
+
+---
+
 ## [1.1.0] — Febrero 2026
 
 ### Added
