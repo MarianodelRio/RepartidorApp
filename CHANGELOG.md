@@ -2,6 +2,19 @@
 
 ---
 
+## [1.3.0] — Febrero 2026
+
+### Added
+- **Marcar parada como entregada desde Reordenar**: en el diálogo de reordenación, cada parada dispone ahora de un botón ✅ verde que la marca como entregada y la elimina de la lista al instante, sin necesidad de cerrar el sheet ni navegar a la tarjeta de siguiente parada.
+
+### Changed
+- **Título de parada = dirección**: en todas las pantallas (reparto, reordenar, completadas, lista de paradas, orden de carga) el título principal de cada parada muestra la dirección física, no el nombre del cliente. Los clientes pasan a subtítulo o lista de paquetes, permitiendo múltiples destinatarios por parada.
+- **Diálogo de reordenar**: muestra todas las paradas no entregadas (pendientes + ausentes + incidencias), ya que ausentes e incidencias son reintentables. Antes solo se mostraban las pendientes.
+- **Exportar CSV** (`ResultScreen`): nuevo formato con columnas `orden, direccion, num_paquetes, paquetes`. La columna `paquetes` detalla cada paquete como `cliente - nota`; para múltiples paquetes usa numeración `1. … | 2. …`.
+- **Resumen de importación**: el recuadro «X paquetes / Y direcciones» en `ImportScreen` ya no aparece durante la validación; se muestra solo una vez la geocodificación ha finalizado correctamente.
+
+---
+
 ## [1.2.0] — Febrero 2026
 
 ### Added

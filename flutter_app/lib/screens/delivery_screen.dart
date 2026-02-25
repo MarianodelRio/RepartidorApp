@@ -529,8 +529,37 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            trailing: Icon(Icons.drag_handle,
-                                color: AppColors.border),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Botón marcar como entregada
+                                SizedBox(
+                                  width: 36,
+                                  height: 36,
+                                  child: IconButton(
+                                    padding: EdgeInsets.zero,
+                                    tooltip: 'Marcar como entregada',
+                                    icon: Icon(
+                                      Icons.check_circle_outline,
+                                      color: AppColors.success,
+                                      size: 22,
+                                    ),
+                                    onPressed: () {
+                                      setSheetState(() {
+                                        entry.stop.status =
+                                            StopStatus.delivered;
+                                        entry.stop.completedAt =
+                                            DateTime.now();
+                                        pendingEntries.removeAt(i);
+                                      });
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(Icons.drag_handle,
+                                    color: AppColors.border),
+                              ],
+                            ),
                           ),
                         );
                       },
