@@ -65,6 +65,7 @@ class _StopTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isOrigin = stop.isOrigin;
     final isFailed = stop.geocodeFailed;
+    final clientSummary = stop.clientNames.where((n) => n.isNotEmpty).join(', ');
 
     return GestureDetector(
       onTap: onTap,
@@ -126,9 +127,7 @@ class _StopTile extends StatelessWidget {
           ),
         ),
         title: Text(
-          stop.clientName.isNotEmpty && !isOrigin
-              ? stop.clientName
-              : stop.label,
+          isOrigin ? stop.label : stop.address,
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w700,
@@ -138,17 +137,25 @@ class _StopTile extends StatelessWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              isFailed
-                  ? '⚠ Sin ubicación — ${stop.address}'
-                  : stop.address,
-              style: TextStyle(
-                fontSize: 11,
-                color: AppColors.textSecondary,
+            if (isOrigin)
+              Text(
+                stop.address,
+                style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              )
+            else if (isFailed)
+              Text(
+                '⚠ Sin ubicación',
+                style: TextStyle(fontSize: 11, color: AppColors.warning),
+              )
+            else if (clientSummary.isNotEmpty)
+              Text(
+                clientSummary,
+                style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
             if (!isOrigin)
               Padding(
                 padding: const EdgeInsets.only(top: 4),

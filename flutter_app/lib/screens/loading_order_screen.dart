@@ -290,9 +290,7 @@ class _PackageTile extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          stop.clientName.isNotEmpty
-                              ? stop.clientName
-                              : stop.label,
+                          stop.address,
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -300,6 +298,8 @@ class _PackageTile extends StatelessWidget {
                                 ? AppColors.warning
                                 : AppColors.textPrimary,
                           ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       if (stop.hasMultiplePackages)
@@ -333,32 +333,32 @@ class _PackageTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    stop.geocodeFailed
-                        ? '⚠ Sin ubicación — ${stop.address}'
-                        : stop.address,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  // Mostrar todos los nombres de clientes si hay múltiples
-                  if (stop.hasMultiplePackages && stop.clientNames.length > 1)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        '👥 ${stop.clientNames.join(', ')}',
+                  // Clientes o aviso de geocodificación fallida
+                  Builder(builder: (context) {
+                    if (stop.geocodeFailed) {
+                      return Text(
+                        '⚠ Sin ubicación',
                         style: TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textTertiary,
-                          fontStyle: FontStyle.italic,
+                          fontSize: 12,
+                          color: AppColors.warning,
+                          fontWeight: FontWeight.w600,
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                      );
+                    }
+                    final names = stop.clientNames
+                        .where((n) => n.isNotEmpty)
+                        .join(', ');
+                    if (names.isEmpty) return const SizedBox.shrink();
+                    return Text(
+                      names,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
                       ),
-                    ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    );
+                  }),
                 ],
               ),
             ),

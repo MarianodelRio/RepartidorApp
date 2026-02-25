@@ -70,8 +70,8 @@ class StopInfo {
   /// ¿Hay más de un paquete en esta parada?
   bool get hasMultiplePackages => packageCount > 1;
 
-  /// Identidad principal: nombre del cliente si existe, sino la dirección.
-  String get displayName => clientName.isNotEmpty ? clientName : address;
+  /// Identidad principal de la parada: la dirección (puede tener múltiples clientes).
+  String get displayName => address;
 
   factory StopInfo.fromJson(Map<String, dynamic> json) {
     return StopInfo(

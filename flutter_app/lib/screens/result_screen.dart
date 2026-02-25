@@ -172,14 +172,18 @@ class _ResultScreenState extends State<ResultScreen> {
     final stops = widget.response.stops.where((s) => !s.isOrigin).toList();
 
     final buffer = StringBuffer();
-    buffer.writeln('cliente,direccion,num_paquetes');
+    buffer.writeln('orden,direccion,num_paquetes,paquetes');
+
     for (final stop in stops) {
-      final names = stop.clientNames.where((n) => n.isNotEmpty).toList();
-      final cliente = names.isNotEmpty
-          ? names.join(' / ')
-          : stop.clientName;
+      final direccion = stop.geocodeFailed
+          ? '${stop.address} (sin ubicacion)'
+          : stop.address;
       buffer.writeln(
-          '${_csvEscape(cliente)},${_csvEscape(stop.address)},${stop.packageCount}');
+        '${stop.order},'
+        '${_csvEscape(direccion)},'
+        '${stop.packageCount},'
+        '${_csvEscape(_buildPaquetesCell(stop))}',
+      );
     }
 
     try {
@@ -202,10 +206,40 @@ class _ResultScreenState extends State<ResultScreen> {
     }
   }
 
+  /// Construye el contenido de la columna "paquetes" para una parada.
+  ///
+  /// 1 paquete  → "Juan García - nota"  (sin número)
+  /// N paquetes → "1. Juan García - nota | 2. María López | 3. Pedro - otra nota"
+  ///
+  /// Si cliente o nota están vacíos se omiten, nunca quedan guiones solos.
+  String _buildPaquetesCell(StopInfo stop) {
+    if (stop.packages.isEmpty) return '';
+
+    String formatPackage(Package p) {
+      return [p.clientName, p.nota]
+          .where((s) => s.isNotEmpty)
+          .join(' - ');
+    }
+
+    if (stop.packages.length == 1) {
+      return formatPackage(stop.packages.first);
+    }
+
+    return stop.packages
+        .asMap()
+        .entries
+        .map((e) {
+          final detail = formatPackage(e.value);
+          return '${e.key + 1}. $detail';
+        })
+        .join(' | ');
+  }
+
   String _csvEscape(String value) {
     if (value.contains(',') ||
         value.contains('"') ||
-        value.contains('\n')) {
+        value.contains('\n') ||
+        value.contains('|')) {
       return '"${value.replaceAll('"', '""')}"';
     }
     return value;

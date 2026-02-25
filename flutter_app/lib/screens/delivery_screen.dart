@@ -387,11 +387,12 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
   // ═══════════════════════════════════════════
 
   void _showReorderSheet() {
-    // Construir lista de paradas pendientes (sin origen)
+    // Paradas reordenables: todo lo que no está entregado ni es el origen.
+    // Incluye pendientes, ausentes e incidencias (pueden reintentarse).
     final pendingEntries = <_ReorderEntry>[];
     for (int i = 0; i < _session.stops.length; i++) {
       final s = _session.stops[i];
-      if (s.isPending && !s.isOrigin) {
+      if (!s.isOrigin && s.status != StopStatus.delivered) {
         pendingEntries.add(_ReorderEntry(index: i, stop: s));
       }
     }
@@ -508,20 +509,20 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                               ),
                             ),
                             title: Text(
-                              entry.stop.clientName.isNotEmpty
-                                  ? entry.stop.clientName
-                                  : entry.stop.label,
+                              entry.stop.address,
                               style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                   color: entry.stop.geocodeFailed
                                       ? AppColors.warning
                                       : AppColors.textPrimary),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             subtitle: Text(
                               entry.stop.geocodeFailed
-                                  ? '⚠ Sin ubicación — ${entry.stop.address}'
-                                  : '${entry.stop.address}${entry.stop.hasMultiplePackages ? '  📦×${entry.stop.packageCount}' : ''}',
+                                  ? '⚠ Sin ubicación'
+                                  : '${entry.stop.clientNames.where((n) => n.isNotEmpty).join(', ')}${entry.stop.hasMultiplePackages ? '  📦×${entry.stop.packageCount}' : ''}'.trim(),
                               style: const TextStyle(
                                   fontSize: 11,
                                   color: AppColors.textSecondary),
@@ -576,23 +577,28 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
     // 2. Insertar pendientes en el nuevo orden después de la última completada
 
     final origin = _session.stops.where((s) => s.isOrigin).toList();
-    final completed =
-        _session.stops.where((s) => !s.isOrigin && s.isCompleted).toList();
-    final reorderedPending = newOrder.map((e) => e.stop).toList();
+    // Solo las entregadas quedan fijas al principio; ausentes e incidencias
+    // van en la lista reordenable para que puedan reintentarse.
+    final delivered = _session.stops
+        .where((s) => !s.isOrigin && s.status == StopStatus.delivered)
+        .toList();
+    final reorderedRemaining = newOrder.map((e) => e.stop).toList();
 
     final newStops = <DeliveryStop>[
       ...origin,
-      ...completed,
-      ...reorderedPending,
+      ...delivered,
+      ...reorderedRemaining,
     ];
 
     _session.stops
       ..clear()
       ..addAll(newStops);
 
-    // Actualizar currentStopIndex al primer pendiente
+    // Actualizar currentStopIndex a la primera parada no entregada (puede ser
+    // pendiente, ausente o incidencia — todas son reintentables).
     for (int i = 0; i < _session.stops.length; i++) {
-      if (_session.stops[i].isPending && !_session.stops[i].isOrigin) {
+      final s = _session.stops[i];
+      if (!s.isOrigin && s.status != StopStatus.delivered) {
         _session.currentStopIndex = i;
         break;
       }
@@ -1012,22 +1018,24 @@ class _NextStopCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          stop.clientName.isNotEmpty
-                              ? stop.clientName
-                              : stop.label,
-                          style: const TextStyle(
+                          stop.address,
+                          style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.w800,
-                            color: AppColors.primary,  // Negrita Azul Profundo
+                            color: stop.geocodeFailed
+                                ? AppColors.warning
+                                : AppColors.primary,
                           ),
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                         Row(
                           children: [
                             Expanded(
                               child: Text(
-                                stop.address,
+                                stop.clientNames
+                                    .where((n) => n.isNotEmpty)
+                                    .join(', '),
                                 style: const TextStyle(
                                   fontSize: 13,
                                   color: AppColors.textSecondary,
@@ -1227,9 +1235,11 @@ class _CompletedTile extends StatelessWidget {
           child: Icon(statusIcon, size: 18, color: statusColor),
         ),
         title: Text(
-          '${stop.order}. ${stop.clientName.isNotEmpty ? stop.clientName : stop.label}'
+          '${stop.order}. ${stop.address}'
           '${stop.hasMultiplePackages ? '  📦×${stop.packageCount}' : ''}',
           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1241,6 +1251,17 @@ class _CompletedTile extends StatelessWidget {
                   color: statusColor,
                   fontWeight: FontWeight.w600),
             ),
+            // Para parada de un solo paquete: mostrar el cliente aquí.
+            // Para múltiples paquetes: se muestra en la lista de abajo.
+            if (!stop.hasMultiplePackages &&
+                stop.clientNames.any((n) => n.isNotEmpty))
+              Text(
+                stop.clientNames.where((n) => n.isNotEmpty).join(', '),
+                style: const TextStyle(
+                    fontSize: 11, color: AppColors.textSecondary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             if (stop.note != null && stop.note!.isNotEmpty)
               Text(
                 '📝 ${stop.note}',
@@ -1256,7 +1277,7 @@ class _CompletedTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: stop.packages
                       .map((p) => Text(
-                            '· ${p.clientName}${p.nota.isNotEmpty ? '  ${p.nota}' : ''}',
+                            '· ${[p.clientName, p.nota].where((s) => s.isNotEmpty).join('  ')}',
                             style: const TextStyle(
                                 fontSize: 10,
                                 color: AppColors.textTertiary),
@@ -1343,7 +1364,7 @@ class _PackagesExpandableState extends State<_PackagesExpandable> {
                     .map((p) => Padding(
                           padding: const EdgeInsets.only(top: 1),
                           child: Text(
-                            '· ${p.clientName}${p.nota.isNotEmpty ? '  ${p.nota}' : ''}',
+                            '· ${[p.clientName, p.nota].where((s) => s.isNotEmpty).join('  ')}',
                             style: const TextStyle(
                                 fontSize: 11,
                                 color: AppColors.textSecondary),
