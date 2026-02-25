@@ -495,8 +495,10 @@ class _ImportScreenState extends State<ImportScreen> {
               _buildUploadSection(),
               if (_csvData != null) ...[
                 const SizedBox(height: 16),
-                _buildLoadedSummary(),
-                const SizedBox(height: 16),
+                if (_validationResult != null) ...[
+                  _buildLoadedSummary(),
+                  const SizedBox(height: 16),
+                ],
                 OriginSelector(
                   mode: _originMode,
                   manualAddress: _manualAddress,
