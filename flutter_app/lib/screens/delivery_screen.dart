@@ -120,6 +120,10 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
     // Punto de destino: la siguiente parada
     final destLat = currentStop.lat;
     final destLon = currentStop.lon;
+    if (destLat == null || destLon == null) {
+      setState(() => _segmentGeometry = null);
+      return;
+    }
 
     // Punto de origen: siempre GPS real
     double originLat;
@@ -505,7 +509,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                                     ? const Icon(Icons.warning_amber_rounded,
                                         color: Colors.white, size: 18)
                                     : Text(
-                                        '${i + 1}',
+                                        '${entry.stop.order}',
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontWeight: FontWeight.w800,
@@ -525,16 +529,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            subtitle: Text(
-                              entry.stop.geocodeFailed
-                                  ? '⚠ Sin ubicación'
-                                  : '${entry.stop.clientNames.where((n) => n.isNotEmpty).join(', ')}${entry.stop.hasMultiplePackages ? '  📦×${entry.stop.packageCount}' : ''}'.trim(),
-                              style: const TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.textSecondary),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            subtitle: _buildReorderSubtitle(entry.stop),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -834,6 +829,61 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
       if (_session.stops[i].isCompleted) indices.add(i);
     }
     return indices;
+  }
+
+  /// Subtítulo del tile de reorden: muestra cliente y nota de cada paquete.
+  /// Para geocodeFailed muestra aviso en naranja.
+  /// Para 1 paquete: "Cliente  📝 nota" en una línea.
+  /// Para N paquetes: una línea por paquete numerada "1. Cliente  📝 nota".
+  Widget _buildReorderSubtitle(DeliveryStop stop) {
+    if (stop.geocodeFailed) {
+      return Text(
+        '⚠ Sin ubicación',
+        style: TextStyle(
+          fontSize: 11,
+          color: AppColors.warning,
+          fontWeight: FontWeight.w600,
+        ),
+      );
+    }
+
+    // Construir una línea por paquete con cliente + nota
+    final lines = <String>[];
+    final multiPkg = stop.packages.length > 1;
+
+    for (int k = 0; k < stop.packages.length; k++) {
+      final p = stop.packages[k];
+      final parts = <String>[
+        if (p.clientName.isNotEmpty) p.clientName,
+        if (p.nota.isNotEmpty) '📝 ${p.nota}',
+      ];
+      if (parts.isEmpty) continue;
+      final prefix = multiPkg ? '${k + 1}. ' : '';
+      lines.add('$prefix${parts.join('  ')}');
+    }
+
+    // Fallback: usar clientNames si packages está vacío
+    if (lines.isEmpty) {
+      final names = stop.clientNames.where((n) => n.isNotEmpty).join(', ');
+      if (names.isNotEmpty) lines.add(names);
+    }
+
+    if (lines.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: lines
+          .map((line) => Text(
+                line,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ))
+          .toList(),
+    );
   }
 
   Widget _buildFinishedBanner() {
