@@ -1,7 +1,7 @@
 # 📱 RepartidorApp — Flutter
 
 > App móvil Android para gestionar rutas de reparto optimizadas.
-> Parte del sistema **Repartidor v1.2.0** (FastAPI + OSRM + VROOM).
+> Parte del sistema **Repartidor v1.4.0** (FastAPI + OSRM + VROOM).
 
 ---
 
@@ -118,6 +118,17 @@ static const String baseUrl = 'https://<tu-tunel>.ngrok-free.dev';
 ```
 
 ---
+
+## Novedades v1.4.0
+
+- **Paradas sin geocodificar en null**: `lat`/`lon` de `StopInfo` y `DeliveryStop` son `double?`; las paradas fallidas muestran ⚠️ y aparecen al final de la ruta sin enviarse a VROOM.
+- **Diálogo Reordenar mejorado**: badge con número de orden fijo y paquetes con cliente + nota visibles.
+- **Guards null-safe**: navegación externa, marcadores en mapa y tramo GPS comprueban coordenadas antes de operar.
+
+## Novedades v1.3.0
+
+- **Marcar entregada desde Reordenar**: botón ✅ en el diálogo de reordenación elimina la parada al instante.
+- **Título de parada = dirección**: en todas las pantallas el título principal es la dirección física.
 
 ## Novedades v1.2.0
 

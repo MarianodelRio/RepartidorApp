@@ -3,7 +3,7 @@
 > Análisis técnico y estratégico completo del sistema. Cubre backend Python/FastAPI,
 > app Flutter/Android, infraestructura Docker/ngrok, operaciones, escalabilidad,
 > monitorización, CI/CD, multi-tenancia y expansión geográfica.
-> Última revisión: febrero 2026 — versión del sistema: 1.1.0
+> Última revisión: febrero 2026 — versión del sistema: 1.4.0
 
 ---
 

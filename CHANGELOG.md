@@ -2,6 +2,21 @@
 
 ---
 
+## [1.4.0] — Febrero 2026
+
+### Changed
+- **Umbral OSRM snap reducido 2000 m → 500 m**: las coordenadas que no tengan un nodo viario a menos de 500 m se consideran fuera del mapa y su parada pasa a geocode_failed, evitando que VROOM reciba puntos en medio del campo.
+- **Ordenación de tramos de calle** (`_sort_street_runs`): tras la optimización VROOM, las paradas consecutivas en la misma calle se re-ordenan ascendentemente por número de portal, reduciendo el zigzag dentro de una misma vía.
+- **Paradas con geocodificación fallida**: usan `lat=None, lon=None` en lugar de las coordenadas del depósito. Aparecen al final de la ruta con indicador ⚠️; no se envían a VROOM.
+- **Modelos Flutter null-safe**: `StopInfo.lat/lon` y `DeliveryStop.lat/lon` son ahora `double?`. La deserialización `fromJson`/`fromMap` admite null sin lanzar excepción.
+- **Guards null en Flutter**: `flyToStop`, `fitGpsAndNextStop`, `_buildStopMarkers`, el fallback GPS y la navegación externa comprueban `lat != null && lon != null` antes de operar.
+- **Diálogo Reordenar mejorado**: el badge de cada parada muestra el número de orden fijo de la ruta original (no el índice de la lista filtrada); el subtítulo despliega cliente + nota de cada paquete.
+
+### Fixed
+- **Error de compilación Dart**: `double?` no asignable a `double` en `_fetchSegmentFromGps` para `destLat`/`destLon`; resuelto con comprobación explícita de null antes de la llamada a `ApiService.getRouteSegment`.
+
+---
+
 ## [1.3.0] — Febrero 2026
 
 ### Added

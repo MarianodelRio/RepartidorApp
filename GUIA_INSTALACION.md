@@ -1,4 +1,4 @@
-# Guía de instalación — Repartidor App v1.1.0
+# Guía de instalación — Repartidor App v1.4.0
 
 Guía completa para replicar el entorno de desarrollo en un ordenador nuevo, desde cero, partiendo del repositorio Git.
 
