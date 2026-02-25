@@ -22,7 +22,7 @@ from app.models import (
     StopInfo,
     RouteSummary,
 )
-from app.services.geocoding import geocode, geocode_batch
+from app.services.geocoding import geocode, geocode_batch, improve_geocoding
 from app.services.routing import (
     optimize_route,
     get_route_details,
@@ -225,6 +225,7 @@ def optimize(req: OptimizeRequest):
             print(f"[optimize] 🎯 Usando {len(geocoded_ok)} coordenadas pre-resueltas (validación)")
     else:
         batch = geocode_batch(unique_addresses)
+        batch = improve_geocoding(batch)
         geocoded_ok = [(addr, coord, i) for i, (addr, coord) in enumerate(batch) if coord is not None]
         geocoded_fail = [(addr, i) for i, (addr, coord) in enumerate(batch) if coord is None]
 

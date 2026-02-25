@@ -8,7 +8,7 @@ class ApiConfig {
   /// URL por defecto para desarrollo local. Cambia a tu túnel/URL de producción
   /// si necesitas exponer la API públicamente.
   static const String baseUrl = 'http://127.0.0.1:8000';
-  /// static const String baseUrl = 'https://unpermanently-repairable-devon.ngrok-free.dev';
+  ///static const String baseUrl = 'https://unpermanently-repairable-devon.ngrok-free.dev';
 
   // ── Endpoints ──
   static const String optimizeEndpoint = '/api/optimize';

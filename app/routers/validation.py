@@ -16,7 +16,7 @@ from collections import OrderedDict
 from pydantic import BaseModel
 from fastapi import APIRouter
 
-from app.services.geocoding import geocode, is_cached
+from app.services.geocoding import geocode, is_cached, improve_geocoding
 from app.core.config import GEOCODE_DELAY
 from app.models import Package
 
@@ -109,7 +109,26 @@ def validation_start(req: StartRequest):
             }
         groups[key]["packages"].append(Package(client_name=row.cliente, nota=row.nota))
 
-    # ── 2. Geocodificar cada dirección única ──
+    # ── 2. Geocodificar cada dirección única ──────────────────────────────────
+    # Primera pasada: geocodificación individual (Cartociudad → Nominatim → fuzzy)
+    addr_results: list[tuple[str, tuple[float, float] | None]] = []
+    for group in groups.values():
+        addr = group["address"]
+        already_in_cache = is_cached(addr)
+        coord = geocode(addr)
+        addr_results.append((addr, coord))
+        if not already_in_cache:
+            # Respetar rate-limit de Nominatim entre llamadas reales
+            time.sleep(GEOCODE_DELAY)
+
+    # Segunda pasada: interpolación por calle
+    # Detecta centroides (misma coord exacta en portales distintos de una calle)
+    # y estima posiciones para portales sin geocodificar usando los vecinos conocidos.
+    addr_results = improve_geocoding(addr_results)
+
+    # ── 3. Construir listas geocoded / failed ──────────────────────────────────
+    coord_map: dict[str, tuple[float, float] | None] = dict(addr_results)
+
     geocoded: list[GeocodedStop] = []
     failed: list[FailedStop] = []
 
@@ -120,12 +139,7 @@ def validation_start(req: StartRequest):
         client_names = [p.client_name for p in packages]
         primary = next((p.client_name for p in packages if p.client_name), "")
 
-        already_in_cache = is_cached(addr)
-        coord = geocode(addr)
-        if not already_in_cache:
-            # La dirección requirió una llamada a Nominatim; respetar rate limit
-            time.sleep(GEOCODE_DELAY)
-
+        coord = coord_map.get(addr)
         if coord:
             lat, lon = coord
             geocoded.append(GeocodedStop(
