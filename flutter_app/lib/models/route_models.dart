@@ -44,8 +44,8 @@ class StopInfo {
   final List<String> clientNames;
   final List<Package> packages;
   final String type; // 'origin' | 'stop'
-  final double lat;
-  final double lon;
+  final double? lat; // null si geocodificación fallida
+  final double? lon; // null si geocodificación fallida
   final double distanceMeters;
   final bool geocodeFailed;
   final int packageCount;
@@ -58,8 +58,8 @@ class StopInfo {
     this.clientNames = const [],
     this.packages = const [],
     required this.type,
-    required this.lat,
-    required this.lon,
+    this.lat,
+    this.lon,
     required this.distanceMeters,
     this.geocodeFailed = false,
     this.packageCount = 1,
@@ -88,8 +88,8 @@ class StopInfo {
               .toList() ??
           [],
       type: json['type'] as String,
-      lat: (json['lat'] as num).toDouble(),
-      lon: (json['lon'] as num).toDouble(),
+      lat: json['lat'] != null ? (json['lat'] as num).toDouble() : null,
+      lon: json['lon'] != null ? (json['lon'] as num).toDouble() : null,
       distanceMeters: (json['distance_meters'] as num).toDouble(),
       geocodeFailed: (json['geocode_failed'] as bool?) ?? false,
       packageCount: (json['package_count'] as int?) ?? 1,

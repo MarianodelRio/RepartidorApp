@@ -46,8 +46,8 @@ class DeliveryStop {
   final List<String> clientNames;
   final List<Package> packages;
   final String type;
-  final double lat;
-  final double lon;
+  final double? lat; // null si geocodificación fallida
+  final double? lon; // null si geocodificación fallida
   final double distanceMeters;
   final bool geocodeFailed;
   final int packageCount;
@@ -118,8 +118,8 @@ class DeliveryStop {
               .toList() ??
           const [],
       type: map['type'] as String,
-      lat: (map['lat'] as num).toDouble(),
-      lon: (map['lon'] as num).toDouble(),
+      lat: map['lat'] != null ? (map['lat'] as num).toDouble() : null,
+      lon: map['lon'] != null ? (map['lon'] as num).toDouble() : null,
       distanceMeters: (map['distanceMeters'] as num).toDouble(),
       geocodeFailed: (map['geocodeFailed'] as bool?) ?? false,
       packageCount: (map['packageCount'] as int?) ?? 1,

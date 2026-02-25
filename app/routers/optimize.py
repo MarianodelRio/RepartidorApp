@@ -13,7 +13,7 @@ from collections import OrderedDict
 
 from fastapi import APIRouter, HTTPException
 
-from app.core.config import START_ADDRESS, MAX_STOPS, POSADAS_CENTER, DEPOT_LAT, DEPOT_LON
+from app.core.config import START_ADDRESS, MAX_STOPS, DEPOT_LAT, DEPOT_LON
 from app.models import (
     OptimizeRequest,
     OptimizeResponse,
@@ -22,7 +22,10 @@ from app.models import (
     StopInfo,
     RouteSummary,
 )
-from app.services.geocoding import geocode, geocode_batch, improve_geocoding
+from app.services.geocoding import (
+    geocode, geocode_batch, improve_geocoding,
+    _parse_address, _normalize, _extract_portal_int,
+)
 from app.services.routing import (
     optimize_route,
     get_route_details,
@@ -92,6 +95,65 @@ def _group_duplicate_addresses(
         package_counts.append(len(pkgs))
 
     return unique_addresses, unique_primary_names, all_client_names_out, all_packages_out, package_counts
+
+
+def _sort_street_runs(
+    wp_order: list[int],
+    all_addresses: list[str],
+) -> list[int]:
+    """
+    Post-procesa el orden de VROOM: dentro de cada secuencia consecutiva de
+    paradas en la misma calle normalizada, ordena por número de portal ascendente.
+
+    Ejemplo: VROOM devuelve [0, Calle X nº5, Calle X nº1, Calle X nº7, Calle Y nº3]
+             → queda  [0, Calle X nº1, Calle X nº5, Calle X nº7, Calle Y nº3]
+
+    El índice 0 (depósito/origen) nunca se reordena.
+    Paradas sin número de portal (s/n) van al final del run.
+    """
+    if len(wp_order) <= 2:
+        return wp_order
+
+    result = list(wp_order)
+    n = len(result)
+    i = 1  # el depósito (índice 0 en all_addresses) siempre ocupa result[0]
+
+    while i < n:
+        idx_i = result[i]
+        if idx_i >= len(all_addresses):
+            i += 1
+            continue
+
+        street_i, _ = _parse_address(all_addresses[idx_i])
+        street_norm_i = _normalize(street_i)
+
+        # Buscar el final del run de esta calle
+        j = i + 1
+        while j < n:
+            idx_j = result[j]
+            if idx_j >= len(all_addresses):
+                break
+            street_j, _ = _parse_address(all_addresses[idx_j])
+            if _normalize(street_j) != street_norm_i:
+                break
+            j += 1
+
+        # Si el run tiene más de una parada, ordenar por número de portal
+        if j - i > 1:
+            def portal_key(idx: int) -> float:
+                _, num = _parse_address(all_addresses[idx])
+                n_val = _extract_portal_int(num)
+                return float(n_val) if n_val is not None else float("inf")
+
+            result[i:j] = sorted(result[i:j], key=portal_key)
+            print(
+                f"[optimize] Reordenadas {j - i} paradas en '{street_norm_i}' "
+                f"por número de portal"
+            )
+
+        i = j
+
+    return result
 
 
 @router.post(
@@ -289,6 +351,11 @@ def optimize(req: OptimizeRequest):
 
     # ── 4. Reordenar según resultado de VROOM ─────────────────
     wp_order = vroom_result["waypoint_order"]
+
+    # Post-proceso: dentro de cada run consecutivo de la misma calle,
+    # ordenar por número de portal ascendente para evitar zig-zag en la calle.
+    wp_order = _sort_street_runs(wp_order, all_addresses)
+
     stop_details_map = {
         sd["original_index"]: sd for sd in vroom_result.get("stop_details", [])
     }
@@ -366,8 +433,8 @@ def optimize(req: OptimizeRequest):
             client_names=[n for n in fail_names if n],
             packages=fail_pkgs,
             type="stop",
-            lat=POSADAS_CENTER[0],
-            lon=POSADAS_CENTER[1],
+            lat=None,
+            lon=None,
             distance_meters=0,
             geocode_failed=True,
             package_count=fail_pkg,

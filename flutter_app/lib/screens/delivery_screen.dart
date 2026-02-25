@@ -138,14 +138,19 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
       originLat = gps.latitude;
       originLon = gps.longitude;
     } else {
-      // Fallback: usar la parada anterior completada
+      // Fallback: usar la parada anterior completada (con coords válidas)
       final prevIdx = _session.currentStopIndex - 1;
-      if (prevIdx >= 0 && prevIdx < _session.stops.length) {
-        originLat = _session.stops[prevIdx].lat;
-        originLon = _session.stops[prevIdx].lon;
-      } else if (_session.stops.isNotEmpty) {
-        originLat = _session.stops[0].lat;
-        originLon = _session.stops[0].lon;
+      final prevStop = (prevIdx >= 0 && prevIdx < _session.stops.length)
+          ? _session.stops[prevIdx]
+          : null;
+      if (prevStop != null && prevStop.lat != null && prevStop.lon != null) {
+        originLat = prevStop.lat!;
+        originLon = prevStop.lon!;
+      } else if (_session.stops.isNotEmpty &&
+          _session.stops[0].lat != null &&
+          _session.stops[0].lon != null) {
+        originLat = _session.stops[0].lat!;
+        originLon = _session.stops[0].lon!;
       } else {
         return;
       }
@@ -326,6 +331,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
   Future<void> _openExternalNavigation() async {
     final stop = _session.currentStop;
     if (stop == null) return;
+    if (stop.geocodeFailed || stop.lat == null || stop.lon == null) return;
 
     // Intent de Google Maps con coordenadas
     final uri = Uri.parse(

@@ -20,7 +20,7 @@ def _format_distance(meters: float) -> str:
 #  OSRM: Validación de coordenadas
 # ═══════════════════════════════════════════
 
-_MAX_SNAP_DISTANCE_M = 2000  # máx. 2 km entre coordenada y nodo de red viaria
+_MAX_SNAP_DISTANCE_M = 500  # máx. 500 m entre coordenada y nodo de red viaria
 
 
 def can_osrm_snap(lat: float, lon: float) -> bool:

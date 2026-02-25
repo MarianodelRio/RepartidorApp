@@ -131,7 +131,8 @@ class RouteMapState extends State<RouteMap> with TickerProviderStateMixin {
   void _flyToStop(int index) {
     if (index < 0 || index >= widget.stops.length) return;
     final stop = widget.stops[index];
-    _mapController.move(LatLng(stop.lat, stop.lon), 17.0);
+    if (stop.lat == null || stop.lon == null) return;
+    _mapController.move(LatLng(stop.lat!, stop.lon!), 17.0);
     setState(() => _followGps = false);
   }
 
@@ -159,7 +160,8 @@ class RouteMapState extends State<RouteMap> with TickerProviderStateMixin {
     }
 
     final stop = widget.stops[nextIdx];
-    final destPoint = LatLng(stop.lat, stop.lon);
+    if (stop.lat == null || stop.lon == null) { fitRoute(); return; }
+    final destPoint = LatLng(stop.lat!, stop.lon!);
 
     if (_currentPosition == null) {
       // Sin GPS: animar solo al destino añadiendo un pequeño margen alrededor del punto.
@@ -383,8 +385,11 @@ class RouteMapState extends State<RouteMap> with TickerProviderStateMixin {
     final isDelivery = widget.deliveryMode;
     final nextIdx = widget.nextStopIndex;
 
-    return List.generate(widget.stops.length, (index) {
-      final stop = widget.stops[index];
+    return widget.stops.asMap().entries
+        .where((e) => e.value.lat != null && e.value.lon != null)
+        .map((e) {
+      final index = e.key;
+      final stop = e.value;
       final isOrigin = stop.isOrigin;
       final isHighlighted = widget.highlightedStopIndex == index;
       final isCompleted = completed.contains(index);
@@ -405,7 +410,7 @@ class RouteMapState extends State<RouteMap> with TickerProviderStateMixin {
       }
 
       return Marker(
-        point: LatLng(stop.lat, stop.lon),
+        point: LatLng(stop.lat!, stop.lon!),
         width: size,
         height: size,
         child: GestureDetector(
@@ -420,7 +425,7 @@ class RouteMapState extends State<RouteMap> with TickerProviderStateMixin {
           ),
         ),
       );
-    });
+    }).toList();
   }
 }
 
