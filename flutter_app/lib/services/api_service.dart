@@ -153,6 +153,7 @@ class ApiService {
         'direccion': csvData.direcciones[i],
         'ciudad': i < csvData.ciudades.length ? csvData.ciudades[i] : '',
         'nota': i < csvData.notas.length ? csvData.notas[i] : '',
+        'alias': i < csvData.aliases.length ? csvData.aliases[i] : '',
       });
     }
 
@@ -184,6 +185,26 @@ class ApiService {
         'No se puede conectar con el servidor. Comprueba que el backend está activo.',
         0,
       );
+    }
+  }
+
+  /// Registra coordenadas manuales (pin) para una dirección en el backend.
+  /// Fire-and-forget: los errores se ignoran silenciosamente.
+  static Future<void> postOverride({
+    required String address,
+    required double lat,
+    required double lon,
+  }) async {
+    try {
+      await http
+          .post(
+            Uri.parse('${ApiConfig.baseUrl}/api/validation/override'),
+            headers: _jsonHeaders,
+            body: jsonEncode({'address': address, 'lat': lat, 'lon': lon}),
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {
+      // fire-and-forget: ignorar errores de red
     }
   }
 }

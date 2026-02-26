@@ -1,23 +1,24 @@
 """
 Router de validación
 
-Flujo: un solo endpoint POST /api/validation/start
-  1. Recibe filas crudas del CSV {cliente, direccion, ciudad}
-  2. Construye dirección completa (direccion + ciudad si procede)
-  3. Agrupa por dirección normalizada (misma parada = +1 paquete)
-  4. Geocodifica cada dirección única con Nominatim
-  5. Devuelve dos listas: geocoded (con coords) y failed (sin coords)
+Flujo: POST /api/validation/start
+  1. Recibe filas crudas del CSV {cliente, direccion, ciudad, nota, alias}
+  2. Agrupa por dirección normalizada (misma parada = +1 paquete)
+  3. Geocodifica cada dirección única con el pipeline multi-fuente:
+     Cartociudad → Google Geocoding → Google Places (si alias) → FAILED
+  4. Devuelve: geocoded (con coords + confidence) y failed (sin coords)
+
+POST /api/validation/override
+  Registra coordenadas manuales (pin) para una dirección → caché permanente.
 """
 
-import time
 import unicodedata
 from collections import OrderedDict
 
 from pydantic import BaseModel
 from fastapi import APIRouter
 
-from app.services.geocoding import geocode, is_cached, improve_geocoding
-from app.core.config import GEOCODE_DELAY
+from app.services.geocoding import geocode, add_override
 from app.models import Package
 
 router = APIRouter(prefix="/validation", tags=["validation"])
@@ -32,10 +33,17 @@ class CsvRow(BaseModel):
     direccion: str
     ciudad: str = ""
     nota: str = ""
+    alias: str = ""     # nombre de negocio/lugar (opcional, activa Google Places)
 
 
 class StartRequest(BaseModel):
     rows: list[CsvRow]
+
+
+class OverrideRequest(BaseModel):
+    address: str
+    lat: float
+    lon: float
 
 
 # ═══════════════════════════════════════════
@@ -50,6 +58,7 @@ class GeocodedStop(BaseModel):
     package_count: int
     lat: float
     lon: float
+    confidence: str             # EXACT_ADDRESS | GOOD | EXACT_PLACE | OVERRIDE
 
 
 class FailedStop(BaseModel):
@@ -71,8 +80,7 @@ class StartResponse(BaseModel):
 # ═══════════════════════════════════════════
 
 def _normalize_for_dedup(addr: str) -> str:
-    """Normalización ligera para detectar duplicados exactos.
-    Quita acentos, minúsculas, espacios extra."""
+    """Normalización ligera para detectar duplicados exactos."""
     s = addr.strip().lower()
     s = unicodedata.normalize("NFD", s)
     s = "".join(c for c in s if unicodedata.category(c) != "Mn")
@@ -81,53 +89,49 @@ def _normalize_for_dedup(addr: str) -> str:
 
 
 # ═══════════════════════════════════════════
-#  Endpoint principal
+#  Endpoints
 # ═══════════════════════════════════════════
 
 @router.post("/start", response_model=StartResponse)
 def validation_start(req: StartRequest):
-    """Valida todas las direcciones:
-    1. Construye dirección completa desde (direccion, ciudad)
-    2. Agrupa duplicados
-    3. Geocodifica cada dirección única con Nominatim
-    4. Devuelve listas separadas: geocoded y failed
+    """Valida todas las direcciones del CSV:
+    1. Agrupa duplicados
+    2. Geocodifica con pipeline: Cartociudad → Google → Places → FAILED
+    3. Devuelve listas separadas: geocoded (con coords) y failed (sin coords)
     """
     rows = req.rows
     total_packages = len(rows)
 
-    # ── 1. Agrupar por dirección normalizada ──
+    # ── 1. Agrupar por dirección normalizada ──────────────────────────────────
     groups: OrderedDict[str, dict] = OrderedDict()
 
     for row in rows:
-        # Usar la dirección tal cual; Posadas, Córdoba se añaden manualmente en los datos
         full_address = row.direccion.strip()
         key = _normalize_for_dedup(full_address)
         if key not in groups:
             groups[key] = {
                 "address": full_address,
                 "packages": [],
+                "alias": "",
             }
+        # Usar el primer alias no vacío del grupo
+        if not groups[key]["alias"] and row.alias.strip():
+            groups[key]["alias"] = row.alias.strip()
         groups[key]["packages"].append(Package(client_name=row.cliente, nota=row.nota))
 
     # ── 2. Geocodificar cada dirección única ──────────────────────────────────
-    # Primera pasada: geocodificación individual (Cartociudad → Nominatim → fuzzy)
-    addr_results: list[tuple[str, tuple[float, float] | None]] = []
+    addr_results: list[tuple[str, tuple | None, str]] = []
     for group in groups.values():
         addr = group["address"]
-        already_in_cache = is_cached(addr)
-        coord = geocode(addr)
-        addr_results.append((addr, coord))
-        if not already_in_cache:
-            # Respetar rate-limit de Nominatim entre llamadas reales
-            time.sleep(GEOCODE_DELAY)
-
-    # Segunda pasada: interpolación por calle
-    # Detecta centroides (misma coord exacta en portales distintos de una calle)
-    # y estima posiciones para portales sin geocodificar usando los vecinos conocidos.
-    addr_results = improve_geocoding(addr_results)
+        alias = group.get("alias", "")
+        coord, confidence = geocode(addr, alias=alias)
+        addr_results.append((addr, coord, confidence))
 
     # ── 3. Construir listas geocoded / failed ──────────────────────────────────
-    coord_map: dict[str, tuple[float, float] | None] = dict(addr_results)
+    coord_map: dict[str, tuple[tuple | None, str]] = {
+        addr: (coord, conf)
+        for addr, coord, conf in addr_results
+    }
 
     geocoded: list[GeocodedStop] = []
     failed: list[FailedStop] = []
@@ -139,7 +143,7 @@ def validation_start(req: StartRequest):
         client_names = [p.client_name for p in packages]
         primary = next((p.client_name for p in packages if p.client_name), "")
 
-        coord = coord_map.get(addr)
+        coord, confidence = coord_map.get(addr, (None, "FAILED"))
         if coord:
             lat, lon = coord
             geocoded.append(GeocodedStop(
@@ -150,6 +154,7 @@ def validation_start(req: StartRequest):
                 package_count=package_count,
                 lat=lat,
                 lon=lon,
+                confidence=confidence,
             ))
         else:
             failed.append(FailedStop(
@@ -165,3 +170,13 @@ def validation_start(req: StartRequest):
         total_packages=total_packages,
         unique_addresses=len(groups),
     )
+
+
+@router.post("/override")
+def validation_override(req: OverrideRequest):
+    """
+    Registra coordenadas manuales (pin del usuario) para una dirección.
+    Se guarda en caché permanente y tendrá prioridad en futuros repartos.
+    """
+    add_override(req.address, req.lat, req.lon)
+    return {"ok": True, "address": req.address}

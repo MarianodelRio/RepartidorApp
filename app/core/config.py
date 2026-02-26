@@ -3,7 +3,11 @@ Configuración centralizada del proyecto.
 Todas las constantes y parámetros se definen aquí.
 """
 
+import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ── Rutas del proyecto ────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent.parent          # app/
@@ -13,8 +17,16 @@ PROJECT_DIR = BASE_DIR.parent                               # app_repartir/
 OSRM_BASE_URL = "http://localhost:5000"
 VROOM_BASE_URL = "http://localhost:3000"
 
-# ── Geocodificación (Nominatim) ───────────────────────────────
-NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+# ── Google APIs ───────────────────────────────────────────────
+GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
+GOOGLE_GEOCODING_URL = "https://maps.googleapis.com/maps/api/geocode/json"
+GOOGLE_PLACES_URL = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
+GOOGLE_CACHE_TTL_DAYS = 30      # días antes de expirar entradas de Google/Places
+
+# ── Cartociudad ───────────────────────────────────────────────
+CARTOCIUDAD_MAX_PORTAL_DIFF = 5  # diferencia máxima de portal aceptada
+
+# ── Nominatim (solo para catálogo Overpass de calles) ─────────
 NOMINATIM_USER_AGENT = "posadas-route-planner/1.4.0 (local)"
 
 # ── Zona de trabajo: Posadas, Córdoba ─────────────────────────
@@ -27,8 +39,6 @@ POSADAS_VIEWBOX = "-5.15,37.78,-5.06,37.83"  # lon1,lat1,lon2,lat2
 
 # ── Límites de la API ────────────────────────────────────────
 MAX_STOPS = 200         # máximo de paradas por petición
-GEOCODE_DELAY = 0.5     # segundos entre direcciones (mínimo para Nominatim)
-GEOCODE_RETRY_DELAY = 0.3  # segundos entre estrategias internas
-GEOCODE_TIMEOUT = 30    # timeout por llamada a Nominatim
+GEOCODE_TIMEOUT = 30    # timeout por llamada a APIs externas
 OSRM_TIMEOUT = 60       # timeout para llamadas a OSRM
 VROOM_TIMEOUT = 120     # timeout para llamadas a VROOM

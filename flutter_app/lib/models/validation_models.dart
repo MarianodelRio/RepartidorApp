@@ -4,6 +4,36 @@
 
 import 'route_models.dart';
 
+/// Niveles de confianza de geocodificación.
+enum GeoConfidence {
+  exactAddress, // EXACT_ADDRESS — portal exacto (Cartociudad / Google ROOFTOP)
+  good,         // GOOD — buena estimación (Google RANGE_INTERPOLATED)
+  exactPlace,   // EXACT_PLACE — lugar/negocio encontrado por Places
+  override,     // OVERRIDE — pin manual del usuario
+  failed,       // FAILED — no geocodificado
+
+  ;
+
+  static GeoConfidence fromString(String s) {
+    switch (s) {
+      case 'EXACT_ADDRESS':
+        return GeoConfidence.exactAddress;
+      case 'GOOD':
+        return GeoConfidence.good;
+      case 'EXACT_PLACE':
+        return GeoConfidence.exactPlace;
+      case 'OVERRIDE':
+        return GeoConfidence.override;
+      default:
+        return GeoConfidence.failed;
+    }
+  }
+
+  /// True si la confianza es suficiente para mostrar en verde (no requiere revisión).
+  bool get isAccepted =>
+      this == exactAddress || this == good || this == exactPlace || this == override;
+}
+
 /// Parada geocodificada correctamente.
 class GeocodedStop {
   final String address;
@@ -13,6 +43,7 @@ class GeocodedStop {
   final int packageCount;
   final double lat;
   final double lon;
+  final GeoConfidence confidence;
 
   const GeocodedStop({
     required this.address,
@@ -22,6 +53,7 @@ class GeocodedStop {
     required this.packageCount,
     required this.lat,
     required this.lon,
+    this.confidence = GeoConfidence.good,
   });
 
   factory GeocodedStop.fromJson(Map<String, dynamic> json) {
@@ -39,6 +71,26 @@ class GeocodedStop {
       packageCount: (json['package_count'] as int?) ?? 1,
       lat: (json['lat'] as num).toDouble(),
       lon: (json['lon'] as num).toDouble(),
+      confidence: GeoConfidence.fromString(
+          (json['confidence'] as String?) ?? 'EXACT_ADDRESS'),
+    );
+  }
+
+  /// Crea una copia con los campos modificados.
+  GeocodedStop copyWith({
+    GeoConfidence? confidence,
+    double? lat,
+    double? lon,
+  }) {
+    return GeocodedStop(
+      address: address,
+      clientName: clientName,
+      allClientNames: allClientNames,
+      packages: packages,
+      packageCount: packageCount,
+      lat: lat ?? this.lat,
+      lon: lon ?? this.lon,
+      confidence: confidence ?? this.confidence,
     );
   }
 }

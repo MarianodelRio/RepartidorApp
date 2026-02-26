@@ -5,10 +5,11 @@
 class ApiConfig {
   ApiConfig._();
 
-  /// URL por defecto para desarrollo local. Cambia a tu túnel/URL de producción
-  /// si necesitas exponer la API públicamente.
-  static const String baseUrl = 'http://127.0.0.1:8000';
-  ///static const String baseUrl = 'https://unpermanently-repairable-devon.ngrok-free.dev';
+  /// URL del backend. Apunta al túnel ngrok de producción.
+  /// Para desarrollo local, cambia a 'http://127.0.0.1:8000'.
+  ///
+  // static const String baseUrl = 'http://127.0.0.1:8000';
+  static const String baseUrl = 'https://unpermanently-repairable-devon.ngrok-free.dev';
 
   // ── Endpoints ──
   static const String optimizeEndpoint = '/api/optimize';
@@ -17,6 +18,7 @@ class ApiConfig {
 
   // ── Validación ──
   static const String validationStartEndpoint = '/api/validation/start';
+  static const String validationOverrideEndpoint = '/api/validation/override';
 
   /// Timeout generoso para /api/optimize.
   /// El geocoding de 70-100 direcciones puede tardar 3-5 minutos.

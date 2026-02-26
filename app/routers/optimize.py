@@ -23,7 +23,7 @@ from app.models import (
     RouteSummary,
 )
 from app.services.geocoding import (
-    geocode, geocode_batch, improve_geocoding,
+    geocode, geocode_batch,
     _parse_address, _normalize, _extract_portal_int,
 )
 from app.services.routing import (
@@ -244,7 +244,7 @@ def optimize(req: OptimizeRequest):
     # Si no se indica dirección personalizada, usar coords exactas del depósito
     # (más rápido y fiable que geocodificar en cada petición)
     if req.start_address:
-        origin_coord = geocode(origin_addr)
+        origin_coord, _ = geocode(origin_addr)
         if origin_coord is None:
             raise HTTPException(
                 400,
@@ -287,7 +287,6 @@ def optimize(req: OptimizeRequest):
             print(f"[optimize] 🎯 Usando {len(geocoded_ok)} coordenadas pre-resueltas (validación)")
     else:
         batch = geocode_batch(unique_addresses)
-        batch = improve_geocoding(batch)
         geocoded_ok = [(addr, coord, i) for i, (addr, coord) in enumerate(batch) if coord is not None]
         geocoded_fail = [(addr, i) for i, (addr, coord) in enumerate(batch) if coord is None]
 

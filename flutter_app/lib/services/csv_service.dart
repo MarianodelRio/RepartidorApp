@@ -35,6 +35,7 @@ class CsvService {
     final direcciones = <String>[];
     final ciudades = <String>[];
     final notas = <String>[];
+    final aliases = <String>[];
 
     for (int i = 1; i < lines.length; i++) {
       final line = lines[i].trim();
@@ -48,6 +49,7 @@ class CsvService {
       direcciones.add(dir);
       ciudades.add(_safeGet(fields, colMap['ciudad']!).trim());
       notas.add(_safeGet(fields, colMap['nota']!).trim());
+      aliases.add(_safeGet(fields, colMap['alias']!).trim());
     }
 
     return CsvData(
@@ -55,12 +57,13 @@ class CsvService {
       direcciones: direcciones,
       ciudades: ciudades,
       notas: notas,
+      aliases: aliases,
     );
   }
 
   /// Detecta las columnas cliente, direccion, ciudad, nota por nombre.
   static Map<String, int> _detectColumns(List<String> headers) {
-    int clienteIdx = -1, direccionIdx = -1, ciudadIdx = -1, notaIdx = -1;
+    int clienteIdx = -1, direccionIdx = -1, ciudadIdx = -1, notaIdx = -1, aliasIdx = -1;
 
     for (int i = 0; i < headers.length; i++) {
       final h = headers[i].toLowerCase().trim();
@@ -85,6 +88,11 @@ class CsvService {
            h == 'obs' || h.contains('observac'))) {
         notaIdx = i;
       }
+      if (aliasIdx < 0 &&
+          (h == 'alias' || h == 'negocio' || h == 'local' || h == 'establecimiento' ||
+           h.contains('alias'))) {
+        aliasIdx = i;
+      }
     }
 
     return {
@@ -92,6 +100,7 @@ class CsvService {
       'direccion': direccionIdx,
       'ciudad': ciudadIdx,
       'nota': notaIdx,
+      'alias': aliasIdx,
     };
   }
 

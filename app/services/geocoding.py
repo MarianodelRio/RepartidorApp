@@ -3,21 +3,23 @@ Servicio de geocodificación multi-fuente.
 
 Caché en disco: clave canónica = normalize(calle)#normalize(número).
 
-Estrategia de geocodificación (en orden de prioridad):
-  0. Cartociudad (CNIG) — datos del Registro de Direcciones oficial español.
-     Solo para direcciones con número de portal. Devuelve coordenadas de portal
-     reales (o del portal más cercano). Si el resultado cae fuera del bbox de
-     Posadas, se descarta para evitar falsos positivos.
-  1. Búsqueda directa en Nominatim con la dirección tal cual.
-  2. Si falla: matching difuso contra el catálogo de calles reales de OSM
-     (obtenido de Overpass API). Se usa token_set_ratio sobre nombres normalizados,
-     lo que maneja artículos extra, orden de palabras, abreviaciones, etc.
-     Si se encuentra una calle con similitud ≥ FUZZY_THRESHOLD, se reintenta
-     Nominatim con el nombre corregido.
-  3. Último recurso: solo el nombre de calle sin número (centroide).
+Pipeline (en orden de prioridad):
+  1. Caché en disco:
+     - override/cartociudad → permanentes.
+     - google/places → TTL de GOOGLE_CACHE_TTL_DAYS días.
+  2. Fuzzy matching contra catálogo combinado (OSM + Catastro + aprendidas).
+     Sin llamada HTTP. Corrige el nombre de la calle antes de consultar APIs.
+  3. Cartociudad (CNIG) — portal exacto con validación de paridad + umbral ≤ 5.
+  4. Google Geocoding API — ROOFTOP → EXACT_ADDRESS, RANGE_INTERPOLATED → GOOD.
+  5. Google Places API — si hay alias de negocio y Google Geocoding no fue exacto.
+  6. FAILED → devuelve None.
 
-El catálogo de calles de Overpass se persiste en disco y se recarga si tiene
-más de STREET_LIST_TTL_DAYS días de antigüedad.
+Confianza devuelta (str):
+  EXACT_ADDRESS  — portal exacto (Cartociudad o Google ROOFTOP)
+  GOOD           — buena estimación (Google RANGE_INTERPOLATED)
+  EXACT_PLACE    — lugar/negocio encontrado por Places
+  OVERRIDE       — pin manual
+  FAILED         — no geocodificado
 """
 
 import difflib
@@ -25,17 +27,18 @@ import json
 import re
 import time
 import unicodedata
-from collections import Counter, defaultdict
 from pathlib import Path
 
 import requests
 
 from app.core.config import (
-    NOMINATIM_URL,
     NOMINATIM_USER_AGENT,
-    POSADAS_VIEWBOX,
-    GEOCODE_DELAY,
-    GEOCODE_RETRY_DELAY,
+    POSADAS_CENTER,
+    GOOGLE_API_KEY,
+    GOOGLE_GEOCODING_URL,
+    GOOGLE_PLACES_URL,
+    GOOGLE_CACHE_TTL_DAYS,
+    CARTOCIUDAD_MAX_PORTAL_DIFF,
     GEOCODE_TIMEOUT,
 )
 
@@ -50,12 +53,12 @@ _STREETS_FILE = _DATA_DIR / "osm_streets.json"
 _persisted: dict[str, dict] = {}
 
 # Parámetros de fuzzy matching
-FUZZY_THRESHOLD = 0.80      # similitud mínima para aceptar una corrección
-STREET_LIST_TTL_DAYS = 7    # días antes de refrescar el catálogo de calles
+FUZZY_THRESHOLD = 0.80
+STREET_LIST_TTL_DAYS = 7
 
 # Catálogo de calles OSM (cargado lazily)
 _osm_streets: list[str] | None = None
-_osm_streets_norm: list[str] | None = None  # versiones normalizadas para comparar
+_osm_streets_norm: list[str] | None = None
 
 
 # ─── Normalización ─────────────────────────────────────────────────────────────
@@ -71,76 +74,54 @@ def _parse_address(raw: str) -> tuple[str, str]:
     """
     Extrae (nombre_de_calle, número_portal) de una dirección en texto libre.
 
-    Pasos de limpieza (en orden):
-      1. Elimina sufijo ciudad/país (precedido por coma).
-      2. Elimina contenido en paréntesis y texto tras paréntesis sin cerrar.
-      3. Normaliza prefijos de número: nº, n°, núm., y también "n " suelto antes de dígito
-         y "N?" (codificación corrupta de "nº").
-      4. Elimina indicadores de piso/nota al final: bajo, baja, bj, local, planta, etc.
-      5. Elimina ordinales de piso al final: "2º", "1ºB", etc.
-      6. Limpia puntuación sobrante al final.
-      7. Extrae el número de portal (último token numérico + letra opcional).
+    Para rangos como "96-98", devuelve "96-98" como número.
+    Usa _portal_display() para obtener solo "96" al consultar APIs externas.
     """
     s = raw.strip()
 
-    # 1. Eliminar sufijo de ciudad/país (siempre tras coma para no confundir
-    #    "Calle Córdoba" o "Avenida de Andalucía" con el sufijo geográfico)
+    # 1. Eliminar sufijo de ciudad/país (precedido por coma)
     s = re.sub(
         r",\s*(posadas|14730|c[oó]rdoba|andaluc[ií]a|espa[nñ]a).*$",
         "", s, flags=re.IGNORECASE,
     ).strip().rstrip(",").strip()
 
     # 2. Eliminar contenido entre paréntesis y paréntesis sin cerrar
-    s = re.sub(r"\s*\([^)]*\)\s*", " ", s)   # "(texto completo)"
-    s = re.sub(r"\s*\(.*$", "", s)            # "(texto sin cerrar al final"
+    s = re.sub(r"\s*\([^)]*\)\s*", " ", s)
+    s = re.sub(r"\s*\(.*$", "", s)
     s = s.strip().rstrip(",-").strip()
 
     # 3. Normalizar prefijos de número
-    #    Palabra completa "número"/"numero" (sin cortar otras palabras como "numeroso")
     s = re.sub(r"\bn[uú]m[eé]ro\b\.?\s*", " ", s, flags=re.IGNORECASE)
-    #    Formas cortas: nº, n°, núm., Nº. — SOLO si lo que sigue NO es letra
-    #    (lookahead (?=[\s\d]|$) evita destruir palabras como "número")
     s = re.sub(r"\bn[uúº°][mn]?\.?(?=[\s\d]|$)", " ", s, flags=re.IGNORECASE)
-    #    "N?digit" → codificación corrupta de "nºdigit" (e.g. "N?2" → " 2")
     s = re.sub(r"\bN\?\s*(?=\d)", " ", s)
-    #    "n digit" → bare "n" (con o sin espacio) antes de dígito (e.g. "n17", "N21", "n 2")
     s = re.sub(r"\bn\s*(?=\d)", " ", s, flags=re.IGNORECASE)
     s = re.sub(r"\s+", " ", s).strip()
 
-    # 4. Eliminar indicadores de piso/portal al final (tras el número de portal)
-    #    Cubre: bajo, baja, bj, local, planta, piso, casa, bis, nave, oficina, taller
+    # 4. Eliminar indicadores de piso/portal al final
     _noise = (
         r"(?:bajo|baja|bj|local|planta|piso|casa|bis|nave|oficina|taller|"
         r"sotano|s[oó]tano|entreplanta|dcha|izda|izq|der|pta|dup)"
     )
-    # Caso "NÚMERO PISO INDICADOR" (ej. "72 1 planta"): el número antes del indicador
-    # es el piso, no el portal → eliminar "piso + indicador" cuando van tras otro número
     s = re.sub(
         r"(?<=\d)[\s,]+\d+\s*" + _noise + r"[\s\S]*$",
         "", s, flags=re.IGNORECASE,
     )
-    # Caso simple "NÚMERO INDICADOR" (ej. "6 Bajo"): solo el indicador al final
     s = re.sub(
         r"[\s,]+(?:\d+[ºo°]\s*[a-zA-Z]?\s*)?" + _noise + r"[\s\S]*$",
         "", s, flags=re.IGNORECASE,
     )
 
-    # 5. Eliminar ordinales de piso al final: "2º 2º", "1ºB", "2º C", etc.
-    #    (pueden quedar varios pegados)
+    # 5. Eliminar ordinales de piso al final
     s = re.sub(r"([\s,]+\d+[ºo°]\s*[a-zA-Z]?)+$", "", s, flags=re.IGNORECASE)
 
-    # 6. Limpiar puntuación sobrante al final
+    # 6. Limpiar puntuación sobrante
     s = s.strip().rstrip(",-./").strip()
 
-    # 7. Buscar número de portal al final:
-    #    dígitos + opcional (guión o espacio) + opcional una letra
-    #    Cubre: "28", "2b", "2B", "12-d", "37b"
-    # Número de portal: dígitos + opcional (guión+dígitos±letra | guión/espacio+letra)
-    # Cubre: "28", "2b", "2B", "12-d", "37b", "2-1", "2-1b"
+    # 7. Extraer número de portal (último token numérico + letra/rango opcional)
     m = re.search(r"[\s,]+(\d+(?:-\d+[a-zA-Z]?|[-\s]?[a-zA-Z])?)\s*$", s)
     if m:
         raw_num = m.group(1)
-        number = re.sub(r"\s+", "", raw_num).lower()  # "37 b" → "37b"
+        number = re.sub(r"\s+", "", raw_num).lower()
         street = s[: m.start()].rstrip(" ,").strip()
         if street:
             return street, number
@@ -152,6 +133,17 @@ def _parse_address(raw: str) -> tuple[str, str]:
     return s, ""
 
 
+def _portal_display(number: str) -> str:
+    """
+    Para rangos como '96-98', extrae solo el número primario para APIs externas.
+    '96-98' → '96', '2b' → '2b', '' → ''.
+    """
+    if not number or number == "sn":
+        return ""
+    m = re.match(r"^(\d+)", number)
+    return m.group(1) if m else number
+
+
 def _cache_key(street: str, number: str) -> str:
     """Clave canónica: normalize(calle)#normalize(número)."""
     return f"{_normalize(street)}#{_normalize(number)}"
@@ -159,7 +151,7 @@ def _cache_key(street: str, number: str) -> str:
 
 def _extract_portal_int(number: str) -> int | None:
     """Extrae la parte numérica entera de un número de portal.
-    '47b' → 47, '2-1' → 2, 'sn' → None, '' → None.
+    '47b' → 47, '96-98' → 96, 'sn' → None, '' → None.
     """
     if not number or number == "sn":
         return None
@@ -167,92 +159,22 @@ def _extract_portal_int(number: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _interpolate_coord(
-    num: int,
-    ref_low: tuple[int, float, float],
-    ref_high: tuple[int, float, float],
-) -> "GeoResult | None":
-    """Interpola/extrapola linealmente coords para el portal `num`.
-    Usa ref_low y ref_high como anclas (pueden ser extra-range para extrapolar).
-    Devuelve None si el resultado cae fuera del bbox de trabajo.
-    """
-    n_low, lat_low, lon_low = ref_low
-    n_high, lat_high, lon_high = ref_high
-    span = n_high - n_low
-    if span == 0:
-        return (lat_low, lon_low)
-    ratio = (num - n_low) / span
-    lat = lat_low + ratio * (lat_high - lat_low)
-    lon = lon_low + ratio * (lon_high - lon_low)
-    # Sanity: el resultado debe quedar dentro del área de trabajo
-    if not (_POSADAS_LAT_MIN <= lat <= _POSADAS_LAT_MAX and
-            _POSADAS_LON_MIN <= lon <= _POSADAS_LON_MAX):
-        return None
-    return (lat, lon)
+# ─── Bounding box de Posadas ───────────────────────────────────────────────────
+
+_POSADAS_LAT_MIN, _POSADAS_LAT_MAX = 37.76, 37.84
+_POSADAS_LON_MIN, _POSADAS_LON_MAX = -5.16, -5.04
 
 
-# ─── Fuzzy matching ────────────────────────────────────────────────────────────
-
-def _token_set_ratio(a: str, b: str) -> float:
-    """
-    Similitud basada en conjuntos de tokens (equivalente a RapidFuzz token_set_ratio).
-    Maneja bien casos donde una cadena contiene tokens extra:
-      "calle los hornos" vs "calle hornos" → 1.0
-      "av blas infante"  vs "avenida de blas infante" → muy alto
-    """
-    a_tokens = set(a.split())
-    b_tokens = set(b.split())
-    intersection = sorted(a_tokens & b_tokens)
-    diff_a = sorted(a_tokens - b_tokens)
-    diff_b = sorted(b_tokens - a_tokens)
-
-    t0 = " ".join(intersection)
-    t1 = " ".join(intersection + diff_a)
-    t2 = " ".join(intersection + diff_b)
-
-    def _ratio(x: str, y: str) -> float:
-        if not x and not y:
-            return 1.0
-        return difflib.SequenceMatcher(None, x, y).ratio()
-
-    return max(_ratio(t0, t1), _ratio(t0, t2), _ratio(t1, t2))
+def _in_posadas_bbox(lat: float, lng: float) -> bool:
+    return (
+        _POSADAS_LAT_MIN <= lat <= _POSADAS_LAT_MAX and
+        _POSADAS_LON_MIN <= lng <= _POSADAS_LON_MAX
+    )
 
 
-def _find_closest_street(query_street: str) -> str | None:
-    """
-    Busca en el catálogo OSM el nombre de calle más parecido al consultado.
-    Devuelve el nombre OSM original (con mayúsculas/acentos originales) o None
-    si la similitud no supera FUZZY_THRESHOLD.
-    """
-    streets = _get_osm_streets()
-    if not streets:
-        return None
-
-    query_norm = _normalize(query_street)
-    best_score = 0.0
-    best_street = None
-
-    for osm_name, osm_norm in zip(streets, _osm_streets_norm or []):
-        score = _token_set_ratio(query_norm, osm_norm)
-        if score > best_score:
-            best_score = score
-            best_street = osm_name
-
-    if best_score >= FUZZY_THRESHOLD and best_street and best_street != query_street:
-        print(
-            f"[geocode] Fuzzy match: '{query_street}' → '{best_street}' "
-            f"(score={best_score:.2f})"
-        )
-        return best_street
-
-    return None
-
-
-# ─── Catálogo de calles OSM (Overpass) ────────────────────────────────────────
+# ─── Catálogo de calles (Overpass + Catastro + aprendidas) ─────────────────────
 
 _OVERPASS_URL = "https://overpass-api.de/api/interpreter"
-
-# Bounding box: lat_min, lon_min, lat_max, lon_max (Posadas, Córdoba)
 _BBOX = "37.78,-5.15,37.83,-5.06"
 
 
@@ -280,7 +202,6 @@ def _fetch_streets_from_overpass() -> list[str]:
 
 
 def _load_streets_from_disk() -> list[str] | None:
-    """Carga el catálogo desde disco si existe y no está obsoleto."""
     if not _STREETS_FILE.exists():
         return None
     try:
@@ -302,27 +223,40 @@ def _save_streets_to_disk(streets: list[str]) -> None:
             "utf-8",
         )
     except Exception as e:
-        print(f"[geocode] Error guardando catálogo de calles: {e}")
+        print(f"[geocode] Error guardando catálogo OSM: {e}")
 
 
-def _get_osm_streets() -> list[str]:
-    """Devuelve el catálogo de calles, cargándolo lazily si es necesario."""
+def _get_street_catalog() -> list[str]:
+    """
+    Devuelve el catálogo combinado de calles, cargándolo lazily.
+    Intenta primero el catálogo combinado (catalog.py); si no, solo Overpass.
+    """
     global _osm_streets, _osm_streets_norm
 
     if _osm_streets is not None:
         return _osm_streets
 
-    # Intentar desde disco primero
-    streets = _load_streets_from_disk()
+    # Intentar catálogo combinado (OSM + Catastro + aprendidas)
+    try:
+        from app.services.catalog import get_combined_catalog
+        streets = get_combined_catalog()
+        if streets:
+            _osm_streets = streets
+            _osm_streets_norm = [_normalize(s) for s in streets]
+            return _osm_streets
+    except Exception as e:
+        print(f"[geocode] Error cargando catálogo combinado: {e}")
 
+    # Fallback: solo Overpass
+    streets = _load_streets_from_disk()
     if streets is None:
         print("[geocode] Descargando catálogo de calles desde Overpass...")
         try:
             streets = _fetch_streets_from_overpass()
             _save_streets_to_disk(streets)
-            print(f"[geocode] Catálogo listo: {len(streets)} calles")
+            print(f"[geocode] Catálogo Overpass listo: {len(streets)} calles")
         except Exception as e:
-            print(f"[geocode] Error descargando catálogo Overpass: {e}")
+            print(f"[geocode] Error descargando Overpass: {e}")
             _osm_streets = []
             _osm_streets_norm = []
             return []
@@ -332,22 +266,69 @@ def _get_osm_streets() -> list[str]:
     return _osm_streets
 
 
-# ─── Cartociudad (CNIG — Registro de Direcciones oficial) ──────────────────────
+# ─── Fuzzy matching ────────────────────────────────────────────────────────────
+
+def _token_set_ratio(a: str, b: str) -> float:
+    """Similitud basada en conjuntos de tokens. Maneja tokens extra y orden."""
+    a_tokens = set(a.split())
+    b_tokens = set(b.split())
+    intersection = sorted(a_tokens & b_tokens)
+    diff_a = sorted(a_tokens - b_tokens)
+    diff_b = sorted(b_tokens - a_tokens)
+
+    t0 = " ".join(intersection)
+    t1 = " ".join(intersection + diff_a)
+    t2 = " ".join(intersection + diff_b)
+
+    def _ratio(x: str, y: str) -> float:
+        if not x and not y:
+            return 1.0
+        return difflib.SequenceMatcher(None, x, y).ratio()
+
+    return max(_ratio(t0, t1), _ratio(t0, t2), _ratio(t1, t2))
+
+
+def _find_closest_street(query_street: str) -> str | None:
+    """
+    Busca en el catálogo el nombre de calle más parecido.
+    Devuelve el nombre original (con mayúsculas/acentos) o None si no supera el umbral.
+    """
+    streets = _get_street_catalog()
+    if not streets:
+        return None
+
+    query_norm = _normalize(query_street)
+    best_score = 0.0
+    best_street = None
+
+    for osm_name, osm_norm in zip(streets, _osm_streets_norm or []):
+        score = _token_set_ratio(query_norm, osm_norm)
+        if score > best_score:
+            best_score = score
+            best_street = osm_name
+
+    if best_score >= FUZZY_THRESHOLD and best_street and best_street != query_street:
+        print(
+            f"[geocode] Fuzzy match: '{query_street}' → '{best_street}' "
+            f"(score={best_score:.2f})"
+        )
+        return best_street
+
+    return None
+
+
+# ─── Cartociudad (CNIG) ────────────────────────────────────────────────────────
 
 _CARTOCIUDAD_URL = "https://www.cartociudad.es/geocoder/api/geocoder/findJsonp"
-
-# Bounding box de Posadas con margen generoso para rechazar falsos positivos
-_POSADAS_LAT_MIN, _POSADAS_LAT_MAX = 37.76, 37.84
-_POSADAS_LON_MIN, _POSADAS_LON_MAX = -5.16, -5.04
 
 
 def _cartociudad_request(street: str, number: str) -> GeoResult | None:
     """
     Geocodifica con Cartociudad (CNIG).
-    Devuelve (lat, lon) si encuentra un portal dentro del bbox de Posadas, o None.
-    La API devuelve JSONP; se extrae el JSON con regex.
+    Valida portal devuelto: diff ≤ CARTOCIUDAD_MAX_PORTAL_DIFF Y misma paridad.
+    Devuelve (lat, lon) o None.
     """
-    num_str = number if number and number != "sn" else ""
+    num_str = _portal_display(number)
     query = f"{street} {num_str}, Posadas, Córdoba".strip()
 
     try:
@@ -359,7 +340,6 @@ def _cartociudad_request(street: str, number: str) -> GeoResult | None:
         )
         r.raise_for_status()
 
-        # Quitar wrapper JSONP: cb({...}); → {...}
         m = re.match(r"^\w+\((.+)\)\s*;?\s*$", r.text.strip(), re.DOTALL)
         if not m:
             return None
@@ -372,19 +352,29 @@ def _cartociudad_request(street: str, number: str) -> GeoResult | None:
         if lat == 0 and lng == 0:
             return None
 
-        # Rechazar resultados fuera del área de trabajo
-        if not (_POSADAS_LAT_MIN <= lat <= _POSADAS_LAT_MAX and
-                _POSADAS_LON_MIN <= lng <= _POSADAS_LON_MAX):
-            print(
-                f"[geocode] Cartociudad fuera de bbox ({lat:.4f}, {lng:.4f}) "
-                f"para '{street} {num_str}' — descartado"
-            )
+        if not _in_posadas_bbox(lat, lng):
+            print(f"[geocode] Cartociudad fuera de bbox: '{street} {num_str}' → descartado")
             return None
 
-        portal = data.get("nportal", "?")
+        # Validar portal: paridad + umbral
+        requested_int = _extract_portal_int(number)
+        returned_portal_str = str(data.get("nportal", "") or "").strip()
+        returned_int = _extract_portal_int(returned_portal_str) if returned_portal_str else None
+
+        if requested_int and returned_int:
+            diff = abs(returned_int - requested_int)
+            same_parity = (requested_int % 2) == (returned_int % 2)
+            if diff > CARTOCIUDAD_MAX_PORTAL_DIFF or not same_parity:
+                print(
+                    f"[geocode] Cartociudad portal mismatch: "
+                    f"pedido={requested_int}, devuelto={returned_int} "
+                    f"(diff={diff}, paridad={'ok' if same_parity else 'no'}) → descartado"
+                )
+                return None
+
         print(
             f"[geocode] Cartociudad: '{street} {num_str}' → "
-            f"portal {portal} ({lat:.5f}, {lng:.5f})"
+            f"portal {returned_portal_str} ({lat:.5f}, {lng:.5f})"
         )
         return (lat, lng)
 
@@ -393,91 +383,114 @@ def _cartociudad_request(street: str, number: str) -> GeoResult | None:
         return None
 
 
-# ─── Nominatim ─────────────────────────────────────────────────────────────────
+# ─── Google Geocoding API ──────────────────────────────────────────────────────
 
-def _nominatim_request(params: dict) -> dict | None:
-    """Llama a Nominatim con los params dados; devuelve el primer resultado o None."""
-    base = {
-        "format": "jsonv2",
-        "limit": 1,
-        "countrycodes": "es",
-        "addressdetails": 1,
+def _google_geocode(street: str, number: str) -> tuple[GeoResult, str] | None:
+    """
+    Geocodifica con Google Geocoding API.
+    Devuelve ((lat, lon), location_type) o None.
+    location_type: ROOFTOP | RANGE_INTERPOLATED | GEOMETRIC_CENTER | APPROXIMATE
+    """
+    if not GOOGLE_API_KEY:
+        return None
+
+    num_str = _portal_display(number) if number and number != "sn" else ""
+    address = f"{street} {num_str}, Posadas, Córdoba, España".strip().rstrip(",").strip()
+
+    params = {
+        "address": address,
+        "key": GOOGLE_API_KEY,
+        "components": "locality:Posadas|country:ES",
+        "language": "es",
     }
-    base.update(params)
+
     try:
-        r = requests.get(
-            NOMINATIM_URL,
-            params=base,
-            headers={"User-Agent": NOMINATIM_USER_AGENT},
-            timeout=GEOCODE_TIMEOUT,
-        )
+        r = requests.get(GOOGLE_GEOCODING_URL, params=params, timeout=GEOCODE_TIMEOUT)
         r.raise_for_status()
         data = r.json()
-        if data and isinstance(data, list):
-            return data[0]
+
+        if data.get("status") != "OK" or not data.get("results"):
+            status = data.get("status", "?")
+            if status not in ("ZERO_RESULTS",):
+                print(f"[geocode] Google status={status} para '{address}'")
+            return None
+
+        result = data["results"][0]
+        location = result["geometry"]["location"]
+        location_type = result["geometry"].get("location_type", "APPROXIMATE")
+
+        lat = float(location["lat"])
+        lng = float(location["lng"])
+
+        if not _in_posadas_bbox(lat, lng):
+            print(f"[geocode] Google fuera de bbox ({lat:.4f},{lng:.4f}) para '{address}'")
+            return None
+
+        print(f"[geocode] Google: '{address}' → {location_type} ({lat:.5f}, {lng:.5f})")
+        return (lat, lng), location_type
+
     except Exception as e:
-        print(f"[geocode] Nominatim error: {e}")
-    return None
+        print(f"[geocode] Google error: {e}")
+        return None
 
 
-def _geocode_street_number(street: str, number: str) -> dict | None:
+# ─── Google Places API ─────────────────────────────────────────────────────────
+
+def _google_places(alias: str) -> GeoResult | None:
     """
-    Intenta geocodificar (calle, número) con Nominatim.
-    Prueba primero con número y luego sin él como fallback.
+    Busca un negocio/lugar por nombre con Google Places Find Place.
+    Solo se usa cuando Google Geocoding falla/es impreciso y hay alias.
     """
-    city_ctx = "Posadas, Córdoba, España"
-    num_str = number if number and number != "sn" else ""
+    if not GOOGLE_API_KEY or not alias:
+        return None
 
-    full = f"{street} {num_str}".strip() if num_str else street
-    result = _nominatim_request({
-        "q": f"{full}, {city_ctx}",
-        "viewbox": POSADAS_VIEWBOX,
-        "bounded": 0,
-    })
-    return result
+    params = {
+        "input": f"{alias}, Posadas, Córdoba",
+        "inputtype": "textquery",
+        "fields": "geometry",
+        "locationbias": f"circle:5000@{POSADAS_CENTER[0]},{POSADAS_CENTER[1]}",
+        "key": GOOGLE_API_KEY,
+        "language": "es",
+    }
+
+    try:
+        r = requests.get(GOOGLE_PLACES_URL, params=params, timeout=GEOCODE_TIMEOUT)
+        r.raise_for_status()
+        data = r.json()
+
+        if data.get("status") != "OK" or not data.get("candidates"):
+            return None
+
+        location = data["candidates"][0]["geometry"]["location"]
+        lat = float(location["lat"])
+        lng = float(location["lng"])
+
+        if not _in_posadas_bbox(lat, lng):
+            print(f"[geocode] Google Places fuera de bbox para '{alias}'")
+            return None
+
+        print(f"[geocode] Google Places: '{alias}' → ({lat:.5f}, {lng:.5f})")
+        return (lat, lng)
+
+    except Exception as e:
+        print(f"[geocode] Google Places error: {e}")
+        return None
+
+
+# ─── TTL de caché Google ───────────────────────────────────────────────────────
+
+def _google_cache_expired(entry: dict) -> bool:
+    """True si una entrada google/places ha superado el TTL configurado."""
+    cached_at = entry.get("cached_at")
+    if cached_at is None:
+        return False
+    age_days = (time.time() - float(cached_at)) / 86400
+    return age_days > GOOGLE_CACHE_TTL_DAYS
 
 
 # ─── Persistencia ──────────────────────────────────────────────────────────────
 
-def _load_cache() -> None:
-    """Carga entradas del JSON en la caché en memoria al arrancar."""
-    global _persisted
-    if not _CACHE_FILE.exists():
-        _persisted = {}
-        return
-    try:
-        _persisted = json.loads(_CACHE_FILE.read_text("utf-8"))
-        for key, entry in _persisted.items():
-            try:
-                _cache[key] = (float(entry["lat"]), float(entry["lon"]))
-            except Exception:
-                pass
-    except Exception:
-        _persisted = {}
-
-
-def _persist_entry(
-    key: str, lat: float, lon: float,
-    street: str, number: str, raw: dict,
-    corrected_to: str | None = None,
-    source: str = "nominatim",
-) -> None:
-    """Guarda una entrada geocodificada en disco."""
-    addr_detail = raw.get("address", {})
-    entry: dict = {
-        "lat": lat,
-        "lon": lon,
-        "street": street,
-        "number": number if number else None,
-        "display_name": raw.get("display_name"),
-        "osm_type": raw.get("osm_type"),        # "way" = centroide, "node" = portal exacto
-        "osm_road": addr_detail.get("road"),
-        "osm_house_number": addr_detail.get("house_number"),
-        "source": source,
-    }
-    if corrected_to:
-        entry["fuzzy_corrected_to"] = corrected_to
-    _persisted[key] = entry
+def _save_cache() -> None:
     try:
         _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
         _CACHE_FILE.write_text(
@@ -487,288 +500,216 @@ def _persist_entry(
         print(f"[geocode] Error guardando caché: {e}")
 
 
-def _is_nominatim_centroid(address: str) -> bool:
-    """
-    True si la dirección fue geocodificada por Nominatim y el resultado es un
-    centroide de calle (osm_type='way'), es decir, Nominatim encontró la calle
-    pero no el portal concreto.
-    False en cualquier otro caso (Cartociudad, portal exacto OSM, interpolado,
-    no en caché, o sin número de portal).
-    """
+def _load_cache() -> None:
+    """Carga entradas del JSON en la caché en memoria al arrancar.
+    Descarta entradas google/places expiradas."""
+    global _persisted
+    if not _CACHE_FILE.exists():
+        _persisted = {}
+        return
     try:
-        street, number = _parse_address(address.strip())
-        if not number or number == "sn":
-            return False
-        key = _cache_key(street, number)
-        entry = _persisted.get(key, {})
-        return (
-            entry.get("source") == "nominatim" and
-            entry.get("osm_type") == "way"
-        )
+        raw = json.loads(_CACHE_FILE.read_text("utf-8"))
+        _persisted = {}
+        for key, entry in raw.items():
+            try:
+                lat = float(entry["lat"])
+                lon = float(entry["lon"])
+                src = entry.get("source", "")
+                if src in ("google", "places") and _google_cache_expired(entry):
+                    continue  # Expirada: se re-geocodificará
+                _persisted[key] = entry
+                _cache[key] = (lat, lon)
+            except Exception:
+                pass
     except Exception:
-        return False
+        _persisted = {}
+
+
+def _persist_entry(
+    key: str,
+    lat: float,
+    lon: float,
+    street: str,
+    number: str,
+    source: str = "google",
+    confidence: str = "GOOD",
+    corrected_to: str | None = None,
+    alias: str | None = None,
+) -> None:
+    """Guarda una entrada geocodificada en disco."""
+    entry: dict = {
+        "lat": lat,
+        "lon": lon,
+        "street": street,
+        "number": number if number else None,
+        "source": source,
+        "confidence": confidence,
+    }
+    if source in ("google", "places"):
+        entry["cached_at"] = time.time()
+    if corrected_to:
+        entry["fuzzy_corrected_to"] = corrected_to
+    if alias:
+        entry["alias"] = alias
+    _persisted[key] = entry
+    _save_cache()
 
 
 # ─── API pública ────────────────────────────────────────────────────────────────
 
-def geocode(address: str) -> GeoResult | None:
+def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
     """
-    Geocodifica una dirección y devuelve (lat, lon) o None.
+    Geocodifica una dirección. Devuelve ((lat, lon), confidence).
+    confidence: EXACT_ADDRESS | GOOD | EXACT_PLACE | OVERRIDE | FAILED
 
-    0. Si la cadena es directamente "lat,lon" (ej. coordenadas GPS), la devuelve sin llamada HTTP.
-    1. Consulta caché (incluye overrides manuales).
-    2. Intenta Cartociudad (CNIG) — solo si hay número de portal.
-    3. Llama a Nominatim directamente.
-    4. Si falla, hace fuzzy matching contra el catálogo OSM y reintenta.
-    5. Último recurso: intenta sin número de portal (centroide de calle).
+    Pipeline:
+      0. Formato "lat,lon" directo → OVERRIDE.
+      1. Caché (con TTL para google/places).
+      2. Fuzzy matching en catálogo (corrección de nombre sin API).
+      3. Cartociudad (parity + threshold ≤ 5) → EXACT_ADDRESS.
+      4. Google Geocoding ROOFTOP → EXACT_ADDRESS / RANGE_INTERPOLATED → GOOD.
+      5. Google Places (solo si alias) → EXACT_PLACE.
+      6. FAILED.
     """
     if not address or not address.strip():
-        return None
+        return None, "FAILED"
 
-    # Detectar formato "lat,lon" — usado por GPS y por el selector de mapa manual
+    # 0. Formato "lat,lon" directo
     coord_match = re.match(
-        r'^\s*([-+]?\d+\.?\d*)\s*,\s*([-+]?\d+\.?\d*)\s*$',
+        r"^\s*([-+]?\d+\.?\d*)\s*,\s*([-+]?\d+\.?\d*)\s*$",
         address.strip(),
     )
     if coord_match:
-        return (float(coord_match.group(1)), float(coord_match.group(2)))
+        return (float(coord_match.group(1)), float(coord_match.group(2))), "OVERRIDE"
 
     street, number = _parse_address(address.strip())
     key = _cache_key(street, number)
 
+    # 1. Caché
     if key in _cache:
-        return _cache[key]
+        coord = _cache[key]
+        entry = _persisted.get(key, {})
+        src = entry.get("source", "")
+        if src in ("google", "places") and _google_cache_expired(entry):
+            # Expirada: limpiar y re-geocodificar
+            del _cache[key]
+            _persisted.pop(key, None)
+        else:
+            if coord is None:
+                return None, "FAILED"
+            confidence = entry.get("confidence", "GOOD")
+            return coord, confidence
 
+    # 2. Fuzzy matching (sin API — solo corrige el nombre de calle)
     corrected_to: str | None = None
+    corrected_street = street
+    closest = _find_closest_street(street)
+    if closest:
+        corrected_to = closest
+        corrected_street = closest
 
-    # Intento 0: Cartociudad (portal exacto, datos CNIG) — solo si hay número
+    # 3. Cartociudad (solo con número de portal)
     if number and number != "sn":
-        carto = _cartociudad_request(street, number)
+        carto = _cartociudad_request(corrected_street, number)
         if carto:
             _cache[key] = carto
-            _persist_entry(key, carto[0], carto[1], street, number, {
-                "display_name": f"[cartociudad] {street} {number}, Posadas",
-                "address": {"road": street, "house_number": number},
-            }, source="cartociudad")
-            return carto
+            _persist_entry(
+                key, carto[0], carto[1], street, number,
+                source="cartociudad", confidence="EXACT_ADDRESS",
+                corrected_to=corrected_to,
+            )
+            # Aprender la corrección fuzzy si fue útil
+            if corrected_to:
+                try:
+                    from app.services.catalog import save_learned_street
+                    save_learned_street(corrected_to)
+                except Exception:
+                    pass
+            return carto, "EXACT_ADDRESS"
 
-    # Intento 1: búsqueda directa en Nominatim
-    raw = _geocode_street_number(street, number)
+    # 4. Google Geocoding
+    google_result = _google_geocode(corrected_street, number)
+    if google_result:
+        coord, location_type = google_result
+        if location_type in ("ROOFTOP", "RANGE_INTERPOLATED"):
+            confidence = "EXACT_ADDRESS" if location_type == "ROOFTOP" else "GOOD"
+            _cache[key] = coord
+            _persist_entry(
+                key, coord[0], coord[1], street, number,
+                source="google", confidence=confidence,
+                corrected_to=corrected_to,
+            )
+            if corrected_to:
+                try:
+                    from app.services.catalog import save_learned_street
+                    save_learned_street(corrected_to)
+                except Exception:
+                    pass
+            return coord, confidence
+        # GEOMETRIC_CENTER / APPROXIMATE: no es suficiente → intentar Places si hay alias
 
-    # Intento 2: fuzzy match si falló
-    if raw is None:
-        time.sleep(GEOCODE_RETRY_DELAY)
-        closest = _find_closest_street(street)
-        if closest:
-            corrected_to = closest
-            raw = _geocode_street_number(closest, number)
+    # 5. Google Places (solo si hay alias de negocio)
+    if alias:
+        places_coord = _google_places(alias)
+        if places_coord:
+            _cache[key] = places_coord
+            _persist_entry(
+                key, places_coord[0], places_coord[1], street, number,
+                source="places", confidence="EXACT_PLACE",
+                corrected_to=corrected_to, alias=alias,
+            )
+            return places_coord, "EXACT_PLACE"
 
-    # Intento 3: sin número como último recurso
-    if raw is None and number:
-        time.sleep(GEOCODE_RETRY_DELAY)
-        raw = _nominatim_request({
-            "q": f"{corrected_to or street}, Posadas, Córdoba, España",
-            "viewbox": POSADAS_VIEWBOX,
-            "bounded": 0,
-        })
-
-    if raw:
-        try:
-            lat, lon = float(raw["lat"]), float(raw["lon"])
-            _cache[key] = (lat, lon)
-            _persist_entry(key, lat, lon, street, number, raw, corrected_to)
-            return (lat, lon)
-        except Exception:
-            pass
-
+    # 6. FAILED
     _cache[key] = None
-    return None
+    return None, "FAILED"
 
 
 def is_cached(address: str) -> bool:
-    """Devuelve True si la dirección ya está en caché (sin llamada HTTP)."""
+    """True si la dirección está en caché válida (sin llamada HTTP)."""
     if not address or not address.strip():
         return False
     street, number = _parse_address(address.strip())
     key = _cache_key(street, number)
-    return key in _cache
+    if key not in _cache:
+        return False
+    entry = _persisted.get(key, {})
+    src = entry.get("source", "")
+    if src in ("google", "places") and _google_cache_expired(entry):
+        return False
+    return True
 
 
 def geocode_batch(addresses: list[str]) -> list[tuple[str, GeoResult | None]]:
     """
-    Geocodifica una lista de direcciones respetando el rate-limit de Nominatim.
+    Geocodifica una lista de direcciones (sin alias).
     Devuelve lista de (dirección_original, (lat, lon) | None).
+    Usado por el path legacy de /optimize cuando no hay coords pre-resueltas.
     """
     results = []
-    for i, addr in enumerate(addresses):
-        already = is_cached(addr)
-        coord = geocode(addr)
+    for addr in addresses:
+        coord, _ = geocode(addr)
         results.append((addr, coord))
-        if not already and i < len(addresses) - 1:
-            time.sleep(GEOCODE_DELAY)
     return results
 
 
 def add_override(address: str, lat: float, lon: float) -> None:
     """
-    Registra coordenadas manuales para una dirección (override manual).
+    Registra coordenadas manuales para una dirección (override permanente).
     Tiene prioridad sobre cualquier resultado automático.
     """
     street, number = _parse_address(address.strip())
     key = _cache_key(street, number)
     _cache[key] = (lat, lon)
-    _persist_entry(key, lat, lon, street, number, {
-        "display_name": f"[manual] {address.strip()}",
-        "address": {},
-    })
+    _persist_entry(
+        key, lat, lon, street, number,
+        source="override", confidence="OVERRIDE",
+    )
 
 
 def clear_cache() -> None:
     """Limpia la caché en memoria (no borra el disco)."""
     _cache.clear()
-
-
-def improve_geocoding(
-    results: list[tuple[str, GeoResult | None]],
-) -> list[tuple[str, GeoResult | None]]:
-    """
-    Post-proceso de batch: interpola posiciones para portales con centroide de Nominatim.
-
-    Un portal "necesita mejora" cuando:
-      - coord es None (geocodificación completamente fallida), o
-      - _is_nominatim_centroid() es True: Nominatim devolvió osm_type='way',
-        es decir, encontró la calle pero no el portal concreto.
-
-    Para cada portal que necesita mejora, busca en la misma calle portales con
-    coordenadas reales (Cartociudad, nodo OSM exacto, o interpolados previos) y
-    realiza INTERPOLACIÓN LINEAL usando el portal conocido más cercano por debajo
-    y el más cercano por arriba del número buscado.
-
-    NO se extrapola fuera del rango de portales conocidos: si no hay referencia
-    a ambos lados del portal, la entrada se deja sin cambios.
-
-    Las coordenadas estimadas se guardan en caché con source='interpolated'.
-    Si el resultado cae fuera del bbox de Posadas se descarta.
-    """
-    if not results:
-        return results
-
-    # ── 1. Parsear y marcar centroides ────────────────────────────────────────
-    # (addr, street_norm, number, portal_int, coord, is_centroid)
-    parsed: list[tuple[str, str, str, int | None, GeoResult | None, bool]] = []
-    for addr, coord in results:
-        try:
-            street, number = _parse_address(addr)
-            street_norm = _normalize(street)
-            portal_int = _extract_portal_int(number)
-        except Exception:
-            parsed.append((addr, "", "", None, coord, False))
-            continue
-        is_centroid = _is_nominatim_centroid(addr)
-        parsed.append((addr, street_norm, number, portal_int, coord, is_centroid))
-
-    # ── 2. Tabla de referencia: portales con coords reales ────────────────────
-    # Son válidos como referencia: Cartociudad, nodo OSM exacto, interpolados.
-    # NO son válidos: centroides de Nominatim (osm_type='way') ni None.
-    ref_table: dict[str, list[tuple[int, float, float]]] = defaultdict(list)
-    for _, street_norm, _, portal_int, coord, is_centroid in parsed:
-        if coord is None or portal_int is None or not street_norm:
-            continue
-        if is_centroid:
-            continue  # centroide de Nominatim, no sirve como referencia
-        ref_table[street_norm].append((portal_int, coord[0], coord[1]))
-
-    for sn in ref_table:
-        ref_table[sn].sort(key=lambda x: x[0])
-
-    # ── 2b. Enriquecer ref_table con entradas de caché de la misma calle ──────
-    # Las entradas del batch actual pueden no tener suficientes referencias.
-    # Buscamos en _persisted otras entradas de la misma calle con coords reales
-    # (Cartociudad, nodo OSM exacto, interpolados) de repartos anteriores.
-    streets_needing = {
-        sn
-        for _, sn, _, portal_int, coord, is_centroid in parsed
-        if (coord is None or is_centroid) and portal_int is not None and sn
-    }
-
-    for cached_key, entry in _persisted.items():
-        parts = cached_key.split("#", 1)
-        if len(parts) != 2:
-            continue
-        sn_cached, num_cached = parts
-        if sn_cached not in streets_needing:
-            continue
-        # Solo si no es centroide de Nominatim
-        if entry.get("source") == "nominatim" and entry.get("osm_type") == "way":
-            continue
-        portal_int_cached = _extract_portal_int(num_cached)
-        if portal_int_cached is None:
-            continue
-        try:
-            lat_c = float(entry["lat"])
-            lon_c = float(entry["lon"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        # Añadir solo si ese número de portal no está ya en la tabla
-        existing_nums = {r[0] for r in ref_table[sn_cached]}
-        if portal_int_cached not in existing_nums:
-            ref_table[sn_cached].append((portal_int_cached, lat_c, lon_c))
-
-    # Re-ordenar tras añadir entradas de caché
-    for sn in ref_table:
-        ref_table[sn].sort(key=lambda x: x[0])
-
-    # ── 3. Interpolar ─────────────────────────────────────────────────────────
-    improved: list[tuple[str, GeoResult | None]] = []
-
-    for addr, street_norm, number, portal_int, coord, is_centroid in parsed:
-        needs_improvement = (coord is None or is_centroid) and portal_int is not None
-
-        if not needs_improvement:
-            improved.append((addr, coord))
-            continue
-
-        refs = ref_table.get(street_norm, [])
-        if len(refs) < 2:
-            improved.append((addr, coord))
-            continue
-
-        lowers = [r for r in refs if r[0] <= portal_int]
-        uppers = [r for r in refs if r[0] > portal_int]
-
-        # Solo interpolamos si hay referencias a AMBOS lados del portal.
-        # Sin referencia inferior o superior no extrapolamos: la dirección de
-        # numeración de la calle es desconocida y podría colocar el punto
-        # en el extremo equivocado.
-        if not lowers or not uppers:
-            improved.append((addr, coord))
-            continue
-
-        ref_low, ref_high = lowers[-1], uppers[0]
-        interp = _interpolate_coord(portal_int, ref_low, ref_high)
-        if interp is None:
-            improved.append((addr, coord))
-            continue
-
-        # Guardar en caché con source='interpolated'
-        try:
-            street, _ = _parse_address(addr)
-            key = _cache_key(street, number)
-            _cache[key] = interp
-            _persist_entry(key, interp[0], interp[1], street, number, {
-                "display_name": f"[interpolated] {addr}",
-                "address": {"road": street, "house_number": number},
-            }, source="interpolated")
-        except Exception as e:
-            print(f"[geocode] Error guardando interpolación para '{addr}': {e}")
-
-        print(
-            f"[geocode] Interpolado: '{addr}' → portal {portal_int} "
-            f"({interp[0]:.5f}, {interp[1]:.5f})"
-        )
-        improved.append((addr, interp))
-
-    return improved
 
 
 # Cargar caché al importar el módulo
