@@ -539,7 +539,8 @@ def _google_places(alias: str) -> GeoResult | None:
         "input": f"{alias}, Posadas, Córdoba",
         "inputtype": "textquery",
         "fields": "geometry",
-        "locationbias": f"circle:5000@{POSADAS_CENTER[0]},{POSADAS_CENTER[1]}",
+        # Radio 1500 m: cubre el casco urbano de Posadas sin salir al extrarradio
+        "locationbias": f"circle:1500@{POSADAS_CENTER[0]},{POSADAS_CENTER[1]}",
         "key": GOOGLE_API_KEY,
         "language": "es",
     }
@@ -550,6 +551,12 @@ def _google_places(alias: str) -> GeoResult | None:
         data = r.json()
 
         if data.get("status") != "OK" or not data.get("candidates"):
+            return None
+
+        # Rechazar si hay más de un candidato: alias ambiguo (p.ej. "Farmacia")
+        if len(data["candidates"]) > 1:
+            print(f"[geocode] Google Places: alias '{alias}' ambiguo "
+                  f"({len(data['candidates'])} candidatos) → descartado")
             return None
 
         location = data["candidates"][0]["geometry"]["location"]
