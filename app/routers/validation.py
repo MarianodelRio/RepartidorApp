@@ -5,7 +5,7 @@ Flujo: POST /api/validation/start
   1. Recibe filas crudas del CSV {cliente, direccion, ciudad, nota, alias}
   2. Agrupa por dirección normalizada (misma parada = +1 paquete)
   3. Geocodifica cada dirección única con el pipeline multi-fuente:
-     Cartociudad → Google Geocoding → Google Places (si alias) → FAILED
+     Google Geocoding → Google Places (si alias) → FAILED
   4. Devuelve: geocoded (con coords + confidence) y failed (sin coords)
 
 POST /api/validation/override
@@ -96,7 +96,7 @@ def _normalize_for_dedup(addr: str) -> str:
 def validation_start(req: StartRequest):
     """Valida todas las direcciones del CSV:
     1. Agrupa duplicados
-    2. Geocodifica con pipeline: Cartociudad → Google → Places → FAILED
+    2. Geocodifica con pipeline: Google → Places → FAILED
     3. Devuelve listas separadas: geocoded (con coords) y failed (sin coords)
     """
     rows = req.rows

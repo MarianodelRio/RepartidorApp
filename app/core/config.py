@@ -23,9 +23,6 @@ GOOGLE_GEOCODING_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 GOOGLE_PLACES_URL = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
 GOOGLE_CACHE_TTL_DAYS = 30      # días antes de expirar entradas de Google/Places
 
-# ── Cartociudad ───────────────────────────────────────────────
-CARTOCIUDAD_MAX_PORTAL_DIFF = 5  # diferencia máxima de portal aceptada
-
 # ── Nominatim (solo para catálogo Overpass de calles) ─────────
 NOMINATIM_USER_AGENT = "posadas-route-planner/1.4.0 (local)"
 

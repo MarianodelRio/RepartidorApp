@@ -6,7 +6,7 @@ import 'route_models.dart';
 
 /// Niveles de confianza de geocodificación.
 enum GeoConfidence {
-  exactAddress, // EXACT_ADDRESS — portal exacto (Cartociudad / Google ROOFTOP)
+  exactAddress, // EXACT_ADDRESS — portal exacto (Google ROOFTOP)
   good,         // GOOD — buena estimación (Google RANGE_INTERPOLATED)
   exactPlace,   // EXACT_PLACE — lugar/negocio encontrado por Places
   override,     // OVERRIDE — pin manual del usuario

@@ -4,18 +4,15 @@ Servicio de geocodificación multi-fuente.
 Caché en disco: clave canónica = normalize(calle)#normalize(número).
 
 Pipeline (en orden de prioridad):
-  1. Caché en disco:
-     - override/cartociudad → permanentes.
-     - google/places → TTL de GOOGLE_CACHE_TTL_DAYS días.
+  1. Caché en disco: override permanente, google/places con TTL de GOOGLE_CACHE_TTL_DAYS días.
   2. Fuzzy matching contra catálogo combinado (OSM + Catastro + aprendidas).
      Sin llamada HTTP. Corrige el nombre de la calle antes de consultar APIs.
-  3. Cartociudad (CNIG) — portal exacto con validación de paridad + umbral ≤ 5.
-  4. Google Geocoding API — ROOFTOP → EXACT_ADDRESS, RANGE_INTERPOLATED → GOOD.
-  5. Google Places API — si hay alias de negocio y Google Geocoding no fue exacto.
-  6. FAILED → devuelve None.
+  3. Google Geocoding API — ROOFTOP → EXACT_ADDRESS, RANGE_INTERPOLATED → GOOD.
+  4. Google Places API — si hay alias de negocio y Google Geocoding no fue exacto.
+  5. FAILED → devuelve None.
 
 Confianza devuelta (str):
-  EXACT_ADDRESS  — portal exacto (Cartociudad o Google ROOFTOP)
+  EXACT_ADDRESS  — portal exacto (Google ROOFTOP)
   GOOD           — buena estimación (Google RANGE_INTERPOLATED)
   EXACT_PLACE    — lugar/negocio encontrado por Places
   OVERRIDE       — pin manual
@@ -38,7 +35,6 @@ from app.core.config import (
     GOOGLE_GEOCODING_URL,
     GOOGLE_PLACES_URL,
     GOOGLE_CACHE_TTL_DAYS,
-    CARTOCIUDAD_MAX_PORTAL_DIFF,
     GEOCODE_TIMEOUT,
 )
 
@@ -177,16 +173,6 @@ def _portal_display(number: str) -> str:
 def _cache_key(street: str, number: str) -> str:
     """Clave canónica: normalize(calle)#normalize(número)."""
     return f"{_normalize(street)}#{_normalize(number)}"
-
-
-def _extract_portal_int(number: str) -> int | None:
-    """Extrae la parte numérica entera de un número de portal.
-    '47b' → 47, '96-98' → 96, 'sn' → None, '' → None.
-    """
-    if not number or number == "sn":
-        return None
-    m = re.match(r"^(\d+)", number.strip())
-    return int(m.group(1)) if m else None
 
 
 # ─── Bounding box de Posadas ───────────────────────────────────────────────────
@@ -399,80 +385,6 @@ def _find_closest_street(query_street: str) -> str | None:
     return None
 
 
-# ─── Cartociudad (CNIG) ────────────────────────────────────────────────────────
-
-_CARTOCIUDAD_URL = "https://www.cartociudad.es/geocoder/api/geocoder/findJsonp"
-
-
-def _cartociudad_request(street: str, number: str) -> GeoResult | None:
-    """
-    Geocodifica con Cartociudad (CNIG).
-    Valida portal devuelto: diff ≤ CARTOCIUDAD_MAX_PORTAL_DIFF Y misma paridad.
-    Devuelve (lat, lon) o None.
-    """
-    num_str = _portal_display(number)
-    query = f"{street} {num_str}, Posadas, Córdoba".strip()
-
-    try:
-        r = requests.get(
-            _CARTOCIUDAD_URL,
-            params={"q": query, "callback": "cb"},
-            headers={"User-Agent": NOMINATIM_USER_AGENT},
-            timeout=GEOCODE_TIMEOUT,
-        )
-        r.raise_for_status()
-
-        m = re.match(r"^\w+\((.+)\)\s*;?\s*$", r.text.strip(), re.DOTALL)
-        if not m:
-            return None
-        data = json.loads(m.group(1))
-        if not data or not isinstance(data, dict):
-            return None
-
-        lat = float(data.get("lat") or 0)
-        lng = float(data.get("lng") or 0)
-        if lat == 0 and lng == 0:
-            return None
-
-        if not _in_posadas_bbox(lat, lng):
-            print(f"[geocode] Cartociudad fuera de bbox: '{street} {num_str}' → descartado")
-            return None
-
-        # Validar portal: paridad + umbral
-        requested_int = _extract_portal_int(number)
-        returned_portal_str = str(data.get("nportal", "") or "").strip()
-        returned_int = _extract_portal_int(returned_portal_str) if returned_portal_str else None
-
-        # Si pedimos portal pero Cartociudad devuelve centroide (sin nportal), rechazar
-        if requested_int is not None and returned_int is None:
-            print(
-                f"[geocode] Cartociudad sin portal exacto: "
-                f"pedido={requested_int}, devuelto=centroide → descartado"
-            )
-            return None
-
-        if requested_int and returned_int:
-            diff = abs(returned_int - requested_int)
-            same_parity = (requested_int % 2) == (returned_int % 2)
-            if diff > CARTOCIUDAD_MAX_PORTAL_DIFF or not same_parity:
-                print(
-                    f"[geocode] Cartociudad portal mismatch: "
-                    f"pedido={requested_int}, devuelto={returned_int} "
-                    f"(diff={diff}, paridad={'ok' if same_parity else 'no'}) → descartado"
-                )
-                return None
-
-        print(
-            f"[geocode] Cartociudad: '{street} {num_str}' → "
-            f"portal {returned_portal_str} ({lat:.5f}, {lng:.5f})"
-        )
-        return (lat, lng)
-
-    except Exception as e:
-        print(f"[geocode] Cartociudad error para '{query}': {e}")
-        return None
-
-
 # ─── Google Geocoding API ──────────────────────────────────────────────────────
 
 def _google_geocode(street: str, number: str) -> tuple[GeoResult, str] | None:
@@ -609,10 +521,15 @@ def _load_cache() -> None:
                 lat = float(entry["lat"])
                 lon = float(entry["lon"])
                 src = entry.get("source", "")
+                if src == "cartociudad":
+                    continue  # Eliminado del pipeline: se re-geocodificará con Google
                 if src in ("google", "places") and _google_cache_expired(entry):
                     continue  # Expirada: se re-geocodificará
                 _persisted[key] = entry
                 _cache[key] = (lat, lon)
+                alias_stored = entry.get("alias", "")
+                if alias_stored:
+                    _cache["@" + _normalize(alias_stored)] = (lat, lon)
             except Exception:
                 pass
     except Exception:
@@ -645,6 +562,7 @@ def _persist_entry(
         entry["fuzzy_corrected_to"] = corrected_to
     if alias:
         entry["alias"] = alias
+        _cache["@" + _normalize(alias)] = (lat, lon)
     _persisted[key] = entry
     _save_cache()
 
@@ -658,12 +576,11 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
 
     Pipeline:
       0. Formato "lat,lon" directo → OVERRIDE.
-      1. Caché (con TTL para google/places).
+      1. Caché (_cache): clave de dirección ("calle#num") o clave de alias ("@nombre").
       2. Fuzzy matching en catálogo (corrección de nombre sin API).
-      3. Cartociudad (parity + threshold ≤ 5) → EXACT_ADDRESS.
-      4. Google Geocoding ROOFTOP → EXACT_ADDRESS / RANGE_INTERPOLATED → GOOD.
-      5. Google Places (solo si alias) → EXACT_PLACE.
-      6. FAILED.
+      3. Google Geocoding ROOFTOP → EXACT_ADDRESS / RANGE_INTERPOLATED → GOOD.
+      4. Google Places (solo si alias) → EXACT_PLACE.
+      5. FAILED.
     """
     if not address or not address.strip():
         return None, "FAILED"
@@ -679,7 +596,7 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
     street, number = _parse_address(address.strip())
     key = _cache_key(street, number)
 
-    # 1. Caché
+    # 1. Caché (por dirección o por alias — misma estructura _cache)
     if key in _cache:
         coord = _cache[key]
         entry = _persisted.get(key, {})
@@ -687,6 +604,8 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
         if src in ("google", "places") and _google_cache_expired(entry):
             # Expirada: limpiar memoria y disco, y re-geocodificar
             del _cache[key]
+            if entry.get("alias"):
+                _cache.pop("@" + _normalize(entry["alias"]), None)
             _persisted.pop(key, None)
             _save_cache()
         else:
@@ -694,6 +613,12 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
                 return None, "FAILED"
             confidence = entry.get("confidence", "GOOD")
             return coord, confidence
+
+    if alias:
+        alias_coord = _cache.get("@" + _normalize(alias))
+        if alias_coord is not None:
+            print(f"[geocode] Caché por alias '{alias}' → EXACT_PLACE")
+            return alias_coord, "EXACT_PLACE"
 
     # 2. Fuzzy matching (sin API — solo corrige el nombre de calle)
     corrected_to: str | None = None
@@ -703,26 +628,7 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
         corrected_to = closest
         corrected_street = closest
 
-    # 3. Cartociudad (solo con número de portal)
-    if number and number != "sn":
-        carto = _cartociudad_request(corrected_street, number)
-        if carto:
-            _cache[key] = carto
-            _persist_entry(
-                key, carto[0], carto[1], street, number,
-                source="cartociudad", confidence="EXACT_ADDRESS",
-                corrected_to=corrected_to,
-            )
-            # Aprender la corrección fuzzy si fue útil
-            if corrected_to:
-                try:
-                    from app.services.catalog import save_learned_street
-                    save_learned_street(corrected_to)
-                except Exception:
-                    pass
-            return carto, "EXACT_ADDRESS"
-
-    # 4. Google Geocoding
+    # 3. Google Geocoding
     google_result = _google_geocode(corrected_street, number)
     if google_result:
         coord, location_type = google_result
@@ -743,7 +649,7 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
             return coord, confidence
         # GEOMETRIC_CENTER / APPROXIMATE: no es suficiente → intentar Places si hay alias
 
-    # 5. Google Places (solo si hay alias de negocio)
+    # 4. Google Places (solo si hay alias de negocio)
     if alias:
         places_coord = _google_places(alias)
         if places_coord:
@@ -755,7 +661,7 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
             )
             return places_coord, "EXACT_PLACE"
 
-    # 6. FAILED
+    # 5. FAILED
     _cache[key] = None
     return None, "FAILED"
 
