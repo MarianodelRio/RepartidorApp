@@ -59,6 +59,23 @@ STREET_LIST_TTL_DAYS = 7
 # Catálogo de calles OSM (cargado lazily)
 _osm_streets: list[str] | None = None
 _osm_streets_norm: list[str] | None = None
+_osm_streets_norm_set: set[str] | None = None  # búsqueda O(1) de pertenencia
+
+
+# Abreviaturas de tipo de vía que se expanden antes de analizar la dirección
+_VIA_ABBREVS = (
+    (r"(?<!\w)C/\s*",   "Calle "),    # C/5 → Calle 5
+    (r"\bCl\.?\b",      "Calle"),     # Cl. / Cl → Calle
+    (r"\bAvda\.?\b",    "Avenida"),   # Avda. / Avda → Avenida
+    (r"\bAv\.",         "Avenida"),   # Av. → Avenida
+    (r"\bPza\.?\b",     "Plaza"),     # Pza. / Pza → Plaza
+    (r"\bCtra\.?\b",    "Carretera"), # Ctra. / Ctra → Carretera
+    (r"\bUrb\.?\b",     "Urbanización"), # Urb. → Urbanización
+    (r"\bPsje\.?\b",    "Pasaje"),    # Psje. → Pasaje
+    (r"\bPje\.?\b",     "Pasaje"),    # Pje. → Pasaje
+    (r"\bRda\.?\b",     "Ronda"),     # Rda. → Ronda
+    (r"\bTrav\.?\b",    "Travesía"),  # Trav. → Travesía
+)
 
 
 # ─── Normalización ─────────────────────────────────────────────────────────────
@@ -78,6 +95,11 @@ def _parse_address(raw: str) -> tuple[str, str]:
     Usa _portal_display() para obtener solo "96" al consultar APIs externas.
     """
     s = raw.strip()
+
+    # 0. Expandir abreviaturas de tipo de vía (C/ → Calle, Av. → Avenida, …)
+    for _pat, _repl in _VIA_ABBREVS:
+        s = re.sub(_pat, _repl, s, flags=re.IGNORECASE)
+    s = re.sub(r"\s+", " ", s).strip()
 
     # 1. Eliminar sufijo de ciudad/país (precedido por coma)
     s = re.sub(
@@ -108,6 +130,14 @@ def _parse_address(raw: str) -> tuple[str, str]:
     )
     s = re.sub(
         r"[\s,]+(?:\d+[ºo°]\s*[a-zA-Z]?\s*)?" + _noise + r"[\s\S]*$",
+        "", s, flags=re.IGNORECASE,
+    )
+
+    # 4b. Eliminar detalles de acceso (bloque/portal/escalera/puerta) tras el número
+    #     Lookbehind garantiza que sólo actúa cuando hay un dígito previo,
+    #     preservando calles como "Calle del Portal" o "Pasaje del Bloque".
+    s = re.sub(
+        r"(?<=\d)[\s,;]+(?:bloque|portal|escalera|puerta)\b[\s\S]*$",
         "", s, flags=re.IGNORECASE,
     )
 
@@ -231,7 +261,7 @@ def _get_street_catalog() -> list[str]:
     Devuelve el catálogo combinado de calles, cargándolo lazily.
     Intenta primero el catálogo combinado (catalog.py); si no, solo Overpass.
     """
-    global _osm_streets, _osm_streets_norm
+    global _osm_streets, _osm_streets_norm, _osm_streets_norm_set
 
     if _osm_streets is not None:
         return _osm_streets
@@ -243,6 +273,7 @@ def _get_street_catalog() -> list[str]:
         if streets:
             _osm_streets = streets
             _osm_streets_norm = [_normalize(s) for s in streets]
+            _osm_streets_norm_set = set(_osm_streets_norm)
             return _osm_streets
     except Exception as e:
         print(f"[geocode] Error cargando catálogo combinado: {e}")
@@ -259,45 +290,96 @@ def _get_street_catalog() -> list[str]:
             print(f"[geocode] Error descargando Overpass: {e}")
             _osm_streets = []
             _osm_streets_norm = []
+            _osm_streets_norm_set = set()
             return []
 
     _osm_streets = streets
     _osm_streets_norm = [_normalize(s) for s in streets]
+    _osm_streets_norm_set = set(_osm_streets_norm)
     return _osm_streets
 
 
 # ─── Fuzzy matching ────────────────────────────────────────────────────────────
 
+# Similitud mínima de caracteres para que dos tokens individuales "casen"
+_TOKEN_CHAR_THRESHOLD = 0.85
+# Máximo de tokens extra que puede tener el catálogo respecto a la query
+_MAX_EXTRA_TOKENS = 1
+
+
 def _token_set_ratio(a: str, b: str) -> float:
-    """Similitud basada en conjuntos de tokens. Maneja tokens extra y orden."""
-    a_tokens = set(a.split())
-    b_tokens = set(b.split())
-    intersection = sorted(a_tokens & b_tokens)
-    diff_a = sorted(a_tokens - b_tokens)
-    diff_b = sorted(b_tokens - a_tokens)
+    """
+    Similitud token-a-token conservadora.
 
-    t0 = " ".join(intersection)
-    t1 = " ".join(intersection + diff_a)
-    t2 = " ".join(intersection + diff_b)
+    Estrategia: TODOS los tokens de la query (a) deben tener cobertura en el
+    catálogo (b). Si alguno no la tiene, devuelve 0.0 directamente.
+    Además el catálogo puede tener como máximo _MAX_EXTRA_TOKENS tokens extra.
 
-    def _ratio(x: str, y: str) -> float:
-        if not x and not y:
-            return 1.0
-        return difflib.SequenceMatcher(None, x, y).ratio()
+    Cobertura de un token:
+      - Coincidencia exacta (normalizada) → sim = 1.0
+      - SequenceMatcher con cualquier token del catálogo ≥ _TOKEN_CHAR_THRESHOLD
+        → sim = ese valor (typo de 1-2 chars)
+      - Por debajo → token sin cobertura → score 0.0
 
-    return max(_ratio(t0, t1), _ratio(t0, t2), _ratio(t1, t2))
+    Rationale: Google Geocoding ya gestiona correcciones semánticas; el fuzzy
+    matching sólo debe actuar para typos obvios en calles conocidas. Preferimos
+    no corregir antes que corregir mal y enviar a Google una calle incorrecta.
+
+    Ejemplos:
+      "calle hornoss"        vs "calle hornos"              → 0.96  (typo +s)
+      "calle oro"            vs "calle hornos"              → 0.0   (distinto)
+      "avenida blas infante" vs "avenida de blas infante"   → 0.95  (1 extra)
+      "calle santiago"       vs "calle fernandez de santiago"→ 0.0   (2 extra)
+      "avenida de la muralla"vs "avenida de la paz"         → 0.0   ("muralla"≠"paz")
+    """
+    a_tokens = a.split()
+    b_tokens = b.split()
+
+    if not a_tokens:
+        return 0.0
+
+    # Rechazar si el catálogo tiene demasiados tokens extra o si la query es más larga
+    extra = len(b_tokens) - len(a_tokens)
+    if extra > _MAX_EXTRA_TOKENS or extra < 0:
+        return 0.0
+
+    b_set = set(b_tokens)
+
+    # Cada token de la query debe tener cobertura en el catálogo
+    token_sims: list[float] = []
+    for qt in a_tokens:
+        if qt in b_set:
+            token_sims.append(1.0)
+        else:
+            best_sim = max(
+                (difflib.SequenceMatcher(None, qt, ct).ratio() for ct in b_tokens),
+                default=0.0,
+            )
+            if best_sim < _TOKEN_CHAR_THRESHOLD:
+                return 0.0  # Token sin cobertura → descarta la entrada del catálogo
+            token_sims.append(best_sim)
+
+    # Score: media de similitudes de tokens, penalización leve por tokens extra
+    avg_sim = sum(token_sims) / len(token_sims)
+    return avg_sim * (1.0 - 0.05 * extra)
 
 
 def _find_closest_street(query_street: str) -> str | None:
     """
     Busca en el catálogo el nombre de calle más parecido.
     Devuelve el nombre original (con mayúsculas/acentos) o None si no supera el umbral.
+    Devuelve None también si la calle ya está en el catálogo (no hace falta corrección).
     """
     streets = _get_street_catalog()
     if not streets:
         return None
 
     query_norm = _normalize(query_street)
+
+    # Si la calle normalizada ya está en el catálogo, no hay nada que corregir
+    if _osm_streets_norm_set and query_norm in _osm_streets_norm_set:
+        return None
+
     best_score = 0.0
     best_street = None
 
@@ -361,6 +443,14 @@ def _cartociudad_request(street: str, number: str) -> GeoResult | None:
         returned_portal_str = str(data.get("nportal", "") or "").strip()
         returned_int = _extract_portal_int(returned_portal_str) if returned_portal_str else None
 
+        # Si pedimos portal pero Cartociudad devuelve centroide (sin nportal), rechazar
+        if requested_int is not None and returned_int is None:
+            print(
+                f"[geocode] Cartociudad sin portal exacto: "
+                f"pedido={requested_int}, devuelto=centroide → descartado"
+            )
+            return None
+
         if requested_int and returned_int:
             diff = abs(returned_int - requested_int)
             same_parity = (requested_int % 2) == (returned_int % 2)
@@ -395,7 +485,8 @@ def _google_geocode(street: str, number: str) -> tuple[GeoResult, str] | None:
         return None
 
     num_str = _portal_display(number) if number and number != "sn" else ""
-    address = f"{street} {num_str}, Posadas, Córdoba, España".strip().rstrip(",").strip()
+    addr_base = f"{street} {num_str}".strip() if num_str else street
+    address = f"{addr_base}, Posadas, Córdoba, España"
 
     params = {
         "address": address,
@@ -591,9 +682,10 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
         entry = _persisted.get(key, {})
         src = entry.get("source", "")
         if src in ("google", "places") and _google_cache_expired(entry):
-            # Expirada: limpiar y re-geocodificar
+            # Expirada: limpiar memoria y disco, y re-geocodificar
             del _cache[key]
             _persisted.pop(key, None)
+            _save_cache()
         else:
             if coord is None:
                 return None, "FAILED"

@@ -159,6 +159,15 @@ def save_learned_street(street_name: str) -> None:
         except Exception as e:
             print(f"[catalog] Error guardando learned_streets: {e}")
         _combined = None  # Invalidar caché en memoria
+        # Invalidar también el catálogo en memoria de geocoding.py para que
+        # el fuzzy matching use la nueva calle en la misma sesión
+        try:
+            from app.services import geocoding
+            geocoding._osm_streets = None
+            geocoding._osm_streets_norm = None
+            geocoding._osm_streets_norm_set = None
+        except Exception:
+            pass
 
 
 # ─── Catálogo combinado ────────────────────────────────────────────────────────
