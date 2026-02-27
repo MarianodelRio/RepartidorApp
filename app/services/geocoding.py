@@ -553,12 +553,8 @@ def _google_places(alias: str) -> GeoResult | None:
         if data.get("status") != "OK" or not data.get("candidates"):
             return None
 
-        # Rechazar si hay más de un candidato: alias ambiguo (p.ej. "Farmacia")
-        if len(data["candidates"]) > 1:
-            print(f"[geocode] Google Places: alias '{alias}' ambiguo "
-                  f"({len(data['candidates'])} candidatos) → descartado")
-            return None
-
+        # Tomar el primer candidato (el más relevante según Google).
+        # El filtro real de seguridad es el bbox de Posadas más abajo.
         location = data["candidates"][0]["geometry"]["location"]
         lat = float(location["lat"])
         lng = float(location["lng"])
