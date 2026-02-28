@@ -172,7 +172,7 @@ class _ResultScreenState extends State<ResultScreen> {
     final stops = widget.response.stops.where((s) => !s.isOrigin).toList();
 
     final buffer = StringBuffer();
-    buffer.writeln('orden,direccion,num_paquetes,paquetes');
+    buffer.writeln('orden,direccion,alias,num_paquetes,paquetes');
 
     for (final stop in stops) {
       final direccion = stop.geocodeFailed
@@ -181,6 +181,7 @@ class _ResultScreenState extends State<ResultScreen> {
       buffer.writeln(
         '${stop.order},'
         '${_csvEscape(direccion)},'
+        '${_csvEscape(stop.alias)},'
         '${stop.packageCount},'
         '${_csvEscape(_buildPaquetesCell(stop))}',
       );

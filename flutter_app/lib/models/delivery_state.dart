@@ -41,6 +41,7 @@ extension StopStatusLabel on StopStatus {
 class DeliveryStop {
   final int order;
   final String address;
+  final String alias;
   final String label;
   final String clientName;
   final List<String> clientNames;
@@ -59,6 +60,7 @@ class DeliveryStop {
   DeliveryStop({
     required this.order,
     required this.address,
+    this.alias = '',
     required this.label,
     this.clientName = '',
     this.clientNames = const [],
@@ -88,6 +90,7 @@ class DeliveryStop {
   Map<String, dynamic> toMap() => {
         'order': order,
         'address': address,
+        'alias': alias,
         'label': label,
         'clientName': clientName,
         'clientNames': clientNames,
@@ -107,6 +110,7 @@ class DeliveryStop {
     return DeliveryStop(
       order: map['order'] as int,
       address: map['address'] as String,
+      alias: (map['alias'] as String?) ?? '',
       label: map['label'] as String,
       clientName: (map['clientName'] as String?) ?? '',
       clientNames: (map['clientNames'] as List<dynamic>?)

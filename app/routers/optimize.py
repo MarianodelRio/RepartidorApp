@@ -24,7 +24,7 @@ from app.models import (
 )
 from app.services.geocoding import (
     geocode, geocode_batch,
-    _parse_address, _normalize, _extract_portal_int,
+    _parse_address, _normalize,
 )
 from app.services.routing import (
     optimize_route,
@@ -142,8 +142,8 @@ def _sort_street_runs(
         if j - i > 1:
             def portal_key(idx: int) -> float:
                 _, num = _parse_address(all_addresses[idx])
-                n_val = _extract_portal_int(num)
-                return float(n_val) if n_val is not None else float("inf")
+                digits = "".join(c for c in (num or "") if c.isdigit())
+                return float(digits) if digits else float("inf")
 
             result[i:j] = sorted(result[i:j], key=portal_key)
             print(
@@ -202,6 +202,11 @@ def optimize(req: OptimizeRequest):
         unique_addresses = addresses
         package_counts = req.package_counts  # type: ignore[assignment]
         unique_primary_names = client_names
+        aliases_raw = req.aliases or []
+        unique_aliases = [
+            aliases_raw[i] if i < len(aliases_raw) else ""
+            for i in range(len(addresses))
+        ]
 
         # Packages por parada: usar packages_per_stop si viene, si no derivar
         if req.packages_per_stop and len(req.packages_per_stop) == len(addresses):
@@ -230,6 +235,7 @@ def optimize(req: OptimizeRequest):
         packages_in = [Package(client_name=cn) for cn in client_names]
         unique_addresses, unique_primary_names, all_client_names_lists, all_packages_lists, package_counts = \
             _group_duplicate_addresses(addresses, packages_in)
+        unique_aliases = [""] * len(unique_addresses)
 
         total_packages = sum(package_counts)
 
@@ -325,12 +331,14 @@ def optimize(req: OptimizeRequest):
     ok_all_names = [all_client_names_lists[orig_i] for _, _, orig_i in geocoded_ok]
     ok_packages = [all_packages_lists[orig_i] for _, _, orig_i in geocoded_ok]
     ok_pkg_counts = [package_counts[orig_i] for _, _, orig_i in geocoded_ok]
+    ok_aliases = [unique_aliases[orig_i] for _, _, orig_i in geocoded_ok]
 
     fail_addresses = [addr for addr, _ in geocoded_fail]
     fail_primary_names = [unique_primary_names[orig_i] for _, orig_i in geocoded_fail]
     fail_all_names = [all_client_names_lists[orig_i] for _, orig_i in geocoded_fail]
     fail_packages = [all_packages_lists[orig_i] for _, orig_i in geocoded_fail]
     fail_pkg_counts = [package_counts[orig_i] for _, orig_i in geocoded_fail]
+    fail_aliases = [unique_aliases[orig_i] for _, orig_i in geocoded_fail]
 
     # coords[0] = origen, coords[1..n] = paradas geocodificadas
     all_coords = [origin_coord] + ok_coords
@@ -339,6 +347,7 @@ def optimize(req: OptimizeRequest):
     all_names_lists: list[list[str]] = [[]] + ok_all_names
     all_packages_per_stop: list[list[Package]] = [[]] + ok_packages
     all_pkg_counts = [0] + ok_pkg_counts
+    all_aliases_list = [""] + ok_aliases
 
     # ── 3. Optimizar orden con VROOM ──────────────────────────
     vroom_result = optimize_route(all_coords)
@@ -396,9 +405,11 @@ def optimize(req: OptimizeRequest):
             sd = stop_details_map.get(orig_idx, {})
             dist_m = sd.get("arrival_distance", 0)
 
+        stop_alias = all_aliases_list[orig_idx] if orig_idx < len(all_aliases_list) else ""
         stops.append(StopInfo(
             order=seq,
             address=addr,
+            alias=stop_alias,
             label=label,
             client_name=cname,
             client_names=[n for n in names_list if n],
@@ -427,6 +438,7 @@ def optimize(req: OptimizeRequest):
         stops.append(StopInfo(
             order=seq_fail,
             address=fail_addr,
+            alias=fail_aliases[i],
             label=fail_label,
             client_name=fail_cname,
             client_names=[n for n in fail_names if n],

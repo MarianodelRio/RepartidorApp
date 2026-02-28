@@ -289,17 +289,32 @@ class _PackageTile extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          stop.address,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: stop.geocodeFailed
-                                ? AppColors.warning
-                                : AppColors.textPrimary,
-                          ),
+                        child: RichText(
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
+                          text: TextSpan(
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: stop.geocodeFailed
+                                  ? AppColors.warning
+                                  : AppColors.textPrimary,
+                            ),
+                            children: [
+                              TextSpan(text: stop.address),
+                              if (stop.alias.isNotEmpty)
+                                TextSpan(
+                                  text: '  —  ${stop.alias}',
+                                  style: TextStyle(
+                                    fontStyle: FontStyle.italic,
+                                    fontWeight: FontWeight.w400,
+                                    color: stop.geocodeFailed
+                                        ? AppColors.warning
+                                        : AppColors.primary,
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                       ),
                       if (stop.hasMultiplePackages)

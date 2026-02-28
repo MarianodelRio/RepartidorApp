@@ -65,6 +65,7 @@ class ApiService {
     List<List<double>?>? coords,
     List<int>? packageCounts,
     List<List<Package>>? packagesPerStop,
+    List<String>? aliases,
   }) async {
     final body = <String, dynamic>{
       'addresses': addresses,
@@ -84,6 +85,9 @@ class ApiService {
     if (packagesPerStop != null && packagesPerStop.isNotEmpty) {
       body['packages_per_stop'] =
           packagesPerStop.map((pkgs) => pkgs.map((p) => p.toJson()).toList()).toList();
+    }
+    if (aliases != null && aliases.isNotEmpty) {
+      body['aliases'] = aliases;
     }
 
     final response = await http

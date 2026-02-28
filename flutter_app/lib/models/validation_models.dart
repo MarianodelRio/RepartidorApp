@@ -37,6 +37,7 @@ enum GeoConfidence {
 /// Parada geocodificada correctamente.
 class GeocodedStop {
   final String address;
+  final String alias;
   final String clientName;
   final List<String> allClientNames;
   final List<Package> packages;
@@ -47,6 +48,7 @@ class GeocodedStop {
 
   const GeocodedStop({
     required this.address,
+    this.alias = '',
     required this.clientName,
     required this.allClientNames,
     this.packages = const [],
@@ -59,6 +61,7 @@ class GeocodedStop {
   factory GeocodedStop.fromJson(Map<String, dynamic> json) {
     return GeocodedStop(
       address: json['address'] as String,
+      alias: (json['alias'] as String?) ?? '',
       clientName: (json['client_name'] as String?) ?? '',
       allClientNames: (json['all_client_names'] as List<dynamic>?)
               ?.map((e) => e as String)
@@ -84,6 +87,7 @@ class GeocodedStop {
   }) {
     return GeocodedStop(
       address: address,
+      alias: alias,
       clientName: clientName,
       allClientNames: allClientNames,
       packages: packages,
@@ -98,12 +102,14 @@ class GeocodedStop {
 /// Parada que no pudo geocodificarse.
 class FailedStop {
   final String address;
+  final String alias;
   final List<String> clientNames;
   final List<Package> packages;
   final int packageCount;
 
   const FailedStop({
     required this.address,
+    this.alias = '',
     required this.clientNames,
     this.packages = const [],
     required this.packageCount,
@@ -112,6 +118,7 @@ class FailedStop {
   factory FailedStop.fromJson(Map<String, dynamic> json) {
     return FailedStop(
       address: json['address'] as String,
+      alias: (json['alias'] as String?) ?? '',
       clientNames: (json['client_names'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??

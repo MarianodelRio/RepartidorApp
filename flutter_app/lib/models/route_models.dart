@@ -39,6 +39,7 @@ class Package {
 class StopInfo {
   final int order;
   final String address;
+  final String alias;
   final String label;
   final String clientName;
   final List<String> clientNames;
@@ -53,6 +54,7 @@ class StopInfo {
   const StopInfo({
     required this.order,
     required this.address,
+    this.alias = '',
     required this.label,
     this.clientName = '',
     this.clientNames = const [],
@@ -77,6 +79,7 @@ class StopInfo {
     return StopInfo(
       order: json['order'] as int,
       address: json['address'] as String,
+      alias: (json['alias'] as String?) ?? '',
       label: json['label'] as String,
       clientName: (json['client_name'] as String?) ?? '',
       clientNames: (json['client_names'] as List<dynamic>?)

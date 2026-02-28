@@ -67,6 +67,13 @@ class OptimizeRequest(BaseModel):
             "Reemplaza a all_client_names cuando se envía."
         ),
     )
+    aliases: list[str] | None = Field(
+        default=None,
+        description=(
+            "Alias (nombre de negocio) por dirección (mismo orden). "
+            "Usado para mostrar en la UI cuando la parada es un lugar."
+        ),
+    )
 
 
 # ═══════════════════════════════════════════
@@ -91,6 +98,7 @@ class StopInfo(BaseModel):
     client_name: str = Field("", description="Nombre del cliente/destinatario (identidad principal)")
     client_names: list[str] = Field(default_factory=list, description="Lista de todos los destinatarios en esta dirección")
     packages: list[Package] = Field(default_factory=list, description="Paquetes individuales con cliente y nota")
+    alias: str = Field("", description="Nombre de negocio/lugar (vacío si no aplica)")
     type: str = Field(..., description="'origin' o 'stop'")
     lat: float | None = Field(None, description="Latitud; None si la dirección no pudo geocodificarse")
     lon: float | None = Field(None, description="Longitud; None si la dirección no pudo geocodificarse")

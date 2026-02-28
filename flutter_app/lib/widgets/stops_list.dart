@@ -126,21 +126,45 @@ class _StopTile extends StatelessWidget {
                       ),
           ),
         ),
-        title: Text(
-          isOrigin ? stop.label : stop.address,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            color: isFailed ? AppColors.warning : null,
-          ),
-        ),
+        title: isOrigin
+            ? Text(
+                stop.label,
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w700),
+              )
+            : RichText(
+                text: TextSpan(
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: isFailed
+                        ? AppColors.warning
+                        : AppColors.textPrimary,
+                  ),
+                  children: [
+                    TextSpan(text: stop.address),
+                    if (stop.alias.isNotEmpty)
+                      TextSpan(
+                        text: '  —  ${stop.alias}',
+                        style: TextStyle(
+                          fontStyle: FontStyle.italic,
+                          fontWeight: FontWeight.w400,
+                          color: isFailed
+                              ? AppColors.warning
+                              : AppColors.primary,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (isOrigin)
               Text(
                 stop.address,
-                style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                style: const TextStyle(
+                    fontSize: 11, color: AppColors.textSecondary),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               )
@@ -152,7 +176,8 @@ class _StopTile extends StatelessWidget {
             else if (clientSummary.isNotEmpty)
               Text(
                 clientSummary,
-                style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                style: const TextStyle(
+                    fontSize: 11, color: AppColors.textSecondary),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),

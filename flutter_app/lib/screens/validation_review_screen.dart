@@ -84,6 +84,7 @@ class _ValidationReviewScreenState extends State<ValidationReviewScreen> {
 
     final newGeocoded = GeocodedStop(
       address: stop.address,
+      alias: stop.alias,
       clientName: stop.clientNames.firstWhere((n) => n.isNotEmpty, orElse: () => ''),
       allClientNames: stop.clientNames,
       packages: stop.packages,
@@ -159,6 +160,7 @@ class _ValidationReviewScreenState extends State<ValidationReviewScreen> {
       final preResolvedCoords = <List<double>?>[];
       final packageCounts = <int>[];
       final packagesPerStop = <List<Package>>[];
+      final aliases = <String>[];
 
       for (final st in geocoded) {
         optimizeAddresses.add(st.address);
@@ -166,6 +168,7 @@ class _ValidationReviewScreenState extends State<ValidationReviewScreen> {
         preResolvedCoords.add([st.lat, st.lon]);
         packageCounts.add(st.packageCount);
         packagesPerStop.add(st.packages);
+        aliases.add(st.alias);
       }
 
       final result = await ApiService.optimize(
@@ -175,6 +178,7 @@ class _ValidationReviewScreenState extends State<ValidationReviewScreen> {
         coords: preResolvedCoords,
         packageCounts: packageCounts,
         packagesPerStop: packagesPerStop,
+        aliases: aliases,
       );
       if (!mounted) return;
       Navigator.of(context).pop(); // cerrar diálogo
@@ -347,7 +351,9 @@ class _ValidationReviewScreenState extends State<ValidationReviewScreen> {
         height: 44,
         alignment: Alignment.topCenter,
         child: Tooltip(
-          message: '${stop.address}${stop.clientName.isNotEmpty ? '\n${stop.clientName}' : ''}',
+          message: '${stop.address}'
+              '${stop.alias.isNotEmpty ? '\n📍 ${stop.alias}' : ''}'
+              '${stop.clientName.isNotEmpty ? '\n${stop.clientName}' : ''}',
           child: Icon(Icons.location_pin, color: color, size: 36),
         ),
       );
@@ -588,12 +594,24 @@ class _ValidationReviewScreenState extends State<ValidationReviewScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  stop.address,
-                  style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary),
+                RichText(
+                  text: TextSpan(
+                    style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary),
+                    children: [
+                      TextSpan(text: stop.address),
+                      if (stop.alias.isNotEmpty)
+                        TextSpan(
+                          text: '  —  ${stop.alias}',
+                          style: const TextStyle(
+                              fontStyle: FontStyle.italic,
+                              fontWeight: FontWeight.w400,
+                              color: AppColors.primary),
+                        ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(

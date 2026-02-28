@@ -81,6 +81,7 @@ class PersistenceService {
     final stops = response.stops.map((s) => DeliveryStop(
           order: s.order,
           address: s.address,
+          alias: s.alias,
           label: s.label,
           clientName: s.clientName,
           clientNames: s.clientNames,

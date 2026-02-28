@@ -518,16 +518,30 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                                       ),
                               ),
                             ),
-                            title: Text(
-                              entry.stop.address,
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: entry.stop.geocodeFailed
-                                      ? AppColors.warning
-                                      : AppColors.textPrimary),
-                              maxLines: 1,
+                            title: RichText(
+                              maxLines: 2,
                               overflow: TextOverflow.ellipsis,
+                              text: TextSpan(
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: entry.stop.geocodeFailed
+                                        ? AppColors.warning
+                                        : AppColors.textPrimary),
+                                children: [
+                                  TextSpan(text: entry.stop.address),
+                                  if (entry.stop.alias.isNotEmpty)
+                                    TextSpan(
+                                      text: '  —  ${entry.stop.alias}',
+                                      style: TextStyle(
+                                          fontStyle: FontStyle.italic,
+                                          fontWeight: FontWeight.w400,
+                                          color: entry.stop.geocodeFailed
+                                              ? AppColors.warning
+                                              : AppColors.primary),
+                                    ),
+                                ],
+                              ),
                             ),
                             subtitle: _buildReorderSubtitle(entry.stop),
                             trailing: Row(
@@ -808,6 +822,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
         .map((s) => StopInfo(
               order: s.order,
               address: s.address,
+              alias: s.alias,
               label: s.label,
               clientName: s.clientName,
               clientNames: s.clientNames,
@@ -1102,17 +1117,33 @@ class _NextStopCard extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 3),
-                        Text(
-                          stop.address,
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                            color: stop.geocodeFailed
-                                ? AppColors.warning
-                                : AppColors.primary,
-                          ),
-                          maxLines: 2,
+                        RichText(
+                          maxLines: 3,
                           overflow: TextOverflow.ellipsis,
+                          text: TextSpan(
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              color: stop.geocodeFailed
+                                  ? AppColors.warning
+                                  : AppColors.primary,
+                            ),
+                            children: [
+                              TextSpan(text: stop.address),
+                              if (stop.alias.isNotEmpty)
+                                TextSpan(
+                                  text: '  —  ${stop.alias}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontStyle: FontStyle.italic,
+                                    fontWeight: FontWeight.w400,
+                                    color: stop.geocodeFailed
+                                        ? AppColors.warning
+                                        : AppColors.primary.withAlpha(180),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                         Row(
                           children: [
@@ -1319,12 +1350,29 @@ class _CompletedTile extends StatelessWidget {
           ),
           child: Icon(statusIcon, size: 18, color: statusColor),
         ),
-        title: Text(
-          '${stop.order}. ${stop.address}'
-          '${stop.hasMultiplePackages ? '  📦×${stop.packageCount}' : ''}',
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        title: RichText(
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
+          text: TextSpan(
+            style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary),
+            children: [
+              TextSpan(
+                text: '${stop.order}. ${stop.address}'
+                    '${stop.hasMultiplePackages ? '  📦×${stop.packageCount}' : ''}',
+              ),
+              if (stop.alias.isNotEmpty)
+                TextSpan(
+                  text: '  —  ${stop.alias}',
+                  style: const TextStyle(
+                      fontStyle: FontStyle.italic,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.primary),
+                ),
+            ],
+          ),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

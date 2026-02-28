@@ -52,6 +52,7 @@ class OverrideRequest(BaseModel):
 
 class GeocodedStop(BaseModel):
     address: str
+    alias: str = ""             # nombre de negocio/lugar (de Google Places)
     client_name: str            # primer nombre no vacío del grupo
     all_client_names: list[str] # retrocompat — derivado de packages
     packages: list[Package]
@@ -63,6 +64,7 @@ class GeocodedStop(BaseModel):
 
 class FailedStop(BaseModel):
     address: str
+    alias: str = ""             # nombre de negocio/lugar (si se proporcionó)
     client_names: list[str]     # retrocompat — derivado de packages
     packages: list[Package]
     package_count: int
@@ -144,10 +146,12 @@ def validation_start(req: StartRequest):
         primary = next((p.client_name for p in packages if p.client_name), "")
 
         coord, confidence = coord_map.get(addr, (None, "FAILED"))
+        alias = group.get("alias", "")
         if coord:
             lat, lon = coord
             geocoded.append(GeocodedStop(
                 address=addr,
+                alias=alias,
                 client_name=primary,
                 all_client_names=client_names,
                 packages=packages,
@@ -159,6 +163,7 @@ def validation_start(req: StartRequest):
         else:
             failed.append(FailedStop(
                 address=addr,
+                alias=alias,
                 client_names=client_names,
                 packages=packages,
                 package_count=package_count,
