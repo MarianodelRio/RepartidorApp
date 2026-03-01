@@ -14,11 +14,9 @@ class ApiConfig {
   // ── Endpoints ──
   static const String optimizeEndpoint = '/api/optimize';
   static const String healthEndpoint = '/health';
-  static const String servicesStatusEndpoint = '/api/services/status';
 
   // ── Validación ──
   static const String validationStartEndpoint = '/api/validation/start';
-  static const String validationOverrideEndpoint = '/api/validation/override';
 
   /// Timeout generoso para /api/optimize.
   /// El geocoding de 70-100 direcciones puede tardar 3-5 minutos.

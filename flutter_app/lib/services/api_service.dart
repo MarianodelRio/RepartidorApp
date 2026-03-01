@@ -33,24 +33,6 @@ class ApiService {
     }
   }
 
-  /// Verifica el estado de OSRM y VROOM.
-  static Future<Map<String, dynamic>?> servicesStatus() async {
-    try {
-      final response = await http
-          .get(
-              Uri.parse(
-                  '${ApiConfig.baseUrl}${ApiConfig.servicesStatusEndpoint}'),
-              headers: _defaultHeaders)
-          .timeout(const Duration(seconds: 10));
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      }
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
-
   /// Envía lista de direcciones al endpoint /api/optimize.
   /// [addresses] - Lista de direcciones a optimizar.
   /// [clientNames] - Lista de nombres de cliente (opcional, mismo orden).

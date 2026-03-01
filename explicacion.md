@@ -107,25 +107,33 @@ static const String baseUrl = 'https://xxxx-xxx.ngrok-free.app';
 ```
 [App Flutter]
     │
-    ├─ Selecciona CSV (cliente, dirección, ciudad)
+    ├─ Selecciona CSV (cliente, dirección, ciudad [, nota] [, alias])
     │       └─ CsvService.parse() → CsvData
     │
     ├─ POST /api/validation/start
-    │       └─ Backend geocodifica cada dirección única (Nominatim)
-    │          Devuelve: coordenadas, estado ok/problema, paquetes por parada
+    │       └─ Backend agrupa duplicados y geocodifica cada dirección única:
+    │            1. Caché en disco (override permanente > google/places con TTL 30 días)
+    │            2. Fuzzy matching en catálogo OSM+Catastro (sin llamada HTTP)
+    │            3. Google Geocoding API (ROOFTOP → EXACT_ADDRESS, RANGE_INTERPOLATED → GOOD)
+    │            4. Google Places API (si hay alias y Google no fue exacto) → EXACT_PLACE
+    │            5. FAILED
+    │          Devuelve: geocoded[] (con coords + confidence) + failed[] (sin coords)
     │
-    ├─ [Opcional] Usuario corrige coordenadas de paradas fallidas manualmente
+    ├─ ValidationReviewScreen: el usuario revisa paradas, puede re-pinanr cualquier marcador
+    │       └─ POST /api/validation/override → guarda pin manual en caché permanente
     │
     ├─ POST /api/optimize
-    │       └─ Backend recibe coords ya resueltas
+    │       └─ Backend recibe coords ya resueltas (no re-geocodifica)
     │          → VROOM resuelve el TSP (orden óptimo de visita)
-    │          → OSRM calcula geometría e instrucciones de navegación
-    │          Devuelve: lista ordenada de paradas + polilínea + instrucciones
+    │          → Post-proceso: paradas de la misma calle se ordenan por número de portal
+    │          → OSRM calcula geometría de la ruta completa
+    │          Devuelve: lista ordenada de paradas + polilínea GeoJSON
     │
     ├─ ResultScreen: mapa con ruta, estadísticas, orden de carga LIFO
     │
     └─ DeliveryScreen: navegación GPS en tiempo real
-            ├─ GET /api/route-segment → tramo GPS→próxima parada
+            ├─ GET /api/route-segment → tramo OSRM GPS→próxima parada (refresco cada 10 s)
+            ├─ Re-pin de paradas durante el reparto (MapPickerScreen)
             └─ Hive: persistencia local del estado de cada entrega
 ```
 
@@ -173,23 +181,24 @@ Punto de entrada de la aplicación FastAPI.
 
 ### 2.2 `core/config.py`
 
-Fuente única de verdad para todas las constantes del sistema.
+Fuente única de verdad para todas las constantes del sistema. Carga variables de entorno desde `.env` mediante `python-dotenv`.
 
 | Constante | Valor | Propósito |
 |-----------|-------|-----------|
 | `OSRM_BASE_URL` | `http://localhost:5000` | Contenedor Docker OSRM |
 | `VROOM_BASE_URL` | `http://localhost:3000` | Contenedor Docker VROOM |
-| `NOMINATIM_URL` | `https://nominatim.openstreetmap.org/search` | Geocodificación |
-| `NOMINATIM_USER_AGENT` | `posadas-route-planner/2.0 (local)` | Identificación en Nominatim |
-| `START_ADDRESS` | `"Calle Callejon de Jesús 1, Posadas, Córdoba, España"` | Dirección de origen por defecto |
-| `POSADAS_CENTER` | `(37.802, -5.105)` | Centro del mapa (lat, lon) |
-| `POSADAS_VIEWBOX` | `"-5.15,37.78,-5.06,37.83"` | Bounding box de Posadas para Nominatim |
+| `GOOGLE_API_KEY` | (desde `.env`) | Clave para Google Geocoding y Places APIs |
+| `GOOGLE_GEOCODING_URL` | `https://maps.googleapis.com/maps/api/geocode/json` | Endpoint de geocodificación |
+| `GOOGLE_PLACES_URL` | `https://maps.googleapis.com/maps/api/place/findplacefromtext/json` | Endpoint de Places |
+| `GOOGLE_CACHE_TTL_DAYS` | `30` | Días antes de que expiren entradas google/places de la caché |
+| `NOMINATIM_USER_AGENT` | `posadas-route-planner/2.0 (local)` | User-Agent para Overpass API (catálogo de calles) |
+| `DEPOT_LAT / DEPOT_LON` | `37.8055, -5.0998` | Coordenadas exactas del depósito (Av. de Andalucía) |
+| `START_ADDRESS` | `"Avenida de Andalucía, Posadas"` | Dirección de origen por defecto |
+| `POSADAS_CENTER` | `(DEPOT_LAT, DEPOT_LON)` | Centro del mapa y bias para Places API |
 | `MAX_STOPS` | `200` | Máximo de paradas por petición |
-| `GEOCODE_DELAY` | `0.5` s | Espera entre llamadas a Nominatim (rate limit) |
-| `GEOCODE_RETRY_DELAY` | `0.3` s | Espera entre estrategias de reintento |
-| `GEOCODE_TIMEOUT` | `30` s | Timeout por llamada a Nominatim |
+| `GEOCODE_TIMEOUT` | `30` s | Timeout por llamada a APIs externas |
 | `OSRM_TIMEOUT` | `60` s | Timeout para OSRM |
-| `VROOM_TIMEOUT` | `120` s | Timeout para VROOM (resolver TSP puede tardar) |
+| `VROOM_TIMEOUT` | `120` s | Timeout para VROOM |
 
 ---
 
@@ -203,20 +212,24 @@ Contratos de datos Pydantic entre frontend y backend.
 - `addresses: list[str]` — direcciones a visitar (requerido, mínimo 1)
 - `client_names: list[str] | None` — nombres de cliente, mismo orden que addresses
 - `start_address: str | None` — dirección de origen (usa START_ADDRESS si no se indica)
-- `coords: list[list[float] | None] | None` — coordenadas pre-resueltas `[lat, lon]` por dirección; si se proporcionan se omite la geocodificación
+- `coords: list[list[float] | None] | None` — coordenadas pre-resueltas `[lat, lon]`; si se proporcionan se omite la geocodificación
 - `package_counts: list[int] | None` — paquetes por dirección; si se proporciona, las direcciones ya vienen agrupadas (no se re-agrupan)
 - `all_client_names: list[list[str]] | None` — todos los nombres por dirección cuando viene pre-agrupado
+- `packages_per_stop: list[list[Package]] | None` — paquetes con `client_name` + `nota` por parada (reemplaza a `all_client_names`)
+- `aliases: list[str] | None` — alias (nombre de negocio) por dirección, para mostrar en la UI
 
 **Modelos de salida:**
 
 `StopInfo` — una parada en la ruta
 - `order: int` — posición en la secuencia (0 = origen)
 - `address: str` — dirección completa
+- `alias: str` — nombre de negocio/lugar (vacío si no aplica)
 - `label: str` — etiqueta legible ("🏠 Origen", "📍 Juan García")
 - `client_name: str` — nombre principal del cliente
 - `client_names: list[str]` — todos los destinatarios en esta dirección
+- `packages: list[Package]` — paquetes individuales con `client_name` y `nota`
 - `type: str` — "origin" o "stop"
-- `lat, lon: float` — coordenadas
+- `lat, lon: float | None` — coordenadas; `None` si geocodificación fallida
 - `distance_meters: float` — distancia acumulada desde el origen
 - `geocode_failed: bool` — True si no se pudo geocodificar
 - `package_count: int` — número de paquetes
@@ -291,15 +304,16 @@ Valida y geocodifica direcciones antes de la optimización. No llama a VROOM ni 
 
 **Modelos propios:**
 
-`CsvRow`: `cliente: str`, `direccion: str`, `ciudad: str`
+`CsvRow`: `cliente: str`, `direccion: str`, `ciudad: str`, `nota: str`, `alias: str`
 
 `StartRequest`: `rows: list[CsvRow]` — filas crudas del CSV
 
 `GeocodedStop` — parada geocodificada con éxito:
-- `address, client_name, all_client_names, package_count, lat, lon`
+- `address`, `alias`, `client_name`, `all_client_names`, `packages`, `package_count`, `lat`, `lon`
+- `confidence: str` — nivel de confianza: `EXACT_ADDRESS | GOOD | EXACT_PLACE | OVERRIDE`
 
 `FailedStop` — parada que no pudo geocodificarse:
-- `address, client_names, package_count`
+- `address`, `alias`, `client_names`, `packages`, `package_count`
 
 `StartResponse`:
 - `geocoded: list[GeocodedStop]`, `failed: list[FailedStop]`
@@ -307,9 +321,13 @@ Valida y geocodifica direcciones antes de la optimización. No llama a VROOM ni 
 
 **POST /api/validation/start — flujo:**
 
-1. Agrupa filas por dirección normalizada usando `OrderedDict` (primera aparición gana)
-2. Para cada dirección única: llama a `geocode(addr)` respetando el rate limit de Nominatim
-3. Devuelve listas separadas `geocoded` y `failed`
+1. Agrupa filas por dirección normalizada usando `OrderedDict` (primera aparición gana). El primer alias no vacío del grupo se usa como alias de la parada.
+2. Para cada dirección única: llama a `geocode(addr, alias=alias)` — pipeline completo con Google.
+3. Devuelve listas separadas `geocoded` y `failed` con niveles de confianza.
+
+**POST /api/validation/override — flujo:**
+
+Recibe `{address, lat, lon}` y llama a `add_override()`, que guarda las coordenadas como override permanente en caché RAM y en disco. Tiene prioridad máxima en futuros repartos.
 
 **Diferencia clave con optimize.py**: devuelve todos los resultados (ok y fallidos) sin calcular ruta. Permite al usuario ver y corregir paradas problemáticas antes de optimizar.
 
@@ -317,49 +335,49 @@ Valida y geocodifica direcciones antes de la optimización. No llama a VROOM ni 
 
 ### 2.6 `services/geocoding.py`
 
-Convierte direcciones en coordenadas GPS usando Nominatim con caché, overrides manuales y múltiples estrategias de búsqueda.
+Convierte direcciones en coordenadas GPS usando Google Geocoding API y Google Places API, con caché persistente en disco, fuzzy matching contra catálogo de calles OSM y soporte para overrides manuales (pin de usuario).
 
 **Estado global:**
-- `_cache: dict[str, tuple | None]` — caché en memoria; clave = dirección en minúsculas
-- `_overrides: dict` — overrides manuales cargados desde `/app/data/geocode_overrides.json` al iniciar el módulo
+- `_cache: dict[str, GeoResult | None]` — caché en memoria; clave canónica = `normalize(calle)#normalize(número)`. También almacena entradas `"@alias_normalizado"` para búsqueda por nombre de negocio.
+- `_persisted: dict[str, dict]` — espejo del `geocode_cache.json` en disco, con metadatos (source, confidence, cached_at, etc.)
 
-**`clean_address(raw: str) → str`**
+**Clave canónica y normalización:**
 
-Limpieza agresiva de 14 pasos sobre la dirección cruda:
-1. Elimina caracteres de control y espacios no estándar
-2. Corrige errores de codificación (`FernÁndez` → `Fernández`, `?` → carácter correcto)
-3. Corrige acentos mal escritos (`Mari´a` → `María`)
-4. Elimina contenido entre paréntesis irrelevante (`(TOLDOS...)`)
-5. Elimina descriptores finales: "Si Ausente", "ESCALERA X", "LOCAL", "PUERTA X", etc.
-6. Corrige errores tipográficos comunes (`adofo` → `Adolfo`)
-7. Normaliza abreviaturas de tipo de vía: `C/`, `CL`, `c.` → `Calle`; `AVDA`, `AV` → `Avenida`; etc.
-8. Normaliza "número": elimina `Nº`, `nº`, `n°`, `num`, `número`
-9. Normaliza "sin número": `s/n`, `s-n`, `SN` → `s/n`
-10. Elimina números de planta/puerta: `1º A`, `Bajo`, `BJ`
-11. Limpia puntuación y espacios redundantes
-12. Si no contiene "posadas" → añade `, Posadas`
-13. Si no contiene "córdoba" → añade `, Córdoba, España`
+`_normalize(text)` → minúsculas, sin acentos, espacios simples.
 
-**`geocode(address: str) → tuple[float, float] | None`**
+`_parse_address(raw)` → extrae `(nombre_calle, número_portal)` manejando abreviaturas de vía (C/ → Calle, Avda. → Avenida…), sufijos de ciudad, indicadores de piso/puerta, rangos (96-98) y `s/n`.
 
-Estrategia de 5 intentos en cascada (con 0.3s entre cada uno):
-1. **Caché**: si ya se geocodificó antes, devuelve resultado inmediato
-2. **Override manual**: si el usuario la corrigió antes, usa esas coords
-3. **Búsqueda libre (limpia)**: Nominatim con la dirección limpia, viewbox como pista
-4. **Búsqueda estructurada**: separa nombre de calle y número, búsqueda con campos separados
-5. **Búsqueda simplificada (sin número)**: busca solo el nombre de la calle
-6. **Búsqueda acotada**: misma búsqueda pero con `bounded=1` (fuerza Posadas estrictamente)
-7. **Nombre corto**: últimas 2 palabras del nombre de calle + "Posadas, Córdoba, España"
+`_cache_key(street, number)` → `"normalize(calle)#normalize(número)"`.
 
-Cada llamada a Nominatim valida que el resultado esté dentro de ±0.15° del centro de Posadas (~16 km). Si no, se descarta.
+**Catálogo de calles y fuzzy matching:**
 
-**`geocode_batch(addresses: list[str]) → list[tuple]`**
+`_get_street_catalog()` → devuelve el catálogo combinado (OSM + Catastro + aprendidas) cargado desde `catalog.py`. Si falla, cae back a Overpass API con TTL de 7 días en disco (`osm_streets.json`).
 
-Llama a `geocode()` para cada dirección. Entre llamadas a direcciones nuevas (no cacheadas) espera `GEOCODE_DELAY` (0.5s) para respetar el rate limit de Nominatim. No espera tras el último resultado.
+`_find_closest_street(query_street)` → compara `query_street` contra el catálogo con `_token_set_ratio()`. Solo devuelve coincidencia si supera `FUZZY_THRESHOLD = 0.80` y la calle no está ya en el catálogo. Estrategia conservadora: todos los tokens de la query deben tener cobertura en la entrada del catálogo (typos de 1-2 chars admitidos, diferencias semánticas rechazadas).
 
-**`add_override(address, lat, lon)`**
+**Pipeline de geocodificación — `geocode(address, alias="") → (GeoResult | None, confidence)`:**
 
-Guarda una corrección manual en memoria y en disco (`/app/data/geocode_overrides.json`). Se invoca cuando el usuario pina manualmente una dirección en la app.
+1. **Formato lat,lon directo** → si la dirección ya es `"37.80,-5.10"`, se devuelve directamente con confianza `OVERRIDE`.
+2. **Caché en memoria** (`_cache[key]`) → si existe y no ha expirado (entradas google/places tienen TTL de 30 días), devuelve inmediatamente. Si expiró, se limpia para re-geocodificar.
+3. **Caché por alias** (`_cache["@alias_normalizado"]`) → si hay alias y está en caché, devuelve con confianza `EXACT_PLACE`.
+4. **Fuzzy matching** (sin HTTP) → intenta corregir el nombre de calle antes de consultar Google.
+5. **Google Geocoding API** → si el resultado es `ROOFTOP`: guarda con `EXACT_ADDRESS`; si es `RANGE_INTERPOLATED`: guarda con `GOOD`; si es `GEOMETRIC_CENTER` o `APPROXIMATE`: no guarda, continúa al paso siguiente.
+6. **Google Places API** (solo si `alias` no vacío) → busca el negocio en un radio de 1500 m alrededor del centro de Posadas. Guarda con `EXACT_PLACE`.
+7. **FAILED** → guarda `None` en caché de memoria (no en disco) para evitar reintentos en la misma sesión.
+
+**Persistencia:**
+
+`_load_cache()` — al importar el módulo, carga `geocode_cache.json` en `_cache` y `_persisted`. Descarta entradas con `source: cartociudad` y entradas google/places expiradas.
+
+`_persist_entry(key, lat, lon, street, number, source, confidence, ...)` — guarda en `_persisted` y llama a `_save_cache()` para escribir el JSON en disco.
+
+**API pública:**
+
+`geocode(address, alias="") → (GeoResult | None, str)` — pipeline completo descrito arriba.
+
+`geocode_batch(addresses) → list[(str, GeoResult | None)]` — itera `geocode()` sin alias. Usado como fallback legacy en `/optimize` cuando no se reciben coordenadas pre-resueltas.
+
+`add_override(address, lat, lon)` — registra un pin manual. Fuente `"override"`, confianza `OVERRIDE`, prioridad máxima y sin TTL.
 
 ---
 
@@ -413,7 +431,7 @@ Respuesta:
 
 **`can_osrm_snap(lat, lon) → bool`**
 
-Comprueba que OSRM puede mapear la coordenada a un nodo de la red viaria a menos de 2 km. Se llama antes de enviar coords a VROOM para evitar errores 500 por coordenadas fuera del mapa.
+Comprueba que OSRM puede mapear la coordenada a un nodo de la red viaria a menos de 500 m. Se llama antes de enviar coords a VROOM para evitar errores 500 por coordenadas fuera del mapa. Las coordenadas que no superan este test pasan a `geocode_failed=True`.
 
 ---
 
@@ -438,12 +456,11 @@ Clase estática de solo lectura con toda la configuración de red. No se puede i
 
 | Constante | Valor |
 |-----------|-------|
-| `baseUrl` | `http://127.0.0.1:8000` (desarrollo local) |
+| `baseUrl` | URL ngrok de producción (comentada: `http://127.0.0.1:8000` para desarrollo) |
 | `optimizeEndpoint` | `/api/optimize` |
 | `healthEndpoint` | `/health` |
-| `servicesStatusEndpoint` | `/api/services/status` |
 | `validationStartEndpoint` | `/api/validation/start` |
-| `timeout` | 10 minutos (cubre geocodificación lenta de 70-100 direcciones) |
+| `timeout` | 10 minutos (cubre geocodificación de 70-100 direcciones con Google API) |
 
 ---
 
@@ -483,12 +500,17 @@ Modelos Dart que reflejan los contratos del backend.
 
 Modelos para la respuesta de `/api/validation/start`.
 
+**`GeoConfidence` (enum)**: `exactAddress`, `good`, `exactPlace`, `override`, `failed`
+- Refleja los niveles de confianza del backend.
+- Extension `.label` → texto legible; `.color` → color semáforo para la UI.
+
 **`GeocodedStop`** — parada que se geocodificó con éxito
-- `address`, `clientName`, `allClientNames`, `packageCount`, `lat`, `lon`
+- `address`, `alias`, `clientName`, `allClientNames`, `packages`, `packageCount`, `lat`, `lon`
+- `confidence: GeoConfidence`
 - `fromJson()`
 
 **`FailedStop`** — parada que no pudo geocodificarse
-- `address`, `clientNames`, `packageCount`
+- `address`, `alias`, `clientNames`, `packages`, `packageCount`
 - `fromJson()`
 
 **`ValidationResult`** — respuesta completa de `/api/validation/start`
@@ -523,9 +545,8 @@ Modelos para el estado de entrega en curso. Estos se persisten en Hive.
 
 Contenedor simple para los datos del CSV cargado.
 
-**`CsvData`**: `clientes`, `direcciones`, `ciudades` (todas `List<String>`, una por fila del CSV)
+**`CsvData`**: `clientes`, `direcciones`, `ciudades`, `notas`, `aliases` (todas `List<String>`, una por fila del CSV)
 - `totalPackages` getter → `direcciones.length`
-- `fullAddresses` getter → combina dirección + ciudad ("dirección, ciudad"), evitando duplicar la ciudad si ya aparece en la dirección
 - `isEmpty` / `isNotEmpty`
 
 ---
@@ -544,11 +565,7 @@ Capa de comunicación HTTP con el backend. Todos los métodos son estáticos.
 - GET `/health`, timeout 15s
 - Devuelve `true` si status 200, `false` en cualquier error
 
-`servicesStatus() → Future<Map<String,dynamic>?>`
-- GET `/api/services/status`, timeout 10s
-- Devuelve el mapa JSON o `null` si falla
-
-`optimize({addresses, clientNames?, startAddress?, coords?, packageCounts?, allClientNames?}) → Future<OptimizeResponse>`
+`optimize({addresses, clientNames?, startAddress?, coords?, packageCounts?, packagesPerStop?, aliases?}) → Future<OptimizeResponse>`
 - POST `/api/optimize` con JSON body
 - Solo incluye campos opcionales si no son null/vacíos
 - Timeout: 10 minutos
@@ -560,9 +577,14 @@ Capa de comunicación HTTP con el backend. Todos los métodos son estáticos.
 - Devuelve el GeoJSON geometry o `null` si falla
 
 `validationStart({csvData: CsvData}) → Future<ValidationResult>`
-- POST `/api/validation/start` con JSON body `{"rows": [{cliente, direccion, ciudad}, ...]}`
+- POST `/api/validation/start` con JSON body `{"rows": [{cliente, direccion, ciudad, nota, alias}, ...]}`
 - Timeout: 10 minutos
 - En error HTTP: lanza `ApiException`
+
+`postOverride({address, lat, lon}) → Future<void>`
+- POST `/api/validation/override` con JSON body
+- Fire-and-forget: errores de red se ignoran silenciosamente
+- Se llama al confirmar un pin manual (tanto en validación como en reparto)
 
 **`ApiException`**: `message` + `statusCode`. Tipo para errores de API.
 
@@ -580,9 +602,11 @@ Parsea archivos CSV en memoria, sin depender del backend.
    - `cliente/clientes/nombre/nombres/client` → columna de cliente
    - `dirección/direccion/address/domicilio/calle` → columna de dirección (obligatoria)
    - `ciudad/city/localidad/municipio/población` → columna de ciudad
-4. Para cada fila: extrae cliente, dirección, ciudad usando `_parseCsvLine()` (maneja campos con comillas y comas internas)
+   - `nota/notas/note/observacion` → columna de nota (opcional)
+   - `alias/negocio/lugar/establecimiento` → columna de alias (opcional; activa Google Places)
+4. Para cada fila: extrae campos usando `_parseCsvLine()` (maneja campos con comillas y comas internas)
 5. Lanza `FormatException` si no encuentra la columna de dirección
-6. Devuelve `CsvData` con las tres listas
+6. Devuelve `CsvData` con las cinco listas
 
 ---
 
@@ -652,62 +676,65 @@ Pantalla principal de importación y configuración de ruta. Es el hub central d
 
 **Qué muestra:**
 - Estado del servidor (badge Online/Offline, recargable)
-- Tarjeta "Continuar Ruta" si hay sesión activa guardada
+- Tarjeta "Continuar Ruta" si hay sesión activa guardada en Hive
 - Área de carga de CSV (file picker)
-- Resumen del CSV cargado (paquetes totales, paradas únicas)
-- Selector de origen (defecto / GPS / manual)
-- Botón "Validar Direcciones"
-- Resumen de validación (barra de progreso, chips OK/Problemas/Paquetes)
-- Botón "Calcular Ruta Óptima"
+- Resumen del CSV cargado (paquetes totales)
+- Botón "Validar Direcciones" (activo tras cargar CSV)
+- Diálogo de progreso durante validación ("Geocodificando… puede tardar varios minutos" + contador de tiempo)
 - Banner de error
 
-**Estado interno:**
-| Variable | Tipo | Propósito |
-|----------|------|-----------|
-| `_csvData` | `CsvData?` | CSV cargado y parseado |
-| `_fileName` | `String` | Nombre del archivo |
-| `_originMode` | `OriginMode` | Modo de origen seleccionado |
-| `_manualAddress` | `String` | Dirección manual si aplica |
-| `_isLoading` | `bool` | Cálculo de ruta en curso |
-| `_isCheckingServer` | `bool` | Comprobación de servidor en curso |
-| `_error` | `String?` | Mensaje de error actual |
-| `_serverOnline` | `bool` | Servidor accesible |
-| `_hasActiveSession` | `bool` | Hay sesión de reparto guardada |
-| `_validationResult` | `ValidationResponse?` | Resultado de validación |
-| `_isValidating` | `bool` | Validación en curso |
-| `_hasEverValidated` | `bool` | Se ejecutó validación al menos una vez |
-| `_addresses` | `List<String>` | Direcciones del CSV |
-| `_clientNames` | `List<String>` | Nombres del CSV |
+**Flujo principal:**
 
-**Métodos clave:**
+`_pickFile()` → abre file picker para CSV, llama a `CsvService.parse()`, guarda el `CsvData`.
 
-`_pickFile()`: abre file picker para CSV, llama a `CsvService.parse()`, extrae `fullAddresses` y `clientes`, resetea validación anterior.
+`_startValidation()`:
+1. Comprueba servidor online
+2. Activa wakelock y muestra `_ValidationProgressDialog`
+3. Llama a `ApiService.validationStart(csvData)`
+4. En éxito: cierra diálogo y navega a `ValidationReviewScreen`
 
-`_validate()`:
-1. Activa wakelock (evita que la pantalla se apague)
-2. Muestra diálogo de progreso con contador de tiempo
-3. Llama a `ApiService.validationStart(addresses, clientNames)`
-4. Si hay problemas, abre bottom sheet con lista de direcciones problemáticas
-5. Permite "Situar en el mapa" → diálogo para introducir lat/lon manualmente
-
-`_applyPin(stop, lat, lon)`: reconstruye el `ValidationResponse` con las coordenadas corregidas para esa parada; actualiza contadores de ok/problema.
-
-`_calculateRoute()`:
-1. Si hay problemas sin resolver, muestra confirmación "¿Calcular igualmente?"
-2. Obtiene dirección de origen (manual, GPS o defecto)
-3. Si hay validación previa: usa las paradas únicas ya geocodificadas como entrada (evita re-geocodificar)
-4. Si no: usa las direcciones brutas del CSV
-5. Llama a `ApiService.optimize()` con los datos
-6. Muestra progreso animado con mensajes rotativos
-7. En éxito: limpia estado de validación, navega a `ResultScreen`
+`_ValidationProgressDialog`: diálogo no cancelable con spinner, "Geocodificando… puede tardar varios minutos", barra indeterminada y contador de tiempo transcurrido.
 
 **Navegación:**
 - → `DeliveryScreen` (si retoma sesión existente)
-- → `ResultScreen` (tras calcular ruta)
+- → `ValidationReviewScreen` (tras validar CSV)
 
 ---
 
-### 3.14 `screens/loading_order_screen.dart`
+### 3.14 `screens/validation_review_screen.dart`
+
+Pantalla de revisión de resultados de geocodificación. El usuario ve todas las paradas antes de calcular la ruta, puede corregir errores y decidir cómo proceder con las fallidas.
+
+**Qué muestra:**
+- Mapa con marcadores de todas las paradas geocodificadas. El color del marcador refleja el nivel de confianza (verde=EXACT_ADDRESS, naranja=GOOD/EXACT_PLACE/OVERRIDE). Los marcadores son tappables para re-pinanr la parada.
+- Lista de paradas geocodificadas con chip de confianza y alias (si existe).
+- Lista de paradas fallidas con botón "Pin en mapa" para situar manualmente.
+- `OriginSelector` para elegir el punto de inicio.
+- Botón "Calcular ruta" (envía a `/api/optimize`).
+
+**Re-pin de parada geocodificada:**
+1. El usuario toca un marcador del mapa → diálogo de confirmación.
+2. Se abre `MapPickerScreen` → el usuario toca la posición correcta.
+3. Se llama a `ApiService.postOverride()` (fire-and-forget).
+4. La parada se sustituye en `_result.geocoded` con `confidence: GeoConfidence.override` y nuevas coords.
+
+**Re-pin de parada fallida:**
+1. El usuario pulsa "Pin en mapa" en la lista de fallidas → diálogo de confirmación.
+2. Se abre `MapPickerScreen`.
+3. Se llama a `postOverride()`, se mueve la parada de `_result.failed` a `_result.geocoded`.
+
+**`_calculateRoute()`:**
+1. Obtiene origen (GPS / manual / defecto según `OriginSelector`)
+2. Llama a `ApiService.optimize()` pasando coords, packages_per_stop, aliases
+3. Navega a `ResultScreen`
+
+**Navegación:**
+- ← ImportScreen (atrás)
+- → ResultScreen (tras calcular ruta)
+
+---
+
+### 3.16 `screens/loading_order_screen.dart`
 
 Pantalla informativa de orden de carga LIFO (Last-In-First-Out) para la furgoneta.
 
@@ -719,7 +746,7 @@ Pantalla informativa de orden de carga LIFO (Last-In-First-Out) para la furgonet
 
 ---
 
-### 3.15 `screens/result_screen.dart`
+### 3.17 `screens/result_screen.dart`
 
 Visualización de la ruta optimizada antes de iniciar el reparto.
 
@@ -743,7 +770,7 @@ Visualización de la ruta optimizada antes de iniciar el reparto.
 
 ---
 
-### 3.16 `screens/delivery_screen.dart`
+### 3.18 `screens/delivery_screen.dart`
 
 Pantalla de ejecución del reparto en tiempo real. La más compleja de la app.
 
@@ -751,14 +778,14 @@ Pantalla de ejecución del reparto en tiempo real. La más compleja de la app.
 - AppBar: "En Reparto" + badge con conteo de completadas
 - Cabecera de progreso: "X de Y entregas" con chips (✅ entregadas, 🚫 ausentes, ⚠️ incidencias) y barra de progreso
 - Mapa en modo delivery (tramo GPS → próxima parada, no la ruta completa)
-- Tarjeta "Siguiente Parada": número, cliente, dirección, paquetes, botón de navegación externa
+- Tarjeta "Siguiente Parada" (`_NextStopCard`): número, alias (si existe), dirección, lista de paquetes, botón de navegación externa (Google Maps), botón de re-pin (naranja, `edit_location_alt`)
 - Botones de acción: "Entregado" (verde, grande), "Ausente" (ámbar), "Incidencia" (rojo, pequeño)
 
 **Estado:** recibe `DeliverySession` existente del constructor. Muta directamente sobre ese objeto.
 
 **Métodos clave:**
 
-`initState()`: espera 1.5s y llama a `_fetchSegmentFromGps()` para dibujar el primer tramo.
+`initState()`: espera 1.5s, llama a `_fetchSegmentFromGps()` para dibujar el primer tramo. Inicia `_segmentTimer` con `Timer.periodic(10 s)` para refrescar el tramo automáticamente.
 
 `_getCurrentGps()`:
 1. Primero intenta obtener posición del stream activo del mapa (ya tiene GPS)
@@ -776,8 +803,17 @@ Pantalla de ejecución del reparto en tiempo real. La más compleja de la app.
 2. Si la sesión está terminada → llama a `_showFinishedDialog()`
 3. Si no → recalcula segmento GPS → próxima parada y recentra mapa
 
+`_repinStop(stop, sessionIndex)`:
+1. Muestra diálogo de confirmación
+2. Abre `MapPickerScreen` para que el usuario toque la posición correcta
+3. Llama a `ApiService.postOverride()` (fire-and-forget)
+4. Crea un nuevo `DeliveryStop` con `lat`, `lon` y `geocodeFailed: false` actualizados
+5. Sustituye `_session.stops[sessionIndex]`, guarda sesión en Hive
+6. Si es la parada actual, recalcula el segmento GPS
+
 `_showReorderSheet()`:
-- Muestra `ReorderableListView` con las paradas pendientes
+- Muestra `ReorderableListView` con las paradas no completadas (pendientes + ausentes + incidencias)
+- Cada parada tiene botón de re-pin y botón de marcar entregada
 - Al confirmar: reconstruye la lista [origen, completadas, pendientes-reordenadas]
 - Guarda sesión, recalcula segmento
 
@@ -785,19 +821,18 @@ Pantalla de ejecución del reparto en tiempo real. La más compleja de la app.
 - Muestra resumen: entregadas, ausentes, incidencias, tiempo total, distancia
 - "Cerrar Sesión y Limpiar" → `PersistenceService.clearSession()` → `Navigator.popUntil(first)`
 
-`_onWillPop()`: si no está terminado, muestra confirmación; informa que el progreso está guardado y se puede reanudar.
-
 **Servicios llamados:**
 - `Geolocator.getCurrentPosition()` — GPS del dispositivo
-- `ApiService.getRouteSegment()` — tramo OSRM entre dos puntos
-- `PersistenceService.updateStopStatus()` — persiste cada entrega
-- `launchUrl()` — abre Google Maps externo para navegación
+- `ApiService.getRouteSegment()` — tramo OSRM entre dos puntos (refresco cada 10 s + tras cada parada)
+- `ApiService.postOverride()` — guarda pin manual en backend
+- `PersistenceService.updateStopStatus()` / `saveSession()` — persiste cada entrega y re-pin
+- `launchUrl()` — abre Google Maps externo para navegación giro a giro
 
 **Navegación:** tras finalizar → `ImportScreen` (popUntil el primero de la pila)
 
 ---
 
-### 3.17 `widgets/route_map.dart`
+### 3.19 `widgets/route_map.dart`
 
 Widget de mapa interactivo basado en `flutter_map` + OpenStreetMap. Usado tanto en modo preview (ruta completa) como en modo delivery (solo el tramo actual).
 
@@ -840,7 +875,7 @@ Widget de mapa interactivo basado en `flutter_map` + OpenStreetMap. Usado tanto 
 
 ---
 
-### 3.18 `widgets/stops_list.dart`
+### 3.20 `widgets/stops_list.dart`
 
 Lista scrollable de paradas. Sincronizada con el mapa.
 
@@ -852,7 +887,7 @@ Lista scrollable de paradas. Sincronizada con el mapa.
 
 ---
 
-### 3.19 `widgets/stats_banner.dart`
+### 3.21 `widgets/stats_banner.dart`
 
 Fila horizontal de tarjetas de estadísticas.
 
@@ -862,7 +897,7 @@ Fila horizontal de tarjetas de estadísticas.
 
 ---
 
-### 3.20 `widgets/origin_selector.dart`
+### 3.22 `widgets/origin_selector.dart`
 
 Selector del punto de inicio de la ruta.
 
@@ -884,35 +919,39 @@ La opción seleccionada aparece con borde de color y check circle. La opción ma
 ```
 CSV (bytes)
   └─ CsvService.parse()
-       └─ CsvData {clientes, direcciones, ciudades}
-            └─ fullAddresses: List<String>
+       └─ CsvData {clientes, direcciones, ciudades, notas, aliases}
                  │
                  ▼
          ApiService.validationStart()
               │  POST /api/validation/start
               │    └─ validation.py
-              │         └─ geocoding.py
-              │              └─ Nominatim (HTTP)
+              │         └─ geocoding.py (por dirección única)
+              │              1. Caché disco (override > google/places con TTL)
+              │              2. Fuzzy matching catálogo OSM (sin HTTP)
+              │              3. Google Geocoding API → EXACT_ADDRESS | GOOD
+              │              4. Google Places API (si alias) → EXACT_PLACE
+              │              5. FAILED
               │
               ▼
-         ValidationResponse
-         {okCount, problemCount, stops[]{lat, lon, status}}
+         ValidationResult
+         {geocoded[]{lat, lon, confidence, alias}, failed[]}
               │
-              │  [Opcional: usuario corrige coords manualmente]
+              ├─ ValidationReviewScreen: usuario toca marcadores → re-pin → postOverride()
               │
               ▼
          ApiService.optimize()
               │  POST /api/optimize
               │    └─ optimize.py
-              │         ├─ geocoding.py (solo paradas sin coords)
+              │         ├─ coords pre-resueltas (no re-geocodifica)
               │         ├─ routing.optimize_route()
               │         │      └─ VROOM (HTTP) → waypoint_order
+              │         ├─ _sort_street_runs() (post-proceso portales)
               │         └─ routing.get_route_details()
-              │                └─ OSRM (HTTP) → geometry + steps
+              │                └─ OSRM (HTTP) → geometry GeoJSON
               │
               ▼
          OptimizeResponse
-         {stops[order optimizado], geometry GeoJSON, steps[]}
+         {stops[orden optimizado], geometry GeoJSON}
               │
               ├─ ResultScreen (preview del mapa)
               │
@@ -924,9 +963,11 @@ CSV (bytes)
                         │
                         ├─ Geolocator.getCurrentPosition() → GPS
                         │
-                        ├─ ApiService.getRouteSegment()
-                        │    POST /api/route-segment
+                        ├─ ApiService.getRouteSegment() (cada 10 s)
+                        │    GET /api/route-segment
                         │      └─ OSRM → segmento GPS→parada
+                        │
+                        ├─ _repinStop() → MapPickerScreen → postOverride()
                         │
                         └─ PersistenceService.updateStopStatus()
                              └─ Hive (estado de cada entrega)
@@ -938,8 +979,10 @@ CSV (bytes)
 
 | Servicio | URL | Protocolo | Propósito | Timeout |
 |----------|-----|-----------|-----------|---------|
-| **Nominatim** | `nominatim.openstreetmap.org` | HTTPS | Geocodificación de direcciones | 30s/llamada |
-| **OSRM** | `localhost:5000` | HTTP (Docker) | Cálculo de rutas por carretera, geometría GeoJSON, instrucciones | 60s |
+| **Google Geocoding API** | `maps.googleapis.com/maps/api/geocode/json` | HTTPS | Geocodificación principal (precisión portal) | 30s/llamada |
+| **Google Places API** | `maps.googleapis.com/maps/api/place/findplacefromtext/json` | HTTPS | Geocodificación de negocios por alias | 30s/llamada |
+| **Overpass API** | `overpass-api.de/api/interpreter` | HTTPS | Catálogo de calles OSM para fuzzy matching (TTL 7 días) | 40s |
+| **OSRM** | `localhost:5000` | HTTP (Docker) | Rutas por carretera, geometría GeoJSON, snap de coordenadas | 60s |
 | **VROOM** | `localhost:3000` | HTTP (Docker) | Resolución del TSP (orden óptimo de visita) | 120s |
 | **Google Maps** | externo | URL scheme | Navegación giro a giro (abre la app del sistema) | — |
 | **OpenStreetMap tiles** | `tile.openstreetmap.org` | HTTPS | Teselas del mapa base en la app Flutter | — |

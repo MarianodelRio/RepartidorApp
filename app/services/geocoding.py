@@ -666,21 +666,6 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
     return None, "FAILED"
 
 
-def is_cached(address: str) -> bool:
-    """True si la dirección está en caché válida (sin llamada HTTP)."""
-    if not address or not address.strip():
-        return False
-    street, number = _parse_address(address.strip())
-    key = _cache_key(street, number)
-    if key not in _cache:
-        return False
-    entry = _persisted.get(key, {})
-    src = entry.get("source", "")
-    if src in ("google", "places") and _google_cache_expired(entry):
-        return False
-    return True
-
-
 def geocode_batch(addresses: list[str]) -> list[tuple[str, GeoResult | None]]:
     """
     Geocodifica una lista de direcciones (sin alias).
@@ -706,11 +691,6 @@ def add_override(address: str, lat: float, lon: float) -> None:
         key, lat, lon, street, number,
         source="override", confidence="OVERRIDE",
     )
-
-
-def clear_cache() -> None:
-    """Limpia la caché en memoria (no borra el disco)."""
-    _cache.clear()
 
 
 # Cargar caché al importar el módulo

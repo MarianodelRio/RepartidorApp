@@ -2,6 +2,35 @@
 
 ---
 
+## [2.0.0] — Marzo 2026
+
+### Changed
+- **Motor de geocodificación: Nominatim → Google**: la geocodificación usa Google Geocoding API como motor principal (precisión portal a portal) y Google Places API para alias de negocios. Nominatim se elimina del pipeline de geocodificación; solo se mantiene Overpass API para descargar el catálogo de calles OSM que alimenta el fuzzy matching.
+- **Sistema de confianza de coordenadas**: cada resultado lleva un nivel explícito: `EXACT_ADDRESS` (portal exacto, ROOFTOP), `GOOD` (interpolado, RANGE_INTERPOLATED), `EXACT_PLACE` (negocio por Places), `OVERRIDE` (pin manual).
+- **TTL de caché Google**: entradas de Google/Places expiran a los 30 días, forzando re-geocodificación fresca.
+- **Re-pin en validación**: los marcadores del mapa en `ValidationReviewScreen` son interactivos; al tocarlos se abre `MapPickerScreen` para corregir la posición de paradas ya geocodificadas.
+- **Re-pin en reparto**: `DeliveryScreen` añade botón de re-pin en la tarjeta de siguiente parada y en el diálogo de reordenación.
+- **Refresco del tramo GPS**: de 30 s → 10 s para mayor reactividad.
+- **Mensaje de carga de validación**: simplificado a "Geocodificando… puede tardar varios minutos".
+
+### Added
+- **Columna `alias` en CSV**: quinta columna opcional (nombre de negocio/lugar). Si existe, activa la búsqueda por Google Places como fallback de geocodificación.
+- **Campo `confidence`** en la respuesta de `/api/validation/start`: nivel de confianza de las coordenadas.
+- **Campo `alias`** en `GeocodedStop`, `FailedStop`, `StopInfo`, `DeliveryStop` y modelos Flutter equivalentes.
+
+### Removed
+- **Nominatim como geocodificador**: se eliminan todas las llamadas directas a Nominatim para geocodificar direcciones. Las entradas de caché con `source: cartociudad` o `source: nominatim` se descartan automáticamente al cargar.
+- `POSADAS_VIEWBOX` en `config.py` (sin uso tras eliminar Nominatim).
+- `is_cached()` y `clear_cache()` en `geocoding.py` (sin callers).
+- `servicesStatus()` en `ApiService` (sin callers en la app).
+- `servicesStatusEndpoint` y `validationOverrideEndpoint` en `ApiConfig`.
+- Getter `fullAddresses` en `CsvData`.
+
+### Fixed
+- Import incorrecto `latlong2/latlong2.dart` corregido a `latlong2/latlong.dart` en `delivery_screen.dart`.
+
+---
+
 ## [1.4.0] — Febrero 2026
 
 ### Changed

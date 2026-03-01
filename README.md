@@ -3,8 +3,8 @@
 > **Sistema completo de optimización de rutas de reparto para Posadas, Córdoba**
 > Backend FastAPI + Flutter App + OSRM + VROOM
 
-**Versión:** 1.4.0
-**Última actualización:** Febrero 2026
+**Versión:** 2.0.0
+**Última actualización:** Marzo 2026
 
 
 
@@ -102,7 +102,9 @@ nohup ngrok http 8000 --log=stdout > /tmp/ngrok.log 2>&1 &
 - **Python 3.10** + FastAPI
 - **OSRM** (rutas reales por calles)
 - **VROOM** (optimización TSP/VRP)
-- **Nominatim** (geocodificación OSM)
+- **Google Geocoding API** (geocodificación principal, precisión portal)
+- **Google Places API** (geocodificación de negocios por alias)
+- **Overpass API** (catálogo de calles para fuzzy matching)
 - **Docker Compose** (orquestación)
 
 ### Frontend
@@ -144,7 +146,7 @@ nohup ngrok http 8000 --log=stdout > /tmp/ngrok.log 2>&1 &
 ```bash
 # Backend
 curl http://localhost:8000/health
-# → {"status":"ok","version":"2.1.0"}
+# → {"status":"ok","version":"2.0.0"}
 
 # OSRM
 curl -s "http://localhost:5000/route/v1/driving/-5.105,37.802;-5.110,37.800?overview=false" | grep "Ok"

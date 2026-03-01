@@ -32,7 +32,6 @@ DEPOT_LAT = 37.805503
 DEPOT_LON = -5.099805
 START_ADDRESS = "Avenida de Andalucía, Posadas"
 POSADAS_CENTER = (DEPOT_LAT, DEPOT_LON)    # lat, lon
-POSADAS_VIEWBOX = "-5.15,37.78,-5.06,37.83"  # lon1,lat1,lon2,lat2
 
 # ── Límites de la API ────────────────────────────────────────
 MAX_STOPS = 200         # máximo de paradas por petición
