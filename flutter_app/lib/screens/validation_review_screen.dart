@@ -116,6 +116,94 @@ class _ValidationReviewScreenState extends State<ValidationReviewScreen> {
     }
   }
 
+  // ── Re-pin de parada ya geocodificada ───────────────────────────────────────
+
+  Future<void> _repinGeocodedStop(GeocodedStop stop) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.edit_location_alt, color: AppColors.primary, size: 22),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text('Cambiar ubicación',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            ),
+          ],
+        ),
+        content: Text(
+          stop.alias.isNotEmpty
+              ? '${stop.address}  —  ${stop.alias}'
+              : stop.address,
+          style: const TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.edit_location_alt, size: 18),
+            label: const Text('Continuar'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final result = await Navigator.of(context).push<LatLng>(
+      MaterialPageRoute(builder: (_) => MapPickerScreen(address: stop.address)),
+    );
+    if (result != null) {
+      _applyRepinGeocoded(stop, result.latitude, result.longitude);
+    }
+  }
+
+  void _applyRepinGeocoded(GeocodedStop stop, double lat, double lon) {
+    ApiService.postOverride(address: stop.address, lat: lat, lon: lon);
+
+    final updated = GeocodedStop(
+      address: stop.address,
+      alias: stop.alias,
+      clientName: stop.clientName,
+      allClientNames: stop.allClientNames,
+      packages: stop.packages,
+      packageCount: stop.packageCount,
+      lat: lat,
+      lon: lon,
+      confidence: GeoConfidence.override,
+    );
+
+    setState(() {
+      _result = ValidationResult(
+        geocoded: _result.geocoded
+            .map((s) => s.address == stop.address ? updated : s)
+            .toList(),
+        failed: _result.failed,
+        totalPackages: _result.totalPackages,
+        uniqueAddresses: _result.uniqueAddresses,
+      );
+    });
+
+    _mapController.move(LatLng(lat, lon), 16);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Ubicación actualizada manualmente'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    }
+  }
+
   // ── Calcular ruta ───────────────────────────────────────────────────────────
 
   Future<void> _calculateRoute() async {
@@ -350,11 +438,15 @@ class _ValidationReviewScreenState extends State<ValidationReviewScreen> {
         width: 36,
         height: 44,
         alignment: Alignment.topCenter,
-        child: Tooltip(
-          message: '${stop.address}'
-              '${stop.alias.isNotEmpty ? '\n📍 ${stop.alias}' : ''}'
-              '${stop.clientName.isNotEmpty ? '\n${stop.clientName}' : ''}',
-          child: Icon(Icons.location_pin, color: color, size: 36),
+        child: GestureDetector(
+          onTap: () => _repinGeocodedStop(stop),
+          child: Tooltip(
+            message: '${stop.address}'
+                '${stop.alias.isNotEmpty ? '\n📍 ${stop.alias}' : ''}'
+                '${stop.clientName.isNotEmpty ? '\n${stop.clientName}' : ''}'
+                '\n✏ Toca para cambiar ubicación',
+            child: Icon(Icons.location_pin, color: color, size: 36),
+          ),
         ),
       );
     }).toList();

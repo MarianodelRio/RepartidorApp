@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong2.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_theme.dart';
+import 'map_picker_screen.dart';
 import '../models/delivery_state.dart';
 import '../models/route_models.dart';
 import '../services/api_service.dart';
@@ -50,8 +52,8 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
       }
     });
 
-    // Refrescar el tramo de ruta cada 30 s (el punto GPS se mueve mientras conduce)
-    _segmentTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+    // Refrescar el tramo de ruta cada 10 s (el punto GPS se mueve mientras conduce)
+    _segmentTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (mounted && _session.currentStop != null) _fetchSegmentFromGps();
     });
   }
@@ -329,6 +331,105 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
   }
 
   // ═══════════════════════════════════════════
+  //  Re-pin manual de una parada
+  // ═══════════════════════════════════════════
+
+  Future<void> _repinStop(
+    DeliveryStop stop,
+    int sessionIndex, {
+    void Function(DeliveryStop)? onStopUpdated,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.edit_location_alt, color: AppColors.primary, size: 22),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text('Cambiar ubicación',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            ),
+          ],
+        ),
+        content: Text(
+          stop.alias.isNotEmpty
+              ? '${stop.address}  —  ${stop.alias}'
+              : stop.address,
+          style: const TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.edit_location_alt, size: 18),
+            label: const Text('Continuar'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final result = await Navigator.of(context).push<LatLng>(
+      MaterialPageRoute(builder: (_) => MapPickerScreen(address: stop.address)),
+    );
+    if (result == null || !mounted) return;
+
+    ApiService.postOverride(
+      address: stop.address,
+      lat: result.latitude,
+      lon: result.longitude,
+    );
+
+    final newStop = DeliveryStop(
+      order: stop.order,
+      address: stop.address,
+      alias: stop.alias,
+      label: stop.label,
+      clientName: stop.clientName,
+      clientNames: stop.clientNames,
+      packages: stop.packages,
+      type: stop.type,
+      lat: result.latitude,
+      lon: result.longitude,
+      distanceMeters: stop.distanceMeters,
+      geocodeFailed: false,
+      packageCount: stop.packageCount,
+      status: stop.status,
+      note: stop.note,
+      completedAt: stop.completedAt,
+    );
+
+    _session.stops[sessionIndex] = newStop;
+    await PersistenceService.saveSession(_session);
+
+    onStopUpdated?.call(newStop);
+    setState(() {});
+
+    if (sessionIndex == _session.currentStopIndex) {
+      setState(() => _segmentGeometry = null);
+      _fetchSegmentFromGps();
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Ubicación corregida'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    }
+  }
+
+  // ═══════════════════════════════════════════
   //  Navegación externa (Google Maps)
   // ═══════════════════════════════════════════
 
@@ -547,6 +648,39 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                // Botón cambiar ubicación
+                                SizedBox(
+                                  width: 36,
+                                  height: 36,
+                                  child: IconButton(
+                                    padding: EdgeInsets.zero,
+                                    tooltip: 'Cambiar ubicación',
+                                    icon: Icon(
+                                      Icons.edit_location_alt,
+                                      color: AppColors.primary,
+                                      size: 20,
+                                    ),
+                                    onPressed: () async {
+                                      final capturedEntry = entry;
+                                      await _repinStop(
+                                        capturedEntry.stop,
+                                        capturedEntry.index,
+                                        onStopUpdated: (newStop) {
+                                          setSheetState(() {
+                                            final idx = pendingEntries.indexWhere(
+                                                (e) => e.index == capturedEntry.index);
+                                            if (idx != -1) {
+                                              pendingEntries[idx] = _ReorderEntry(
+                                                  index: capturedEntry.index,
+                                                  stop: newStop);
+                                            }
+                                          });
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 2),
                                 // Botón marcar como entregada
                                 SizedBox(
                                   width: 36,
@@ -806,6 +940,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                   onAbsent: () => _markStop(StopStatus.absent),
                   onIncident: _showIncidentDialog,
                   onNavigate: _openExternalNavigation,
+                  onRepin: () => _repinStop(currentStop, _session.currentStopIndex),
                 ),
 
               if (isFinished) _buildFinishedBanner(),
@@ -1029,6 +1164,7 @@ class _NextStopCard extends StatelessWidget {
   final VoidCallback onAbsent;
   final VoidCallback onIncident;
   final VoidCallback onNavigate;
+  final VoidCallback onRepin;
 
   const _NextStopCard({
     required this.stop,
@@ -1037,6 +1173,7 @@ class _NextStopCard extends StatelessWidget {
     required this.onAbsent,
     required this.onIncident,
     required this.onNavigate,
+    required this.onRepin,
   });
 
   @override
@@ -1212,22 +1349,38 @@ class _NextStopCard extends StatelessWidget {
                     ),
                   ),
 
-                  // ── Botón de navegación externa ──
-                  Material(
-                    color: AppColors.primarySurface,
-                    shape: const CircleBorder(),
-                    clipBehavior: Clip.hardEdge,
-                    child: InkWell(
-                      onTap: onNavigate,
-                      child: const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Icon(
-                          Icons.navigation,
-                          color: AppColors.primary,
-                          size: 26,
+                  // ── Botones navegación + re-pin ──
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Material(
+                        color: AppColors.primarySurface,
+                        shape: const CircleBorder(),
+                        clipBehavior: Clip.hardEdge,
+                        child: InkWell(
+                          onTap: onNavigate,
+                          child: const Padding(
+                            padding: EdgeInsets.all(10),
+                            child: Icon(Icons.navigation,
+                                color: AppColors.primary, size: 24),
+                          ),
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 6),
+                      Material(
+                        color: AppColors.warningSurface,
+                        shape: const CircleBorder(),
+                        clipBehavior: Clip.hardEdge,
+                        child: InkWell(
+                          onTap: onRepin,
+                          child: const Padding(
+                            padding: EdgeInsets.all(10),
+                            child: Icon(Icons.edit_location_alt,
+                                color: AppColors.warning, size: 24),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
