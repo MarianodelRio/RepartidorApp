@@ -24,7 +24,6 @@ from app.models import (
 )
 from app.services.geocoding import (
     geocode, geocode_batch,
-    _parse_address, _normalize,
 )
 from app.services.routing import (
     optimize_route,
@@ -96,64 +95,6 @@ def _group_duplicate_addresses(
 
     return unique_addresses, unique_primary_names, all_client_names_out, all_packages_out, package_counts
 
-
-def _sort_street_runs(
-    wp_order: list[int],
-    all_addresses: list[str],
-) -> list[int]:
-    """
-    Post-procesa el orden de VROOM: dentro de cada secuencia consecutiva de
-    paradas en la misma calle normalizada, ordena por número de portal ascendente.
-
-    Ejemplo: VROOM devuelve [0, Calle X nº5, Calle X nº1, Calle X nº7, Calle Y nº3]
-             → queda  [0, Calle X nº1, Calle X nº5, Calle X nº7, Calle Y nº3]
-
-    El índice 0 (depósito/origen) nunca se reordena.
-    Paradas sin número de portal (s/n) van al final del run.
-    """
-    if len(wp_order) <= 2:
-        return wp_order
-
-    result = list(wp_order)
-    n = len(result)
-    i = 1  # el depósito (índice 0 en all_addresses) siempre ocupa result[0]
-
-    while i < n:
-        idx_i = result[i]
-        if idx_i >= len(all_addresses):
-            i += 1
-            continue
-
-        street_i, _ = _parse_address(all_addresses[idx_i])
-        street_norm_i = _normalize(street_i)
-
-        # Buscar el final del run de esta calle
-        j = i + 1
-        while j < n:
-            idx_j = result[j]
-            if idx_j >= len(all_addresses):
-                break
-            street_j, _ = _parse_address(all_addresses[idx_j])
-            if _normalize(street_j) != street_norm_i:
-                break
-            j += 1
-
-        # Si el run tiene más de una parada, ordenar por número de portal
-        if j - i > 1:
-            def portal_key(idx: int) -> float:
-                _, num = _parse_address(all_addresses[idx])
-                digits = "".join(c for c in (num or "") if c.isdigit())
-                return float(digits) if digits else float("inf")
-
-            result[i:j] = sorted(result[i:j], key=portal_key)
-            print(
-                f"[optimize] Reordenadas {j - i} paradas en '{street_norm_i}' "
-                f"por número de portal"
-            )
-
-        i = j
-
-    return result
 
 
 @router.post(
@@ -349,7 +290,7 @@ def optimize(req: OptimizeRequest):
     all_pkg_counts = [0] + ok_pkg_counts
     all_aliases_list = [""] + ok_aliases
 
-    # ── 3. Optimizar orden con VROOM ──────────────────────────
+    # ── 4. Optimizar orden con VROOM ──────────────────────────
     vroom_result = optimize_route(all_coords)
     if vroom_result is None:
         raise HTTPException(
@@ -357,17 +298,10 @@ def optimize(req: OptimizeRequest):
             detail="VROOM no pudo calcular la ruta. ¿Están corriendo los servicios Docker (OSRM + VROOM)?",
         )
 
-    # ── 4. Reordenar según resultado de VROOM ─────────────────
     wp_order = vroom_result["waypoint_order"]
-
-    # Post-proceso: dentro de cada run consecutivo de la misma calle,
-    # ordenar por número de portal ascendente para evitar zig-zag en la calle.
-    wp_order = _sort_street_runs(wp_order, all_addresses)
-
     stop_details_map = {
         sd["original_index"]: sd for sd in vroom_result.get("stop_details", [])
     }
-
     ordered_coords = [all_coords[i] for i in wp_order]
 
     # ── 5. Obtener ruta detallada de OSRM ─────────────────────

@@ -95,9 +95,6 @@ def optimize_route(
     payload = {
         "vehicles": vehicles,
         "jobs": jobs,
-        "options": {
-            "g": True,    # incluir geometría
-        },
     }
 
     try:
@@ -138,7 +135,6 @@ def optimize_route(
             "stop_details": stop_details,
             "total_distance": route.get("distance", 0),
             "total_duration": route.get("duration", 0),
-            "geometry": route.get("geometry", ""),
             "computing_time_ms": data.get("summary", {}).get("computing_times", {}).get("solving", 0),
         }
 
