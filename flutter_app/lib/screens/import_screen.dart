@@ -518,7 +518,7 @@ class _ValidationProgressDialogState
                       fontWeight: FontWeight.w700,
                       color: AppColors.textPrimary)),
               const SizedBox(height: 4),
-              Text('Geocodificando con Google Maps…',
+              Text('Geocodificando… puede tardar varios minutos',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: 13, color: AppColors.textSecondary)),
