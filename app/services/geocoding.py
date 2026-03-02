@@ -60,17 +60,17 @@ _osm_streets_norm_set: set[str] | None = None  # búsqueda O(1) de pertenencia
 
 # Abreviaturas de tipo de vía que se expanden antes de analizar la dirección
 _VIA_ABBREVS = (
-    (r"(?<!\w)C/\s*",   "Calle "),    # C/5 → Calle 5
-    (r"\bCl\.?\b",      "Calle"),     # Cl. / Cl → Calle
-    (r"\bAvda\.?\b",    "Avenida"),   # Avda. / Avda → Avenida
-    (r"\bAv\.",         "Avenida"),   # Av. → Avenida
-    (r"\bPza\.?\b",     "Plaza"),     # Pza. / Pza → Plaza
-    (r"\bCtra\.?\b",    "Carretera"), # Ctra. / Ctra → Carretera
-    (r"\bUrb\.?\b",     "Urbanización"), # Urb. → Urbanización
-    (r"\bPsje\.?\b",    "Pasaje"),    # Psje. → Pasaje
-    (r"\bPje\.?\b",     "Pasaje"),    # Pje. → Pasaje
-    (r"\bRda\.?\b",     "Ronda"),     # Rda. → Ronda
-    (r"\bTrav\.?\b",    "Travesía"),  # Trav. → Travesía
+    (r"(?<!\w)C/\s*",          "Calle "),       # C/5 → Calle 5
+    (r"\bCl\.?(?=\s|$)",       "Calle"),        # Cl. / Cl → Calle
+    (r"\bAvda\.?(?=\s|$)",     "Avenida"),      # Avda. / Avda → Avenida
+    (r"\bAv\.",                "Avenida"),      # Av. → Avenida
+    (r"\bPza\.?(?=\s|$)",      "Plaza"),        # Pza. / Pza → Plaza
+    (r"\bCtra\.?(?=\s|$)",     "Carretera"),    # Ctra. / Ctra → Carretera
+    (r"\bUrb\.?(?=\s|$)",      "Urbanización"), # Urb. → Urbanización
+    (r"\bPsje\.?(?=\s|$)",     "Pasaje"),       # Psje. → Pasaje
+    (r"\bPje\.?(?=\s|$)",      "Pasaje"),       # Pje. → Pasaje
+    (r"\bRda\.?(?=\s|$)",      "Ronda"),        # Rda. → Ronda
+    (r"\bTrav\.?(?=\s|$)",     "Travesía"),     # Trav. → Travesía
 )
 
 

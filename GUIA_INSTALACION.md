@@ -17,7 +17,8 @@ Compatible con **Linux (Ubuntu/Debian)** y **Windows 10/11 con WSL2** (Docker De
 7. [App Flutter](#7-app-flutter)
 8. [Arrancar todo](#8-arrancar-todo)
 9. [Verificación](#9-verificación)
-10. [Solución de problemas](#10-solución-de-problemas)
+10. [Tests del backend](#10-tests-del-backend)
+11. [Solución de problemas](#11-solución-de-problemas)
 
 ---
 
@@ -558,7 +559,75 @@ curl -s http://127.0.0.1:4040/api/tunnels | grep public_url
 
 ---
 
-## 10. Solución de problemas
+## 10. Tests del backend
+
+Los tests unitarios comprueban la lógica del backend (normalización de direcciones, agrupación de paquetes, parsing, geocodificación, formateo…) sin necesidad de levantar Docker ni conectar a ninguna API externa.
+
+### Instalación (solo la primera vez)
+
+```bash
+source venv/bin/activate
+pip install -r requirements.txt    # incluye pytest y httpx
+```
+
+### Ejecutar todos los tests
+
+```bash
+source venv/bin/activate
+pytest
+```
+
+Salida esperada:
+```
+============================= test session starts ==============================
+collected 126 items
+
+tests/test_catalog_pure.py .....................             [ 15%]
+tests/test_dedup.py ..............................          [ 38%]
+tests/test_geocoding_pure.py ..............................  [ 62%]
+tests/test_routing_pure.py .............                    [100%]
+
+============================== 126 passed in 0.8s ==============================
+```
+
+### Comandos útiles
+
+```bash
+# Solo un archivo
+pytest tests/test_dedup.py
+
+# Solo una clase
+pytest tests/test_dedup.py::TestGroupDuplicateAddresses
+
+# Solo un test concreto
+pytest tests/test_geocoding_pure.py::TestParseAddress::test_elimina_bajo
+
+# Parar al primer fallo
+pytest -x
+
+# Salida resumida (sin listar todos los PASSED)
+pytest -q
+
+# Ver print() durante la ejecución
+pytest -s
+```
+
+### Estructura de los tests
+
+```
+tests/
+├── test_dedup.py           # _normalize_for_dedup + _group_duplicate_addresses
+├── test_geocoding_pure.py  # _normalize, _parse_address, _portal_display,
+│                           # _cache_key, _in_posadas_bbox
+├── test_routing_pure.py    # _format_distance
+└── test_catalog_pure.py    # _to_title_case
+```
+
+> Los tests no requieren `.env` ni Google API key: solo prueban lógica Python pura.
+
+---
+
+## 11. Solución de problemas
 
 ### OSRM no arranca: "Cannot open /data/andalucia-latest.osrm"
 

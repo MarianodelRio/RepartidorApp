@@ -5,3 +5,8 @@ pandas
 pydantic
 python-multipart
 python-dotenv
+
+# Desarrollo / tests
+pytest
+pytest-cov
+httpx
