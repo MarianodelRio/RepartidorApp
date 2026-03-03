@@ -302,12 +302,11 @@ Añadir el backend FastAPI como servicio en `docker-compose.yml`. Actualmente el
 
 Añadir prefijo `/api/v1/` a todos los endpoints. Permite desplegar cambios breaking en `/api/v2/` sin romper clientes con la app anterior instalada.
 
-**[MEDIO-11] Tests automáticos**
+**[MEDIO-11] Tests automáticos** ✅ *Completado en v2.1.0*
 
-Añadir suite de tests mínima:
-- Tests unitarios para `geocoding.py` (pipeline completo con mocks de Google)
-- Tests de integración para `/api/validation/start` y `/api/optimize`
-- Tests en Flutter para `CsvService` y `PersistenceService`
+~~Añadir suite de tests mínima~~
+
+Implementado en v2.1.0: 328 tests en total (218 backend + 110 Flutter), cobertura backend 71-100% por módulo, cobertura Flutter 98.6%. Análisis estático con mypy y dart analyze (0 errores). Script `run_tests.sh` unificado.
 
 ### Datos y Geocodificación
 

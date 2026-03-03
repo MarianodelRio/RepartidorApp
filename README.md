@@ -3,7 +3,7 @@
 > **Sistema completo de optimización de rutas de reparto para Posadas, Córdoba**
 > Backend FastAPI + Flutter App + OSRM + VROOM
 
-**Versión:** 2.0.0
+**Versión:** 2.1.0
 **Última actualización:** Marzo 2026
 
 
@@ -55,13 +55,16 @@ nohup ngrok http 8000 --log=stdout > /tmp/ngrok.log 2>&1 &
 
 | Archivo / Carpeta | Descripción |
 |-------------------|-------------|
-| **CHANGELOG.md** | Historial y versión inicial estable (v1.0.0) |
-| **start.sh** | Script de arranque automático (si está presente) |
+| **CHANGELOG.md** | Historial completo de versiones |
+| **start.sh** | Script de arranque automático de todos los servicios |
+| **run_tests.sh** | Tests + cobertura + análisis estático (backend y Flutter) |
 | **docker-compose.yml** | Definición de servicios Docker (OSRM, VROOM, etc.) |
 | **requirements.txt** | Dependencias Python para el backend |
+| **mypy.ini** | Configuración de análisis estático Python |
 | **vroom-conf/** | Configuraciones de ejemplo para VROOM |
 | **app/** | Código del backend (FastAPI) |
-| **flutter_app/** | Código de la app Flutter |
+| **tests/** | Tests del backend (218 tests, pytest) |
+| **flutter_app/** | Código de la app Flutter (110 tests unitarios) |
 
 
 ---

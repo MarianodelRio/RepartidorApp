@@ -2,6 +2,24 @@
 
 ---
 
+## [2.1.0] — Marzo 2026
+
+### Added
+- **Suite de tests completa**: 328 tests en total (218 backend Python + 110 Flutter Dart).
+  - Backend: `tests/conftest.py` (fixture `TestClient`), `test_health.py` (7 tests), `test_validation_endpoint.py` (12 tests), `test_optimize_endpoint.py` (10 tests), `test_routing_service.py` (21 tests), `test_geocoding_service.py` (27 tests), `test_catalog_service.py` (15 tests).
+  - Flutter: 110 tests unitarios cubriendo modelos (`CsvData`, `DeliveryState`, `RouteModels`, `ValidationModels`) y servicios (`CsvService`). Cobertura 98.6%.
+- **`run_tests.sh`**: script unificado que ejecuta tests + cobertura + análisis estático para backend y Flutter en un solo comando.
+- **`mypy.ini`**: configuración de mypy con plugin `pydantic.mypy` para tipado estricto del backend.
+- **Análisis estático integrado**: mypy (backend) y `dart analyze` (Flutter) incluidos en `run_tests.sh`. Resultado: 0 errores en ambos.
+- **Dependencias de desarrollo**: `pytest-cov`, `mypy`, `types-requests` añadidos a `requirements.txt`.
+
+### Fixed
+- **`route_map.dart`**: eliminado campo `_gpsActive` declarado pero nunca leído (advertencia `dart analyze`).
+- **`geocoding.py`**: renombrada variable `streets` a `osm_streets` en la rama de fallback Overpass para resolver colisión de tipos (`list[str]` vs `list[str] | None`) detectada por mypy.
+- **`optimize.py`**: añadidas anotaciones de tipo explícitas (`geocoded_ok`, `geocoded_fail`), sustituido `# type: ignore[assignment]` por `assert req.package_counts is not None`, y renombradas variables `coord` a `raw_coord`/`snap_coord` para eliminar conflictos de tipo.
+
+---
+
 ## [2.0.0] — Marzo 2026
 
 ### Changed
