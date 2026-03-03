@@ -8,12 +8,16 @@ Descripción:
     - Soporta envío de coordenadas pre-resueltas y datos pre-agrupados.
 """
 
+import math
 import time
 from collections import OrderedDict
 
 from fastapi import APIRouter, HTTPException
 
-from app.core.config import START_ADDRESS, MAX_STOPS, DEPOT_LAT, DEPOT_LON
+from app.core.config import (
+    START_ADDRESS, MAX_STOPS, DEPOT_LAT, DEPOT_LON,
+    BBOX_LAT_MIN, BBOX_LAT_MAX, BBOX_LON_MIN, BBOX_LON_MAX,
+)
 from app.models import (
     OptimizeRequest,
     OptimizeResponse,
@@ -33,6 +37,45 @@ from app.services.routing import (
 )
 
 router = APIRouter(tags=["optimize"])
+
+
+# ═══════════════════════════════════════════
+#  Utilidad: validar coordenadas entrantes
+# ═══════════════════════════════════════════
+
+def _validate_coord(lat: float, lon: float) -> str | None:
+    """Comprueba que las coordenadas sean geográficamente válidas para la zona.
+
+    Devuelve None si la coordenada es correcta, o un mensaje de error si no.
+
+    Orden de comprobaciones:
+      1. Sin NaN ni infinito.
+      2. Rangos globales lat∈[-90,90], lon∈[-180,180].
+      3. En España la longitud siempre es negativa; lon > 0 indica inversión lat/lon.
+      4. Bounding box local: cubre Posadas, comarca y cortijos cercanos (Rivero…).
+    """
+    if not math.isfinite(lat) or not math.isfinite(lon):
+        return f"coordenada no finita: ({lat}, {lon})"
+    if not (-90 <= lat <= 90):
+        return f"latitud {lat} fuera del rango global [-90, 90]"
+    if not (-180 <= lon <= 180):
+        return f"longitud {lon} fuera del rango global [-180, 180]"
+    if lon > 0:
+        return (
+            f"longitud positiva ({lon:.4f}) en zona española — "
+            f"¿lat y lon invertidos? recibido ({lat:.4f}, {lon:.4f})"
+        )
+    if not (BBOX_LAT_MIN <= lat <= BBOX_LAT_MAX):
+        return (
+            f"latitud {lat:.4f} fuera del área de trabajo "
+            f"[{BBOX_LAT_MIN}, {BBOX_LAT_MAX}]"
+        )
+    if not (BBOX_LON_MIN <= lon <= BBOX_LON_MAX):
+        return (
+            f"longitud {lon:.4f} fuera del área de trabajo "
+            f"[{BBOX_LON_MIN}, {BBOX_LON_MAX}]"
+        )
+    return None
 
 
 # ═══════════════════════════════════════════
@@ -209,7 +252,13 @@ def optimize(req: OptimizeRequest):
         # Coords ya vienen 1:1 con las paradas únicas
         for i, (addr, raw_coord) in enumerate(zip(unique_addresses, req.coords)):
             if raw_coord and len(raw_coord) == 2:
-                geocoded_ok.append((addr, (raw_coord[0], raw_coord[1]), i))
+                lat, lon = raw_coord[0], raw_coord[1]
+                err = _validate_coord(lat, lon)
+                if err:
+                    print(f"[optimize] ⚠ Coordenada inválida para '{addr}': {err}")
+                    geocoded_fail.append((addr, i))
+                else:
+                    geocoded_ok.append((addr, (lat, lon), i))
             else:
                 geocoded_fail.append((addr, i))
         if geocoded_ok:
@@ -220,7 +269,12 @@ def optimize(req: OptimizeRequest):
         for addr, raw_coord in zip(addresses, req.coords):
             key = _normalize_for_dedup(addr)
             if key not in _dedup_map and raw_coord and len(raw_coord) == 2:
-                _dedup_map[key] = (raw_coord[0], raw_coord[1])
+                lat, lon = raw_coord[0], raw_coord[1]
+                err = _validate_coord(lat, lon)
+                if err:
+                    print(f"[optimize] ⚠ Coordenada inválida para '{addr}': {err}")
+                else:
+                    _dedup_map[key] = (lat, lon)
 
         for i, addr in enumerate(unique_addresses):
             key = _normalize_for_dedup(addr)

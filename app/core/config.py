@@ -38,3 +38,12 @@ MAX_STOPS = 200         # máximo de paradas por petición
 GEOCODE_TIMEOUT = 30    # timeout por llamada a APIs externas
 OSRM_TIMEOUT = 60       # timeout para llamadas a OSRM
 VROOM_TIMEOUT = 120     # timeout para llamadas a VROOM
+
+# ── Bounding box del área de reparto ─────────────────────────
+# Cubre Posadas, Palma del Río, Córdoba, Écija y zonas rurales
+# de la comarca (incluye cortijos como Rivero, radio ~60 km).
+# Coords fuera de este rectángulo se rechazan antes de llamar a VROOM.
+BBOX_LAT_MIN = 37.3
+BBOX_LAT_MAX = 38.2
+BBOX_LON_MIN = -5.6
+BBOX_LON_MAX = -4.4

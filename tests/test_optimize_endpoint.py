@@ -158,3 +158,129 @@ def test_geocode_batch_falla_todo_devuelve_400(client):
     with patch("app.routers.optimize.geocode_batch", return_value=batch_result):
         r = client.post(URL, json={"addresses": ["Calle Mayor 1"]})
     assert r.status_code == 400
+
+
+# ── Validación de coordenadas (_validate_coord) ───────────────────────────────
+
+from app.routers.optimize import _validate_coord  # noqa: E402
+
+
+def test_validate_coord_nan_rechazado():
+    import math
+    assert _validate_coord(math.nan, -5.1) is not None
+    assert _validate_coord(37.8, math.nan) is not None
+
+
+def test_validate_coord_inf_rechazado():
+    import math
+    assert _validate_coord(math.inf, -5.1) is not None
+    assert _validate_coord(37.8, -math.inf) is not None
+
+
+def test_validate_coord_lat_fuera_rango_global():
+    assert _validate_coord(200.0, -5.1) is not None
+    assert _validate_coord(-91.0, -5.1) is not None
+
+
+def test_validate_coord_lon_fuera_rango_global():
+    assert _validate_coord(37.8, 200.0) is not None
+    assert _validate_coord(37.8, -181.0) is not None
+
+
+def test_validate_coord_lon_positiva_en_espana():
+    # lon > 0 en zona española implica lat/lon invertidos
+    err = _validate_coord(37.8, 5.1)
+    assert err is not None
+    assert "invertidos" in err
+
+
+def test_validate_coord_lat_fuera_bbox():
+    err = _validate_coord(36.0, -5.1)  # al sur del área de trabajo
+    assert err is not None
+    assert "área de trabajo" in err
+
+
+def test_validate_coord_lon_fuera_bbox():
+    err = _validate_coord(37.8, -6.0)  # al oeste del área de trabajo
+    assert err is not None
+    assert "área de trabajo" in err
+
+
+def test_validate_coord_valida_posadas():
+    assert _validate_coord(37.805503, -5.099805) is None  # depósito Posadas
+
+
+def test_validate_coord_valida_rivero():
+    # Cortijo Rivero, ~55 km al sur-este — debe estar dentro del bbox
+    assert _validate_coord(37.55, -4.5) is None
+
+
+# ── Tests HTTP con coords inválidas ───────────────────────────────────────────
+
+def test_coord_lat_invalida_manda_parada_a_failed(client):
+    """Una parada con lat=200 debe ir a failed; la otra válida se rutea."""
+    req = {
+        "addresses": ["Calle Mayor 1", "Calle Menor 2"],
+        "coords": [[200.0, -5.100], [37.806, -5.100]],
+        "package_counts": [1, 1],
+        "client_names": ["Ana", "Luis"],
+    }
+    with patch("app.routers.optimize.can_osrm_snap", return_value=True), \
+         patch("app.routers.optimize.optimize_route", return_value=VROOM_OK), \
+         patch("app.routers.optimize.get_route_details", return_value=OSRM_OK):
+        r = client.post(URL, json=req)
+    assert r.status_code == 200
+    stops = r.json()["stops"]
+    failed = [s for s in stops if s["geocode_failed"]]
+    ok = [s for s in stops if not s["geocode_failed"] and s["type"] == "stop"]
+    assert len(failed) == 1
+    assert failed[0]["address"] == "Calle Mayor 1"
+    assert len(ok) == 1
+    assert ok[0]["address"] == "Calle Menor 2"
+
+
+def test_coord_lon_positiva_manda_parada_a_failed(client):
+    """lon > 0 en España (lat/lon invertidos) debe ir a failed."""
+    req = {
+        "addresses": ["Calle Mayor 1", "Calle Menor 2"],
+        "coords": [[37.806, 5.100], [37.806, -5.100]],
+        "package_counts": [1, 1],
+        "client_names": ["Ana", "Luis"],
+    }
+    with patch("app.routers.optimize.can_osrm_snap", return_value=True), \
+         patch("app.routers.optimize.optimize_route", return_value=VROOM_OK), \
+         patch("app.routers.optimize.get_route_details", return_value=OSRM_OK):
+        r = client.post(URL, json=req)
+    assert r.status_code == 200
+    failed = [s for s in r.json()["stops"] if s["geocode_failed"]]
+    assert any(s["address"] == "Calle Mayor 1" for s in failed)
+
+
+def test_coord_fuera_bbox_madrid_manda_parada_a_failed(client):
+    """Coordenadas de Madrid (fuera del bbox de Posadas) → failed."""
+    req = {
+        "addresses": ["Gran Vía Madrid", "Calle Local 1"],
+        "coords": [[40.4168, -3.7038], [37.806, -5.100]],
+        "package_counts": [1, 1],
+        "client_names": ["Externo", "Local"],
+    }
+    with patch("app.routers.optimize.can_osrm_snap", return_value=True), \
+         patch("app.routers.optimize.optimize_route", return_value=VROOM_OK), \
+         patch("app.routers.optimize.get_route_details", return_value=OSRM_OK):
+        r = client.post(URL, json=req)
+    assert r.status_code == 200
+    failed = [s for s in r.json()["stops"] if s["geocode_failed"]]
+    assert any(s["address"] == "Gran Vía Madrid" for s in failed)
+
+
+def test_todas_coords_invalidas_devuelve_400(client):
+    """Si todas las coords son inválidas, no queda ninguna ruteable → 400."""
+    req = {
+        "addresses": ["Calle Mayor 1", "Calle Menor 2"],
+        "coords": [[200.0, -5.1], [37.8, 5.1]],
+        "package_counts": [1, 1],
+        "client_names": ["Ana", "Luis"],
+    }
+    with patch("app.routers.optimize.can_osrm_snap", return_value=True):
+        r = client.post(URL, json=req)
+    assert r.status_code == 400
