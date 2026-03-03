@@ -217,64 +217,47 @@ def test_validate_coord_valida_rivero():
 
 # ── Tests HTTP con coords inválidas ───────────────────────────────────────────
 
-def test_coord_lat_invalida_manda_parada_a_failed(client):
-    """Una parada con lat=200 debe ir a failed; la otra válida se rutea."""
+def test_coord_lat_invalida_devuelve_400(client):
+    """Una parada con lat=200 → todas deben tener coords válidas → 400."""
     req = {
         "addresses": ["Calle Mayor 1", "Calle Menor 2"],
         "coords": [[200.0, -5.100], [37.806, -5.100]],
         "package_counts": [1, 1],
         "client_names": ["Ana", "Luis"],
     }
-    with patch("app.routers.optimize.can_osrm_snap", return_value=True), \
-         patch("app.routers.optimize.optimize_route", return_value=VROOM_OK), \
-         patch("app.routers.optimize.get_route_details", return_value=OSRM_OK):
+    with patch("app.routers.optimize.can_osrm_snap", return_value=True):
         r = client.post(URL, json=req)
-    assert r.status_code == 200
-    stops = r.json()["stops"]
-    failed = [s for s in stops if s["geocode_failed"]]
-    ok = [s for s in stops if not s["geocode_failed"] and s["type"] == "stop"]
-    assert len(failed) == 1
-    assert failed[0]["address"] == "Calle Mayor 1"
-    assert len(ok) == 1
-    assert ok[0]["address"] == "Calle Menor 2"
+    assert r.status_code == 400
 
 
-def test_coord_lon_positiva_manda_parada_a_failed(client):
-    """lon > 0 en España (lat/lon invertidos) debe ir a failed."""
+def test_coord_lon_positiva_devuelve_400(client):
+    """lon > 0 en España (lat/lon invertidos) → 400."""
     req = {
         "addresses": ["Calle Mayor 1", "Calle Menor 2"],
         "coords": [[37.806, 5.100], [37.806, -5.100]],
         "package_counts": [1, 1],
         "client_names": ["Ana", "Luis"],
     }
-    with patch("app.routers.optimize.can_osrm_snap", return_value=True), \
-         patch("app.routers.optimize.optimize_route", return_value=VROOM_OK), \
-         patch("app.routers.optimize.get_route_details", return_value=OSRM_OK):
+    with patch("app.routers.optimize.can_osrm_snap", return_value=True):
         r = client.post(URL, json=req)
-    assert r.status_code == 200
-    failed = [s for s in r.json()["stops"] if s["geocode_failed"]]
-    assert any(s["address"] == "Calle Mayor 1" for s in failed)
+    assert r.status_code == 400
 
 
-def test_coord_fuera_bbox_madrid_manda_parada_a_failed(client):
-    """Coordenadas de Madrid (fuera del bbox de Posadas) → failed."""
+def test_coord_fuera_bbox_madrid_devuelve_400(client):
+    """Coordenadas de Madrid (fuera del bbox de Posadas) → 400."""
     req = {
         "addresses": ["Gran Vía Madrid", "Calle Local 1"],
         "coords": [[40.4168, -3.7038], [37.806, -5.100]],
         "package_counts": [1, 1],
         "client_names": ["Externo", "Local"],
     }
-    with patch("app.routers.optimize.can_osrm_snap", return_value=True), \
-         patch("app.routers.optimize.optimize_route", return_value=VROOM_OK), \
-         patch("app.routers.optimize.get_route_details", return_value=OSRM_OK):
+    with patch("app.routers.optimize.can_osrm_snap", return_value=True):
         r = client.post(URL, json=req)
-    assert r.status_code == 200
-    failed = [s for s in r.json()["stops"] if s["geocode_failed"]]
-    assert any(s["address"] == "Gran Vía Madrid" for s in failed)
+    assert r.status_code == 400
 
 
 def test_todas_coords_invalidas_devuelve_400(client):
-    """Si todas las coords son inválidas, no queda ninguna ruteable → 400."""
+    """Si todas las coords son inválidas → 400."""
     req = {
         "addresses": ["Calle Mayor 1", "Calle Menor 2"],
         "coords": [[200.0, -5.1], [37.8, 5.1]],

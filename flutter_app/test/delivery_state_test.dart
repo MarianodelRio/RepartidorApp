@@ -128,7 +128,6 @@ void main() {
         lat: 37.802,
         lon: -5.105,
         distanceMeters: 250.0,
-        geocodeFailed: false,
         packageCount: 2,
         status: StopStatus.delivered,
         note: 'sin ascensor',
@@ -148,7 +147,6 @@ void main() {
       expect(restored.lat, stop.lat);
       expect(restored.lon, stop.lon);
       expect(restored.distanceMeters, stop.distanceMeters);
-      expect(restored.geocodeFailed, stop.geocodeFailed);
       expect(restored.packageCount, stop.packageCount);
       expect(restored.status, stop.status);
       expect(restored.note, stop.note);
@@ -159,17 +157,15 @@ void main() {
       final stop = DeliveryStop(
         order: 1,
         address: 'Calle X 1',
-        label: '⚠️ Calle X 1',
+        label: '📍 Calle X 1',
         type: 'stop',
         lat: null,
         lon: null,
         distanceMeters: 0,
-        geocodeFailed: true,
       );
       final restored = DeliveryStop.fromMap(stop.toMap());
       expect(restored.lat, isNull);
       expect(restored.lon, isNull);
-      expect(restored.geocodeFailed, isTrue);
     });
 
     test('completedAt null se preserva', () {

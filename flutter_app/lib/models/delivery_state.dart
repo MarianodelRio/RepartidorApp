@@ -47,10 +47,9 @@ class DeliveryStop {
   final List<String> clientNames;
   final List<Package> packages;
   final String type;
-  final double? lat; // null si geocodificación fallida
-  final double? lon; // null si geocodificación fallida
+  final double? lat;
+  final double? lon;
   final double distanceMeters;
-  final bool geocodeFailed;
   final int packageCount;
 
   StopStatus status;
@@ -69,7 +68,6 @@ class DeliveryStop {
     required this.lat,
     required this.lon,
     required this.distanceMeters,
-    this.geocodeFailed = false,
     this.packageCount = 1,
     this.status = StopStatus.pending,
     this.note,
@@ -99,7 +97,6 @@ class DeliveryStop {
         'lat': lat,
         'lon': lon,
         'distanceMeters': distanceMeters,
-        'geocodeFailed': geocodeFailed,
         'packageCount': packageCount,
         'status': status.index,
         'note': note,
@@ -125,7 +122,6 @@ class DeliveryStop {
       lat: map['lat'] != null ? (map['lat'] as num).toDouble() : null,
       lon: map['lon'] != null ? (map['lon'] as num).toDouble() : null,
       distanceMeters: (map['distanceMeters'] as num).toDouble(),
-      geocodeFailed: (map['geocodeFailed'] as bool?) ?? false,
       packageCount: (map['packageCount'] as int?) ?? 1,
       status: StopStatus.values[map['status'] as int],
       note: map['note'] as String?,

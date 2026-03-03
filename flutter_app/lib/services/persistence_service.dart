@@ -90,7 +90,6 @@ class PersistenceService {
           lat: s.lat,
           lon: s.lon,
           distanceMeters: s.distanceMeters,
-          geocodeFailed: s.geocodeFailed,
           packageCount: s.packageCount,
         )).toList();
 

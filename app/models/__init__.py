@@ -100,10 +100,9 @@ class StopInfo(BaseModel):
     packages: list[Package] = Field(default_factory=list, description="Paquetes individuales con cliente y nota")
     alias: str = Field("", description="Nombre de negocio/lugar (vacío si no aplica)")
     type: str = Field(..., description="'origin' o 'stop'")
-    lat: float | None = Field(None, description="Latitud; None si la dirección no pudo geocodificarse")
-    lon: float | None = Field(None, description="Longitud; None si la dirección no pudo geocodificarse")
+    lat: float | None = Field(None, description="Latitud")
+    lon: float | None = Field(None, description="Longitud")
     distance_meters: float = Field(0, description="Distancia acumulada hasta esta parada (m)")
-    geocode_failed: bool = Field(False, description="True si la dirección no pudo geocodificarse")
     package_count: int = Field(1, description="Número de paquetes en esta dirección")
 
 

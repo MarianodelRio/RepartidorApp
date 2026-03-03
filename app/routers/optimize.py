@@ -297,9 +297,6 @@ def optimize(req: OptimizeRequest):
             detail="No se pudo geocodificar ninguna dirección.",
         )
 
-    if geocoded_fail:
-        print(f"[optimize] ⚠ {len(geocoded_fail)} dirección(es) sin geocodificar")
-
     # ── 3b. Validar que las coords geocodificadas son ruteables por OSRM ──
     # Evita que VROOM devuelva 500 al recibir coordenadas fuera del mapa de rutas
     routable_ok = []
@@ -312,6 +309,20 @@ def optimize(req: OptimizeRequest):
             geocoded_fail.append((addr, orig_i))
             print(f"[optimize] ⚠ Coordenada fuera del mapa OSRM: {addr} ({lat:.4f},{lon:.4f}) → excluida")
     geocoded_ok = routable_ok
+
+    # ── 3c. Rechazar si alguna parada no tiene coordenadas válidas ──────────
+    if geocoded_fail:
+        n = len(geocoded_fail)
+        detail_list = ", ".join(f"'{addr}'" for addr, _ in geocoded_fail[:5])
+        suffix = " …" if n > 5 else ""
+        raise HTTPException(
+            400,
+            detail=(
+                f"{n} parada{'s' if n > 1 else ''} sin coordenadas válidas "
+                f"({detail_list}{suffix}). "
+                "Resuelve todas las direcciones antes de calcular la ruta."
+            ),
+        )
 
     if not geocoded_ok:
         raise HTTPException(
@@ -327,13 +338,6 @@ def optimize(req: OptimizeRequest):
     ok_packages = [all_packages_lists[orig_i] for _, _, orig_i in geocoded_ok]
     ok_pkg_counts = [package_counts[orig_i] for _, _, orig_i in geocoded_ok]
     ok_aliases = [unique_aliases[orig_i] for _, _, orig_i in geocoded_ok]
-
-    fail_addresses = [addr for addr, _ in geocoded_fail]
-    fail_primary_names = [unique_primary_names[orig_i] for _, orig_i in geocoded_fail]
-    fail_all_names = [all_client_names_lists[orig_i] for _, orig_i in geocoded_fail]
-    fail_packages = [all_packages_lists[orig_i] for _, orig_i in geocoded_fail]
-    fail_pkg_counts = [package_counts[orig_i] for _, orig_i in geocoded_fail]
-    fail_aliases = [unique_aliases[orig_i] for _, orig_i in geocoded_fail]
 
     # coords[0] = origen, coords[1..n] = paradas geocodificadas
     all_coords = [origin_coord] + ok_coords
@@ -409,43 +413,13 @@ def optimize(req: OptimizeRequest):
             package_count=pkg_count,
         ))
 
-    # ── 6b. Añadir paradas fallidas al final (sin coordenadas reales) ──
-    for i, fail_addr in enumerate(fail_addresses):
-        seq_fail = len(stops)
-        fail_cname = fail_primary_names[i]
-        fail_names = fail_all_names[i]
-        fail_pkgs = fail_packages[i]
-        fail_pkg = fail_pkg_counts[i]
-
-        if fail_cname:
-            fail_label = f"⚠️ {fail_cname}"
-        else:
-            short = fail_addr[:30] + "…" if len(fail_addr) > 30 else fail_addr
-            fail_label = f"⚠️ {short}"
-
-        stops.append(StopInfo(
-            order=seq_fail,
-            address=fail_addr,
-            alias=fail_aliases[i],
-            label=fail_label,
-            client_name=fail_cname,
-            client_names=[n for n in fail_names if n],
-            packages=fail_pkgs,
-            type="stop",
-            lat=None,
-            lon=None,
-            distance_meters=0,
-            geocode_failed=True,
-            package_count=fail_pkg,
-        ))
-
     total_dist = route_details["total_distance"]
     computing_ms = round((time.perf_counter() - t_start) * 1000, 1)
 
     return OptimizeResponse(
         success=True,
         summary=RouteSummary(
-            total_stops=len(ok_addresses) + len(fail_addresses),
+            total_stops=len(ok_addresses),
             total_packages=total_packages,
             total_distance_m=total_dist,
             total_distance_display=_format_distance(total_dist),

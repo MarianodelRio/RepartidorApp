@@ -236,33 +236,25 @@ class _PackageTile extends StatelessWidget {
               width: 52,
               height: 52,
               decoration: BoxDecoration(
-                color: stop.geocodeFailed
-                    ? AppColors.warning
-                    : AppColors.primary,
+                color: AppColors.primary,
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: (stop.geocodeFailed
-                            ? AppColors.warning
-                            : AppColors.primary)
-                        .withAlpha(50),
+                    color: AppColors.primary.withAlpha(50),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
                 ],
               ),
               child: Center(
-                child: stop.geocodeFailed
-                    ? const Icon(Icons.warning_amber_rounded,
-                        color: Colors.white, size: 26)
-                    : Text(
-                        '${stop.order}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 22,
-                        ),
-                      ),
+                child: Text(
+                  '${stop.order}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 22,
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 14),
@@ -293,24 +285,20 @@ class _PackageTile extends StatelessWidget {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           text: TextSpan(
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
-                              color: stop.geocodeFailed
-                                  ? AppColors.warning
-                                  : AppColors.textPrimary,
+                              color: AppColors.textPrimary,
                             ),
                             children: [
                               TextSpan(text: stop.address),
                               if (stop.alias.isNotEmpty)
                                 TextSpan(
                                   text: '  —  ${stop.alias}',
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontStyle: FontStyle.italic,
                                     fontWeight: FontWeight.w400,
-                                    color: stop.geocodeFailed
-                                        ? AppColors.warning
-                                        : AppColors.primary,
+                                    color: AppColors.primary,
                                   ),
                                 ),
                             ],
@@ -348,18 +336,8 @@ class _PackageTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 2),
-                  // Clientes o aviso de geocodificación fallida
+                  // Clientes de la parada
                   Builder(builder: (context) {
-                    if (stop.geocodeFailed) {
-                      return Text(
-                        '⚠ Sin ubicación',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.warning,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      );
-                    }
                     final names = stop.clientNames
                         .where((n) => n.isNotEmpty)
                         .join(', ');

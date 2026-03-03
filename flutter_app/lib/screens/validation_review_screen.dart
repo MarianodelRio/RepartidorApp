@@ -207,12 +207,6 @@ class _ValidationReviewScreenState extends State<ValidationReviewScreen> {
   // ── Calcular ruta ───────────────────────────────────────────────────────────
 
   Future<void> _calculateRoute() async {
-    final failedCount = _result.failed.length;
-    if (failedCount > 0) {
-      final confirmed = await _showUnresolvedConfirmation();
-      if (!confirmed) return;
-    }
-
     setState(() {
       _isLoading = true;
       _error = null;
@@ -285,62 +279,6 @@ class _ValidationReviewScreenState extends State<ValidationReviewScreen> {
       WakelockPlus.disable();
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  Future<bool> _showUnresolvedConfirmation() async {
-    final failed = _result.failed;
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 24),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text('Direcciones sin resolver',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.warningSurface,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                'Hay ${failed.length} dirección${failed.length > 1 ? 'es' : ''} '
-                'sin coordenadas.\n\n'
-                'Usa "Situar" para resolverlas antes de calcular.',
-                style: TextStyle(
-                    fontSize: 13, color: AppColors.textPrimary, height: 1.4),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            icon: const Icon(Icons.route, size: 18),
-            label: const Text('Calcular igualmente'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.warning,
-              foregroundColor: Colors.white,
-            ),
-          ),
-        ],
-      ),
-    );
-    return result ?? false;
   }
 
   // ── Color por nivel de confianza ────────────────────────────────────────────
@@ -470,7 +408,7 @@ class _ValidationReviewScreenState extends State<ValidationReviewScreen> {
   Widget _buildBottomPanel(BuildContext context) {
     final failed = _result.failed;
     final hasFailed = failed.isNotEmpty;
-    final canCalculate = !_isLoading && _result.geocoded.isNotEmpty;
+    final canCalculate = !_isLoading && _result.geocoded.isNotEmpty && !hasFailed;
 
     return Container(
       constraints: BoxConstraints(
@@ -550,17 +488,12 @@ class _ValidationReviewScreenState extends State<ValidationReviewScreen> {
                             )
                           : const Icon(Icons.route, size: 22),
                       label: Text(
-                        _isLoading
-                            ? 'Calculando...'
-                            : hasFailed
-                                ? 'Calcular ruta (${failed.length} sin resolver)'
-                                : 'Calcular ruta óptima',
+                        _isLoading ? 'Calculando...' : 'Calcular ruta óptima',
                         style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.w600),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            hasFailed ? AppColors.warning : AppColors.primary,
+                        backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
                         disabledBackgroundColor:
                             AppColors.textSecondary.withAlpha(180),

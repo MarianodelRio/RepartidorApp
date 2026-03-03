@@ -4,7 +4,6 @@ import 'package:repartir_app/models/route_models.dart';
 // JSON de ejemplo que simula exactamente lo que devuelve el backend.
 Map<String, dynamic> _stopInfoJson({
   String type = 'stop',
-  bool geocodeFailed = false,
   double? lat = 37.8012,
   double? lon = -5.1050,
 }) =>
@@ -22,7 +21,6 @@ Map<String, dynamic> _stopInfoJson({
       'lat': lat,
       'lon': lon,
       'distance_meters': 350.0,
-      'geocode_failed': geocodeFailed,
       'package_count': 1,
     };
 
@@ -52,7 +50,6 @@ void main() {
       expect(stop.lat, 37.8012);
       expect(stop.lon, -5.1050);
       expect(stop.distanceMeters, 350.0);
-      expect(stop.geocodeFailed, isFalse);
       expect(stop.packageCount, 1);
     });
 
@@ -66,13 +63,6 @@ void main() {
       final stop = StopInfo.fromJson(_stopInfoJson(lat: null, lon: null));
       expect(stop.lat, isNull);
       expect(stop.lon, isNull);
-    });
-
-    test('geocode_failed ausente es false por defecto', () {
-      final json = Map<String, dynamic>.from(_stopInfoJson())
-        ..remove('geocode_failed');
-      final stop = StopInfo.fromJson(json);
-      expect(stop.geocodeFailed, isFalse);
     });
 
     test('alias ausente usa cadena vacía', () {

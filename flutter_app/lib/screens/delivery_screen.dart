@@ -130,12 +130,6 @@ class _DeliveryScreenState extends State<DeliveryScreen>
       return;
     }
 
-    // Si la parada no tiene ubicación real, no pedir segmento
-    if (currentStop.geocodeFailed) {
-      setState(() => _segmentGeometry = null);
-      return;
-    }
-
     // Punto de destino: la siguiente parada
     final destLat = currentStop.lat;
     final destLon = currentStop.lon;
@@ -418,7 +412,6 @@ class _DeliveryScreenState extends State<DeliveryScreen>
       lat: result.latitude,
       lon: result.longitude,
       distanceMeters: stop.distanceMeters,
-      geocodeFailed: false,
       packageCount: stop.packageCount,
       status: stop.status,
       note: stop.note,
@@ -453,7 +446,7 @@ class _DeliveryScreenState extends State<DeliveryScreen>
   Future<void> _openExternalNavigation() async {
     final stop = _session.currentStop;
     if (stop == null) return;
-    if (stop.geocodeFailed || stop.lat == null || stop.lon == null) return;
+    if (stop.lat == null || stop.lon == null) return;
 
     // Intent de Google Maps con coordenadas
     final uri = Uri.parse(
@@ -621,46 +614,37 @@ class _DeliveryScreenState extends State<DeliveryScreen>
                               width: 32,
                               height: 32,
                               decoration: BoxDecoration(
-                                color: entry.stop.geocodeFailed
-                                    ? AppColors.warning
-                                    : AppColors.primary,
+                                color: AppColors.primary,
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Center(
-                                child: entry.stop.geocodeFailed
-                                    ? const Icon(Icons.warning_amber_rounded,
-                                        color: Colors.white, size: 18)
-                                    : Text(
-                                        '${entry.stop.order}',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 14,
-                                        ),
-                                      ),
+                                child: Text(
+                                  '${entry.stop.order}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 14,
+                                  ),
+                                ),
                               ),
                             ),
                             title: RichText(
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               text: TextSpan(
-                                style: TextStyle(
+                                style: const TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
-                                    color: entry.stop.geocodeFailed
-                                        ? AppColors.warning
-                                        : AppColors.textPrimary),
+                                    color: AppColors.textPrimary),
                                 children: [
                                   TextSpan(text: entry.stop.address),
                                   if (entry.stop.alias.isNotEmpty)
                                     TextSpan(
                                       text: '  —  ${entry.stop.alias}',
-                                      style: TextStyle(
+                                      style: const TextStyle(
                                           fontStyle: FontStyle.italic,
                                           fontWeight: FontWeight.w400,
-                                          color: entry.stop.geocodeFailed
-                                              ? AppColors.warning
-                                              : AppColors.primary),
+                                          color: AppColors.primary),
                                     ),
                                 ],
                               ),
@@ -986,7 +970,6 @@ class _DeliveryScreenState extends State<DeliveryScreen>
               lat: s.lat,
               lon: s.lon,
               distanceMeters: s.distanceMeters,
-              geocodeFailed: s.geocodeFailed,
               packageCount: s.packageCount,
               packages: s.packages,
             ))
@@ -1003,21 +986,9 @@ class _DeliveryScreenState extends State<DeliveryScreen>
   }
 
   /// Subtítulo del tile de reorden: muestra cliente y nota de cada paquete.
-  /// Para geocodeFailed muestra aviso en naranja.
   /// Para 1 paquete: "Cliente  📝 nota" en una línea.
   /// Para N paquetes: una línea por paquete numerada "1. Cliente  📝 nota".
   Widget _buildReorderSubtitle(DeliveryStop stop) {
-    if (stop.geocodeFailed) {
-      return Text(
-        '⚠ Sin ubicación',
-        style: TextStyle(
-          fontSize: 11,
-          color: AppColors.warning,
-          fontWeight: FontWeight.w600,
-        ),
-      );
-    }
-
     // Construir una línea por paquete con cliente + nota
     final lines = <String>[];
     final multiPkg = stop.packages.length > 1;
@@ -1225,23 +1196,18 @@ class _NextStopCard extends StatelessWidget {
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      color: stop.geocodeFailed
-                          ? AppColors.warning
-                          : AppColors.primary,
+                      color: AppColors.primary,
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Center(
-                      child: stop.geocodeFailed
-                          ? const Icon(Icons.warning_amber_rounded,
-                              color: Colors.white, size: 24)
-                          : Text(
-                              '${stop.order}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 20,
-                              ),
-                            ),
+                      child: Text(
+                        '${stop.order}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 20,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -1251,16 +1217,12 @@ class _NextStopCard extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Text(
-                              stop.geocodeFailed
-                                  ? 'SIN UBICACIÓN EN MAPA'
-                                  : 'SIGUIENTE PARADA',
+                            const Text(
+                              'SIGUIENTE PARADA',
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
-                                color: stop.geocodeFailed
-                                    ? AppColors.warning
-                                    : AppColors.primary,
+                                color: AppColors.primary,
                                 letterSpacing: 1,
                               ),
                             ),
@@ -1279,12 +1241,10 @@ class _NextStopCard extends StatelessWidget {
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                           text: TextSpan(
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w800,
-                              color: stop.geocodeFailed
-                                  ? AppColors.warning
-                                  : AppColors.primary,
+                              color: AppColors.primary,
                             ),
                             children: [
                               TextSpan(text: stop.address),
@@ -1295,9 +1255,7 @@ class _NextStopCard extends StatelessWidget {
                                     fontSize: 14,
                                     fontStyle: FontStyle.italic,
                                     fontWeight: FontWeight.w400,
-                                    color: stop.geocodeFailed
-                                        ? AppColors.warning
-                                        : AppColors.primary.withAlpha(180),
+                                    color: AppColors.primary.withAlpha(180),
                                   ),
                                 ),
                             ],

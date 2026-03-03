@@ -175,12 +175,9 @@ class _ResultScreenState extends State<ResultScreen> {
     buffer.writeln('orden,direccion,alias,num_paquetes,paquetes');
 
     for (final stop in stops) {
-      final direccion = stop.geocodeFailed
-          ? '${stop.address} (sin ubicacion)'
-          : stop.address;
       buffer.writeln(
         '${stop.order},'
-        '${_csvEscape(direccion)},'
+        '${_csvEscape(stop.address)},'
         '${_csvEscape(stop.alias)},'
         '${stop.packageCount},'
         '${_csvEscape(_buildPaquetesCell(stop))}',
