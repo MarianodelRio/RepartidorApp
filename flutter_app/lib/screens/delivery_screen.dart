@@ -26,7 +26,8 @@ class DeliveryScreen extends StatefulWidget {
   State<DeliveryScreen> createState() => _DeliveryScreenState();
 }
 
-class _DeliveryScreenState extends State<DeliveryScreen> {
+class _DeliveryScreenState extends State<DeliveryScreen>
+    with WidgetsBindingObserver {
   final GlobalKey<RouteMapState> _mapKey = GlobalKey<RouteMapState>();
   late DeliverySession _session;
 
@@ -39,6 +40,7 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _session = widget.session;
 
     // Centrar en la primera parada pendiente y pedir segmento desde GPS real
@@ -60,8 +62,23 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _segmentTimer?.cancel();
     super.dispose();
+  }
+
+  // ═══════════════════════════════════════════
+  //  Persistencia ante cierre del SO
+  // ═══════════════════════════════════════════
+
+  /// Guarda la sesión cuando el SO lleva la app a segundo plano o la va a matar.
+  /// Cubre el caso en que el proceso muere sin que el usuario pulse "atrás".
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      PersistenceService.saveSession(_session);
+    }
   }
 
   // ═══════════════════════════════════════════
@@ -490,6 +507,10 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
       ),
     );
 
+    if (result == true) {
+      // Forzar guardado antes de salir para no perder cambios en vuelo.
+      await PersistenceService.saveSession(_session);
+    }
     return result ?? false;
   }
 
@@ -693,14 +714,14 @@ class _DeliveryScreenState extends State<DeliveryScreen> {
                                       color: AppColors.success,
                                       size: 22,
                                     ),
-                                    onPressed: () {
-                                      setSheetState(() {
-                                        entry.stop.status =
-                                            StopStatus.delivered;
-                                        entry.stop.completedAt =
-                                            DateTime.now();
-                                        pendingEntries.removeAt(i);
-                                      });
+                                    onPressed: () async {
+                                      // Persistir primero, luego actualizar UI
+                                      entry.stop.status = StopStatus.delivered;
+                                      entry.stop.completedAt = DateTime.now();
+                                      await PersistenceService.saveSession(
+                                          _session);
+                                      setSheetState(
+                                          () => pendingEntries.removeAt(i));
                                     },
                                   ),
                                 ),
