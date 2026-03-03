@@ -141,7 +141,8 @@ def optimize(req: OptimizeRequest):
 
     if pre_grouped:
         unique_addresses = addresses
-        package_counts = req.package_counts  # type: ignore[assignment]
+        assert req.package_counts is not None  # garantizado por la condición pre_grouped
+        package_counts = req.package_counts
         unique_primary_names = client_names
         aliases_raw = req.aliases or []
         unique_aliases = [
@@ -201,13 +202,14 @@ def optimize(req: OptimizeRequest):
         origin_coord = (DEPOT_LAT, DEPOT_LON)
 
     # ── 3. Geocodificar paradas (únicas) ──────────────────────
+    geocoded_ok:   list[tuple[str, tuple[float, float], int]] = []
+    geocoded_fail: list[tuple[str, int]] = []
+
     if pre_grouped and req.coords and len(req.coords) == len(unique_addresses):
         # Coords ya vienen 1:1 con las paradas únicas
-        geocoded_ok = []
-        geocoded_fail = []
-        for i, (addr, coord) in enumerate(zip(unique_addresses, req.coords)):
-            if coord and len(coord) == 2:
-                geocoded_ok.append((addr, (coord[0], coord[1]), i))
+        for i, (addr, raw_coord) in enumerate(zip(unique_addresses, req.coords)):
+            if raw_coord and len(raw_coord) == 2:
+                geocoded_ok.append((addr, (raw_coord[0], raw_coord[1]), i))
             else:
                 geocoded_fail.append((addr, i))
         if geocoded_ok:
@@ -215,18 +217,16 @@ def optimize(req: OptimizeRequest):
     elif req.coords and len(req.coords) == len(addresses):
         # Coords pre-resueltas para filas NO agrupadas — dedup por clave
         _dedup_map: dict[str, tuple[float, float]] = {}
-        for addr, coord in zip(addresses, req.coords):
+        for addr, raw_coord in zip(addresses, req.coords):
             key = _normalize_for_dedup(addr)
-            if key not in _dedup_map and coord and len(coord) == 2:
-                _dedup_map[key] = (coord[0], coord[1])
+            if key not in _dedup_map and raw_coord and len(raw_coord) == 2:
+                _dedup_map[key] = (raw_coord[0], raw_coord[1])
 
-        geocoded_ok = []
-        geocoded_fail = []
         for i, addr in enumerate(unique_addresses):
             key = _normalize_for_dedup(addr)
-            coord = _dedup_map.get(key)
-            if coord:
-                geocoded_ok.append((addr, coord, i))
+            snap_coord = _dedup_map.get(key)
+            if snap_coord:
+                geocoded_ok.append((addr, snap_coord, i))
             else:
                 geocoded_fail.append((addr, i))
 

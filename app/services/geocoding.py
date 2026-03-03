@@ -265,13 +265,13 @@ def _get_street_catalog() -> list[str]:
         print(f"[geocode] Error cargando catálogo combinado: {e}")
 
     # Fallback: solo Overpass
-    streets = _load_streets_from_disk()
-    if streets is None:
+    osm_streets: list[str] | None = _load_streets_from_disk()
+    if osm_streets is None:
         print("[geocode] Descargando catálogo de calles desde Overpass...")
         try:
-            streets = _fetch_streets_from_overpass()
-            _save_streets_to_disk(streets)
-            print(f"[geocode] Catálogo Overpass listo: {len(streets)} calles")
+            osm_streets = _fetch_streets_from_overpass()
+            _save_streets_to_disk(osm_streets)
+            print(f"[geocode] Catálogo Overpass listo: {len(osm_streets)} calles")
         except Exception as e:
             print(f"[geocode] Error descargando Overpass: {e}")
             _osm_streets = []
@@ -279,8 +279,9 @@ def _get_street_catalog() -> list[str]:
             _osm_streets_norm_set = set()
             return []
 
-    _osm_streets = streets
-    _osm_streets_norm = [_normalize(s) for s in streets]
+    assert osm_streets is not None  # None entra en el if de arriba, que siempre retorna o asigna
+    _osm_streets = osm_streets
+    _osm_streets_norm = [_normalize(s) for s in osm_streets]
     _osm_streets_norm_set = set(_osm_streets_norm)
     return _osm_streets
 

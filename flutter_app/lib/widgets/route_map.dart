@@ -51,7 +51,6 @@ class RouteMapState extends State<RouteMap> with TickerProviderStateMixin {
   StreamSubscription<Position>? _positionStream;
   LatLng? _currentPosition;
   bool _followGps = true;
-  bool _gpsActive = false;
 
   // ── Animación de cámara (fly-to) ──
   late AnimationController _cameraAnimController;
@@ -212,8 +211,6 @@ class RouteMapState extends State<RouteMap> with TickerProviderStateMixin {
           permission == LocationPermission.deniedForever) {
         return;
       }
-
-      setState(() => _gpsActive = true);
 
       // Obtener posición inicial
       try {
