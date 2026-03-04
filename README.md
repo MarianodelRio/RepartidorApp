@@ -63,9 +63,48 @@ nohup ngrok http 8000 --log=stdout > /tmp/ngrok.log 2>&1 &
 | **mypy.ini** | Configuración de análisis estático Python |
 | **vroom-conf/** | Configuraciones de ejemplo para VROOM |
 | **app/** | Código del backend (FastAPI) |
-| **tests/** | Tests del backend (218 tests, pytest) |
-| **flutter_app/** | Código de la app Flutter (110 tests unitarios) |
+| **tests/** | Tests del backend (231 tests, pytest) |
+| **flutter_app/** | Código de la app Flutter (115 tests unitarios) |
 
+
+---
+
+## 🧪 Tests y Calidad
+
+Ejecutar todo (tests + cobertura + análisis estático):
+
+```bash
+./run_tests.sh
+```
+
+### Backend — 231 tests (pytest)
+
+| Módulo | Tests | Cobertura |
+|--------|-------|-----------|
+| `test_health.py` | 7 | — |
+| `test_validation_endpoint.py` | 11 | routers ≥ 81 % |
+| `test_optimize_endpoint.py` | 24 | routers ≥ 81 % |
+| `test_geocoding_service.py` | 26 | services ≥ 71 % |
+| `test_catalog_service.py` | 16 | services ≥ 71 % |
+| `test_routing_service.py` | 21 | services ≥ 71 % |
+| tests unitarios puros | 126 | — |
+
+Análisis estático con **mypy** (0 errores). Configuración en `mypy.ini`.
+
+```bash
+python -m pytest          # sólo tests
+python -m mypy app/       # sólo tipado estático
+```
+
+### Flutter — 115 tests unitarios
+
+Cobertura total: **≥ 98 %** sobre modelos y servicios.
+
+```bash
+cd flutter_app
+flutter test              # sólo tests
+dart analyze              # análisis estático (0 warnings)
+```
 
 ---
 
