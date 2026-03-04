@@ -77,7 +77,7 @@ Ejecutar todo (tests + cobertura + análisis estático):
 ./run_tests.sh
 ```
 
-### Backend — 231 tests (pytest)
+### Backend — 209 tests (pytest)
 
 | Módulo | Tests | Cobertura |
 |--------|-------|-----------|
@@ -85,9 +85,9 @@ Ejecutar todo (tests + cobertura + análisis estático):
 | `test_validation_endpoint.py` | 11 | routers ≥ 81 % |
 | `test_optimize_endpoint.py` | 24 | routers ≥ 81 % |
 | `test_geocoding_service.py` | 26 | services ≥ 71 % |
-| `test_catalog_service.py` | 16 | services ≥ 71 % |
+| `test_catalog_service.py` | 13 | services ≥ 71 % |
 | `test_routing_service.py` | 21 | services ≥ 71 % |
-| tests unitarios puros | 126 | — |
+| tests unitarios puros | 107 | — |
 
 Análisis estático con **mypy** (0 errores). Configuración en `mypy.ini`.
 

@@ -7,7 +7,6 @@ import json
 import time
 
 import pytest
-from unittest.mock import patch
 
 import app.services.catalog as cat
 
@@ -18,7 +17,6 @@ import app.services.catalog as cat
 def reset_catalog(tmp_path, monkeypatch):
     cat._combined = None
     monkeypatch.setattr(cat, "_DATA_DIR", tmp_path)
-    monkeypatch.setattr(cat, "_CATASTRO_FILE", tmp_path / "catastro.json")
     monkeypatch.setattr(cat, "_LEARNED_FILE",  tmp_path / "learned.json")
     monkeypatch.setattr(cat, "_STREETS_FILE",  tmp_path / "osm.json")
     yield
@@ -32,8 +30,7 @@ def _write_json(path, data):
 # ── get_combined_catalog ──────────────────────────────────────────────────────
 
 def test_catalogo_vacio_sin_ninguna_fuente(tmp_path):
-    with patch.object(cat, "_fetch_catastro_streets", return_value=[]):
-        result = cat.get_combined_catalog()
+    result = cat.get_combined_catalog()
     assert result == []
 
 
@@ -42,40 +39,29 @@ def test_catalogo_incluye_calles_osm(tmp_path):
         "timestamp": time.time(),
         "streets": ["Calle Mayor", "Calle Gaitán"],
     })
-    with patch.object(cat, "_fetch_catastro_streets", return_value=[]):
-        result = cat.get_combined_catalog()
+    result = cat.get_combined_catalog()
     assert "Calle Mayor" in result
     assert "Calle Gaitán" in result
 
 
-def test_catalogo_incluye_calles_catastro(tmp_path):
-    with patch.object(cat, "_fetch_catastro_streets", return_value=["Avenida Blas Infante"]):
-        result = cat.get_combined_catalog()
-    assert "Avenida Blas Infante" in result
-
-
 def test_catalogo_incluye_calles_aprendidas(tmp_path):
     _write_json(tmp_path / "learned.json", {"streets": ["Calle Aprendida"]})
-    with patch.object(cat, "_fetch_catastro_streets", return_value=[]):
-        result = cat.get_combined_catalog()
+    result = cat.get_combined_catalog()
     assert "Calle Aprendida" in result
 
 
-def test_catalogo_combina_todas_las_fuentes(tmp_path):
+def test_catalogo_combina_osm_y_aprendidas(tmp_path):
     _write_json(tmp_path / "osm.json", {"timestamp": time.time(), "streets": ["Calle OSM"]})
     _write_json(tmp_path / "learned.json", {"streets": ["Calle Aprendida"]})
-    with patch.object(cat, "_fetch_catastro_streets", return_value=["Calle Catastro"]):
-        result = cat.get_combined_catalog()
+    result = cat.get_combined_catalog()
     assert "Calle OSM" in result
-    assert "Calle Catastro" in result
     assert "Calle Aprendida" in result
 
 
 def test_catalogo_sin_duplicados(tmp_path):
     _write_json(tmp_path / "osm.json", {"timestamp": time.time(), "streets": ["Calle Mayor"]})
     _write_json(tmp_path / "learned.json", {"streets": ["Calle Mayor"]})
-    with patch.object(cat, "_fetch_catastro_streets", return_value=["Calle Mayor"]):
-        result = cat.get_combined_catalog()
+    result = cat.get_combined_catalog()
     assert result.count("Calle Mayor") == 1
 
 
@@ -84,41 +70,18 @@ def test_catalogo_ordenado(tmp_path):
         "timestamp": time.time(),
         "streets": ["Calle Zorro", "Calle Ámbar", "Calle Blas"],
     })
-    with patch.object(cat, "_fetch_catastro_streets", return_value=[]):
-        result = cat.get_combined_catalog()
+    result = cat.get_combined_catalog()
     assert result == sorted(result)
 
 
 def test_catalogo_se_cachea_en_memoria(tmp_path):
-    """Segunda llamada no vuelve a leer disco ni llamar a _fetch_catastro_streets."""
-    with patch.object(cat, "_fetch_catastro_streets", return_value=["Calle X"]) as mock_fetch:
-        cat.get_combined_catalog()
-        cat.get_combined_catalog()
-    mock_fetch.assert_called_once()
-
-
-def test_catastro_disco_evita_descarga(tmp_path):
-    """Si catastro.json está en disco y no ha expirado, no descarga."""
-    _write_json(tmp_path / "catastro.json", {
-        "timestamp": time.time(),
-        "streets": ["Calle del Catastro"],
-    })
-    with patch.object(cat, "_fetch_catastro_streets") as mock_fetch:
-        result = cat.get_combined_catalog()
-    mock_fetch.assert_not_called()
-    assert "Calle del Catastro" in result
-
-
-def test_catastro_expirado_descarga_de_nuevo(tmp_path):
-    """Si catastro.json ha expirado (timestamp antiguo), lo descarga de nuevo."""
-    _write_json(tmp_path / "catastro.json", {
-        "timestamp": 0,            # timestamp en epoch = expirado
-        "streets": ["Calle Vieja"],
-    })
-    with patch.object(cat, "_fetch_catastro_streets", return_value=["Calle Nueva"]) as mock_fetch:
-        result = cat.get_combined_catalog()
-    mock_fetch.assert_called_once()
-    assert "Calle Nueva" in result
+    """Segunda llamada no vuelve a leer disco."""
+    _write_json(tmp_path / "osm.json", {"timestamp": time.time(), "streets": ["Calle X"]})
+    cat.get_combined_catalog()
+    # Borrar el fichero: si se vuelve a leer el disco daría []
+    (tmp_path / "osm.json").unlink()
+    result = cat.get_combined_catalog()
+    assert "Calle X" in result
 
 
 def test_osm_expirado_no_se_incluye(tmp_path):
@@ -127,8 +90,7 @@ def test_osm_expirado_no_se_incluye(tmp_path):
         "timestamp": 0,            # expirado
         "streets": ["Calle OSM Vieja"],
     })
-    with patch.object(cat, "_fetch_catastro_streets", return_value=[]):
-        result = cat.get_combined_catalog()
+    result = cat.get_combined_catalog()
     assert "Calle OSM Vieja" not in result
 
 
