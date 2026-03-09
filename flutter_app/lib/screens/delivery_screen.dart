@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -33,6 +34,9 @@ class _DeliveryScreenState extends State<DeliveryScreen>
 
   /// Geometría del segmento parada anterior → siguiente parada.
   Map<String, dynamic>? _segmentGeometry;
+
+  /// Índice de la parada seleccionada al tocar un marcador (null = panel oculto).
+  int? _selectedStopIndex;
 
   @override
   void initState() {
@@ -127,6 +131,41 @@ class _DeliveryScreenState extends State<DeliveryScreen>
   //  Acciones de parada
   // ═══════════════════════════════════════════
 
+  /// Abre el panel de información al tocar un marcador en el mapa.
+  void _onMarkerTapped(int index) {
+    final stop = _session.stops[index];
+    if (stop.isOrigin) return;
+    setState(() => _selectedStopIndex = index);
+    _mapKey.currentState?.flyToStop(index);
+  }
+
+  /// Marca cualquier parada por índice (no solo la actual).
+  ///
+  /// Si el índice coincide con [currentStopIndex], delega en [_markStop]
+  /// para que avance el puntero y recargue el segmento GPS.
+  Future<void> _markStopByIndex(
+    int sessionIndex,
+    StopStatus status, {
+    String? note,
+  }) async {
+    if (sessionIndex >= _session.stops.length) return;
+    setState(() => _selectedStopIndex = null);
+
+    if (sessionIndex == _session.currentStopIndex) {
+      await _markStop(status, note: note);
+      return;
+    }
+
+    await PersistenceService.updateStopStatus(_session, sessionIndex, status,
+        note: note);
+    setState(() {});
+
+    if (_session.isFinished) {
+      setState(() => _segmentGeometry = null);
+      if (mounted) _showFinishedDialog();
+    }
+  }
+
   /// Marca la parada actual con un estado (un solo toque).
   Future<void> _markStop(StopStatus status, {String? note}) async {
     final stopIndex = _session.currentStopIndex;
@@ -156,59 +195,6 @@ class _DeliveryScreenState extends State<DeliveryScreen>
     }
   }
 
-  /// Muestra el diálogo para incidencias (con campo de texto).
-  void _showIncidentDialog() {
-    final controller = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber, color: AppColors.error),
-            SizedBox(width: 8),
-            Text('Registrar Incidencia',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-          ],
-        ),
-        content: TextField(
-          controller: controller,
-          maxLines: 3,
-          autofocus: true,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: InputDecoration(
-            hintText: 'Describe la incidencia...',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-            filled: true,
-            fillColor: AppColors.scaffoldLight,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _markStop(StopStatus.incident,
-                  note: controller.text.trim().isEmpty
-                      ? 'Sin detalle'
-                      : controller.text.trim());
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.error,
-            ),
-            child: const Text('Registrar'),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Diálogo final cuando se completó todo el reparto.
   void _showFinishedDialog() {
     final elapsed = DateTime.now().difference(_session.createdAt);
@@ -231,7 +217,6 @@ class _DeliveryScreenState extends State<DeliveryScreen>
             const SizedBox(height: 16),
             _summaryRow('✅ Entregados', '${_session.deliveredCount}'),
             _summaryRow('🚫 Ausentes', '${_session.absentCount}'),
-            _summaryRow('⚠️ Incidencias', '${_session.incidentCount}'),
             const Divider(height: 24),
             _summaryRow(
                 '📦 Total', '${_session.completedCount}/${_session.totalStops}'),
@@ -381,21 +366,13 @@ class _DeliveryScreenState extends State<DeliveryScreen>
   //  Navegación externa (Google Maps)
   // ═══════════════════════════════════════════
 
-  Future<void> _openExternalNavigation() async {
-    final stop = _session.currentStop;
-    if (stop == null) return;
+  /// Abre Google Maps para navegar a las coordenadas de una parada.
+  Future<void> _openNavigationToStop(DeliveryStop stop) async {
     if (stop.lat == null || stop.lon == null) return;
-
-    // Intent de Google Maps con coordenadas
-    final uri = Uri.parse(
-      'google.navigation:q=${stop.lat},${stop.lon}&mode=d',
-    );
-
-    // Fallback: abrir en navegador con Google Maps URL
+    final uri = Uri.parse('google.navigation:q=${stop.lat},${stop.lon}&mode=d');
     final webUri = Uri.parse(
       'https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lon}&travelmode=driving',
     );
-
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else if (await canLaunchUrl(webUri)) {
@@ -407,6 +384,12 @@ class _DeliveryScreenState extends State<DeliveryScreen>
         );
       }
     }
+  }
+
+  Future<void> _openExternalNavigation() async {
+    final stop = _session.currentStop;
+    if (stop == null) return;
+    await _openNavigationToStop(stop);
   }
 
   // ═══════════════════════════════════════════
@@ -858,19 +841,46 @@ class _DeliveryScreenState extends State<DeliveryScreen>
               // ── Barra de progreso ──
               _ProgressHeader(session: _session),
 
-              // ── Mapa (modo reparto: solo segmento GPS → siguiente parada) ──
+              // ── Mapa con callout flotante al tocar un marcador ──
               Expanded(
-                child: RouteMap(
-                  key: _mapKey,
-                  stops: _deliveryToStopInfo(mapStops),
-                  geometry: _session.geometry,
-                  highlightedStopIndex:
-                      isFinished ? null : _session.currentStopIndex,
-                  completedIndices: _completedIndices(),
-                  deliveryMode: true,
-                  segmentGeometry: _segmentGeometry,
-                  nextStopIndex:
-                      isFinished ? null : _session.currentStopIndex,
+                child: Stack(
+                  children: [
+                    RouteMap(
+                      key: _mapKey,
+                      stops: _deliveryToStopInfo(mapStops),
+                      geometry: _session.geometry,
+                      highlightedStopIndex:
+                          isFinished ? null : _session.currentStopIndex,
+                      completedIndices: _completedIndices(),
+                      deliveryMode: true,
+                      segmentGeometry: _segmentGeometry,
+                      nextStopIndex:
+                          isFinished ? null : _session.currentStopIndex,
+                      onMarkerTapped: _onMarkerTapped,
+                    ),
+                    if (_selectedStopIndex != null &&
+                        _selectedStopIndex! < _session.stops.length)
+                      Positioned(
+                        top: 8,
+                        left: 12,
+                        right: 12,
+                        child: _StopCallout(
+                          stop: _session.stops[_selectedStopIndex!],
+                          onClose: () =>
+                              setState(() => _selectedStopIndex = null),
+                          onMarkStatus: (status) =>
+                              _markStopByIndex(_selectedStopIndex!, status),
+                          onRepin: () {
+                            final idx = _selectedStopIndex!;
+                            final stop = _session.stops[idx];
+                            setState(() => _selectedStopIndex = null);
+                            _repinStop(stop, idx);
+                          },
+                          onNavigate: () => _openNavigationToStop(
+                              _session.stops[_selectedStopIndex!]),
+                        ),
+                      ),
+                  ],
                 ),
               ),
 
@@ -881,7 +891,6 @@ class _DeliveryScreenState extends State<DeliveryScreen>
                   pendingCount: _session.pendingCount,
                   onDelivered: () => _markStop(StopStatus.delivered),
                   onAbsent: () => _markStop(StopStatus.absent),
-                  onIncident: _showIncidentDialog,
                   onNavigate: _openExternalNavigation,
                   onRepin: () => _repinStop(currentStop, _session.currentStopIndex),
                 ),
@@ -983,7 +992,7 @@ class _DeliveryScreenState extends State<DeliveryScreen>
           ),
           const SizedBox(height: 4),
           Text(
-            '✅ ${_session.deliveredCount}  ·  🚫 ${_session.absentCount}  ·  ⚠️ ${_session.incidentCount}',
+            '✅ ${_session.deliveredCount}  ·  🚫 ${_session.absentCount}',
             style: const TextStyle(fontSize: 13, color: AppColors.success),
           ),
           const SizedBox(height: 12),
@@ -1042,9 +1051,6 @@ class _ProgressHeader extends StatelessWidget {
                   const SizedBox(width: 6),
                   _miniChip('🚫', '${session.absentCount}',
                       AppColors.absent),
-                  const SizedBox(width: 6),
-                  _miniChip('⚠️', '${session.incidentCount}',
-                      AppColors.incident),
                 ],
               ),
             ],
@@ -1092,7 +1098,6 @@ class _NextStopCard extends StatelessWidget {
   final int pendingCount;
   final VoidCallback onDelivered;
   final VoidCallback onAbsent;
-  final VoidCallback onIncident;
   final VoidCallback onNavigate;
   final VoidCallback onRepin;
 
@@ -1101,7 +1106,6 @@ class _NextStopCard extends StatelessWidget {
     required this.pendingCount,
     required this.onDelivered,
     required this.onAbsent,
-    required this.onIncident,
     required this.onNavigate,
     required this.onRepin,
   });
@@ -1348,24 +1352,6 @@ class _NextStopCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-
-                  // ⚠️ Incidencia — Botón sólido rojo
-                  SizedBox(
-                    width: 54,
-                    height: 54,
-                    child: FilledButton(
-                      onPressed: onIncident,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.error,
-                        padding: EdgeInsets.zero,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      child: const Icon(Icons.warning_amber, size: 24, color: Colors.white),
-                    ),
-                  ),
                 ],
               ),
             ],
@@ -1394,9 +1380,6 @@ class _CompletedTile extends StatelessWidget {
       case StopStatus.absent:
         statusColor = AppColors.absent;
         statusIcon = Icons.person_off;
-      case StopStatus.incident:
-        statusColor = AppColors.incident;
-        statusIcon = Icons.warning_amber;
       case StopStatus.pending:
         statusColor = AppColors.textTertiary;
         statusIcon = Icons.pending;
@@ -1590,4 +1573,376 @@ class _ReorderEntry {
   final DeliveryStop stop;
 
   const _ReorderEntry({required this.index, required this.stop});
+}
+
+// ═══════════════════════════════════════════
+//  Callout flotante de parada (tap en marcador)
+// ═══════════════════════════════════════════
+
+/// Globo/callout que aparece sobre el mapa al tocar un marcador.
+///
+/// El mapa centra la parada en pantalla (flyToStop) justo antes de mostrar
+/// este widget, de modo que el triángulo inferior apunta al pin centrado.
+class _StopCallout extends StatelessWidget {
+  final DeliveryStop stop;
+  final VoidCallback onClose;
+  final void Function(StopStatus) onMarkStatus;
+  final VoidCallback onRepin;
+  final VoidCallback onNavigate;
+
+  const _StopCallout({
+    required this.stop,
+    required this.onClose,
+    required this.onMarkStatus,
+    required this.onRepin,
+    required this.onNavigate,
+  });
+
+  Color get _statusColor => switch (stop.status) {
+        StopStatus.pending => AppColors.primary,
+        StopStatus.delivered => AppColors.success,
+        StopStatus.absent => AppColors.warning,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // ── Tarjeta ──
+        Material(
+          elevation: 8,
+          borderRadius: BorderRadius.circular(16),
+          shadowColor: const Color(0x44000000),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Cabecera
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 8, 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Badge número coloreado por estado
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: _statusColor,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Center(
+                          child: Text(
+                            '${stop.order}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+
+                      // Información de la parada
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Chip de estado
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: _statusColor.withAlpha(25),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                stop.status.label.toUpperCase(),
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  color: _statusColor,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+
+                            // Dirección
+                            Text(
+                              stop.address,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+
+                            // Alias
+                            if (stop.alias.isNotEmpty) ...[
+                              const SizedBox(height: 1),
+                              Text(
+                                stop.alias,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontStyle: FontStyle.italic,
+                                  color: AppColors.primary.withAlpha(200),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+
+                            // Clientes
+                            if (stop.clientNames.isNotEmpty) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                stop.clientNames.join(' · '),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.textSecondary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+
+                            // Paquetes
+                            if (stop.packageCount > 1) ...[
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  const Icon(Icons.inventory_2_outlined,
+                                      size: 11,
+                                      color: AppColors.textTertiary),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    '${stop.packageCount} paquetes',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.textTertiary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+
+                      // Botón cerrar
+                      IconButton(
+                        onPressed: onClose,
+                        icon: const Icon(Icons.close, size: 18),
+                        color: AppColors.textTertiary,
+                        padding: const EdgeInsets.all(6),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Acciones
+                const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                  child: _buildActions(),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // ── Triángulo apuntando al pin ──
+        CustomPaint(
+          size: const Size(20, 10),
+          painter: _DownwardTrianglePainter(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActions() {
+    return switch (stop.status) {
+      StopStatus.pending => Row(
+          children: [
+            Expanded(
+              flex: 3,
+              child: _ActionButton(
+                label: 'Entregada',
+                icon: Icons.check_circle_outline,
+                color: AppColors.success,
+                onTap: () => onMarkStatus(StopStatus.delivered),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              flex: 2,
+              child: _ActionButton(
+                label: 'Ausente',
+                icon: Icons.person_off_outlined,
+                color: AppColors.warning,
+                onTap: () => onMarkStatus(StopStatus.absent),
+              ),
+            ),
+            const SizedBox(width: 6),
+            _ActionIconButton(
+              icon: Icons.edit_location_alt,
+              color: AppColors.primary,
+              tooltip: 'Mover ubicación',
+              onTap: onRepin,
+            ),
+            const SizedBox(width: 4),
+            _ActionIconButton(
+              icon: Icons.navigation,
+              color: AppColors.primary,
+              tooltip: 'Google Maps',
+              onTap: onNavigate,
+            ),
+          ],
+        ),
+      StopStatus.absent => Row(
+          children: [
+            Expanded(
+              child: _ActionButton(
+                label: 'Marcar entregada',
+                icon: Icons.check_circle_outline,
+                color: AppColors.success,
+                onTap: () => onMarkStatus(StopStatus.delivered),
+              ),
+            ),
+            const SizedBox(width: 6),
+            _ActionIconButton(
+              icon: Icons.edit_location_alt,
+              color: AppColors.primary,
+              tooltip: 'Mover ubicación',
+              onTap: onRepin,
+            ),
+            const SizedBox(width: 4),
+            _ActionIconButton(
+              icon: Icons.navigation,
+              color: AppColors.primary,
+              tooltip: 'Google Maps',
+              onTap: onNavigate,
+            ),
+          ],
+        ),
+      StopStatus.delivered => Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            _ActionIconButton(
+              icon: Icons.edit_location_alt,
+              color: AppColors.primary,
+              tooltip: 'Mover ubicación',
+              onTap: onRepin,
+            ),
+            const SizedBox(width: 4),
+            _ActionIconButton(
+              icon: Icons.navigation,
+              color: AppColors.primary,
+              tooltip: 'Google Maps',
+              onTap: onNavigate,
+            ),
+          ],
+        ),
+    };
+  }
+}
+
+/// Pinta un triángulo apuntando hacia abajo (conector visual al pin del mapa).
+class _DownwardTrianglePainter extends CustomPainter {
+  const _DownwardTrianglePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = ui.Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..lineTo(size.width, 0)
+      ..close();
+    canvas.drawPath(path, Paint()..color = Colors.white);
+  }
+
+  @override
+  bool shouldRepaint(_DownwardTrianglePainter _) => false;
+}
+
+/// Botón de acción con icono y etiqueta (ocupa espacio flexible).
+class _ActionButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ActionButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: ElevatedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 16),
+        label: Text(
+          label,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+        ),
+      ),
+    );
+  }
+}
+
+/// Botón de acción compacto solo con icono (tamaño fijo 44×44).
+class _ActionIconButton extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _ActionIconButton({
+    required this.icon,
+    required this.color,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: color.withAlpha(25),
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(icon, color: color, size: 20),
+          ),
+        ),
+      ),
+    );
+  }
 }

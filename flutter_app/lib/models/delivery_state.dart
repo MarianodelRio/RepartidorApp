@@ -14,7 +14,6 @@ enum StopStatus {
   pending,    // Aún no visitada
   delivered,  // Entregado correctamente
   absent,     // No estaba el destinatario
-  incident,   // Incidencia (con nota)
 }
 
 extension StopStatusLabel on StopStatus {
@@ -22,14 +21,12 @@ extension StopStatusLabel on StopStatus {
         StopStatus.pending => 'Pendiente',
         StopStatus.delivered => 'Entregado',
         StopStatus.absent => 'No estaba',
-        StopStatus.incident => 'Incidencia',
       };
 
   String get emoji => switch (this) {
         StopStatus.pending => '⏳',
         StopStatus.delivered => '✅',
         StopStatus.absent => '🚫',
-        StopStatus.incident => '⚠️',
       };
 }
 
@@ -182,10 +179,6 @@ class DeliverySession {
   /// Número de ausentes.
   int get absentCount =>
       stops.where((s) => s.status == StopStatus.absent).length;
-
-  /// Número de incidencias.
-  int get incidentCount =>
-      stops.where((s) => s.status == StopStatus.incident).length;
 
   /// ¿Se ha completado todo el reparto?
   bool get isFinished => pendingCount == 0;

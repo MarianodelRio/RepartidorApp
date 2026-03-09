@@ -50,9 +50,6 @@ void main() {
     test('absent tiene label "No estaba"', () {
       expect(StopStatus.absent.label, 'No estaba');
     });
-    test('incident tiene label "Incidencia"', () {
-      expect(StopStatus.incident.label, 'Incidencia');
-    });
   });
 
   group('StopStatus emojis', () {
@@ -87,10 +84,9 @@ void main() {
       expect(_makeStop(status: StopStatus.pending).isCompleted, isFalse);
     });
 
-    test('isCompleted es true para delivered, absent e incident', () {
+    test('isCompleted es true para delivered y absent', () {
       expect(_makeStop(status: StopStatus.delivered).isCompleted, isTrue);
       expect(_makeStop(status: StopStatus.absent).isCompleted, isTrue);
-      expect(_makeStop(status: StopStatus.incident).isCompleted, isTrue);
     });
 
     test('hasMultiplePackages es false con packageCount 1', () {
@@ -212,15 +208,14 @@ void main() {
       expect(session.pendingCount, 0);
     });
 
-    test('completedCount cuenta delivered, absent e incident', () {
+    test('completedCount cuenta delivered y absent', () {
       final session = _makeSession([
         _makeOrigin(),
         _makeStop(order: 1, status: StopStatus.delivered),
         _makeStop(order: 2, status: StopStatus.absent),
-        _makeStop(order: 3, status: StopStatus.incident),
-        _makeStop(order: 4, status: StopStatus.pending),
+        _makeStop(order: 3, status: StopStatus.pending),
       ]);
-      expect(session.completedCount, 3);
+      expect(session.completedCount, 2);
     });
 
     test('deliveredCount solo cuenta delivered', () {
@@ -242,15 +237,6 @@ void main() {
       expect(session.absentCount, 1);
     });
 
-    test('incidentCount solo cuenta incident', () {
-      final session = _makeSession([
-        _makeOrigin(),
-        _makeStop(order: 1, status: StopStatus.incident),
-        _makeStop(order: 2, status: StopStatus.incident),
-        _makeStop(order: 3, status: StopStatus.delivered),
-      ]);
-      expect(session.incidentCount, 2);
-    });
   });
 
   group('DeliverySession — isFinished y progress', () {

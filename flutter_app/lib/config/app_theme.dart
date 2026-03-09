@@ -38,15 +38,6 @@ abstract final class AppColors {
   static const Color border = Color(0xFFE0E0E0);
   static const Color divider = Color(0xFFEEEEEE);
 
-  // ── Neutros (Modo Oscuro) ──
-  static const Color scaffoldDark = Color(0xFF121212);         // Negro mate
-  static const Color cardDark = Color(0xFF1E1E1E);             // Gris carbono
-  static const Color surfaceDark = Color(0xFF2C2C2C);          // Elevación 1
-  static const Color textPrimaryDark = Color(0xFFECEFF1);      // Casi blanco
-  static const Color textSecondaryDark = Color(0xFFB0BEC5);    // Gris claro
-  static const Color borderDark = Color(0xFF424242);
-  static const Color primaryDark = Color(0xFF448AFF);          // Azul eléctrico
-
   // ── Mapa ──
   static const Color polylineNav = Color(0xFF2979FF);          // Azul eléctrico
   static const Color polylineBorder = Color(0xB3FFFFFF);       // Blanco 70%
@@ -59,10 +50,9 @@ abstract final class AppColors {
   // ── GPS Marker ──
   static const Color gps = Color(0xFF2979FF);                  // Azul eléctrico
 
-  // ── Entregado / Ausente / Incidencia (iconos de estado) ──
+  // ── Entregado / Ausente (iconos de estado) ──
   static const Color delivered = success;
   static const Color absent = warning;
-  static const Color incident = error;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -149,86 +139,3 @@ final ThemeData appLightTheme = ThemeData(
   ),
 );
 
-// ═══════════════════════════════════════════════════════════════
-//  ThemeData — Modo Oscuro (Zerity Style)
-// ═══════════════════════════════════════════════════════════════
-
-final ThemeData appDarkTheme = ThemeData(
-  useMaterial3: true,
-  brightness: Brightness.dark,
-  fontFamily: 'Roboto',
-
-  colorScheme: const ColorScheme.dark(
-    primary: AppColors.primaryDark,
-    onPrimary: Colors.white,
-    secondary: AppColors.primaryDark,
-    onSecondary: Colors.white,
-    error: AppColors.errorLight,
-    onError: Colors.white,
-    surface: AppColors.cardDark,
-    onSurface: AppColors.textPrimaryDark,
-  ),
-
-  scaffoldBackgroundColor: AppColors.scaffoldDark,
-
-  appBarTheme: const AppBarTheme(
-    centerTitle: true,
-    elevation: 0,
-    backgroundColor: AppColors.cardDark,
-    foregroundColor: AppColors.textPrimaryDark,
-    titleTextStyle: TextStyle(
-      fontSize: 18,
-      fontWeight: FontWeight.w700,
-      color: AppColors.textPrimaryDark,
-      fontFamily: 'Roboto',
-    ),
-  ),
-
-  cardTheme: CardThemeData(
-    color: AppColors.cardDark,
-    elevation: 2,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-  ),
-
-  filledButtonTheme: FilledButtonThemeData(
-    style: FilledButton.styleFrom(
-      backgroundColor: AppColors.primaryDark,
-      foregroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ),
-  ),
-
-  elevatedButtonTheme: ElevatedButtonThemeData(
-    style: ElevatedButton.styleFrom(
-      backgroundColor: AppColors.primaryDark,
-      foregroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 2,
-    ),
-  ),
-
-  outlinedButtonTheme: OutlinedButtonThemeData(
-    style: OutlinedButton.styleFrom(
-      foregroundColor: AppColors.primaryDark,
-      side: const BorderSide(color: AppColors.primaryDark),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ),
-  ),
-
-  dividerTheme: const DividerThemeData(
-    color: AppColors.borderDark,
-    thickness: 1,
-  ),
-
-  snackBarTheme: SnackBarThemeData(
-    backgroundColor: AppColors.surfaceDark,
-    contentTextStyle: const TextStyle(color: AppColors.textPrimaryDark),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-    behavior: SnackBarBehavior.floating,
-  ),
-
-  dialogTheme: DialogThemeData(
-    backgroundColor: AppColors.cardDark,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-  ),
-);

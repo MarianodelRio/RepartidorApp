@@ -406,19 +406,29 @@ class RouteMapState extends State<RouteMap> with TickerProviderStateMixin {
         size = 34;
       }
 
+      // Área táctil mínima 44px (Material Design) aunque el icono sea más pequeño.
+      final tapSize = size < 44 ? 44.0 : size;
+
       return Marker(
         point: LatLng(stop.lat!, stop.lon!),
-        width: size,
-        height: size,
+        width: tapSize,
+        height: tapSize,
         child: GestureDetector(
           onTap: () => widget.onMarkerTapped?.call(index),
-          child: _StopMarkerIcon(
-            order: stop.order,
-            isOrigin: isOrigin,
-            isHighlighted: isHighlighted || isNextStop,
-            isCompleted: isCompleted,
-            isNextStop: isNextStop,
-            isSmall: isDelivery && !isNextStop && !isOrigin && !isCompleted,
+          behavior: HitTestBehavior.opaque,
+          child: Center(
+            child: SizedBox(
+              width: size,
+              height: size,
+              child: _StopMarkerIcon(
+                order: stop.order,
+                isOrigin: isOrigin,
+                isHighlighted: isHighlighted || isNextStop,
+                isCompleted: isCompleted,
+                isNextStop: isNextStop,
+                isSmall: isDelivery && !isNextStop && !isOrigin && !isCompleted,
+              ),
+            ),
           ),
         ),
       );

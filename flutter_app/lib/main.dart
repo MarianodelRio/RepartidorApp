@@ -18,8 +18,7 @@ class RepartirApp extends StatelessWidget {
       title: 'Repartidor',
       debugShowCheckedModeBanner: false,
       theme: appLightTheme,
-      darkTheme: appDarkTheme,
-      themeMode: ThemeMode.system, // Modo oscuro automático
+      themeMode: ThemeMode.light,
       home: const SplashScreen(),
     );
   }
