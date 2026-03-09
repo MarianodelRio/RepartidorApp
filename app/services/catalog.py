@@ -13,6 +13,10 @@ import json
 import time
 from pathlib import Path
 
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _LEARNED_FILE = _DATA_DIR / "learned_streets.json"
 _STREETS_FILE = _DATA_DIR / "osm_streets.json"
@@ -68,7 +72,7 @@ def save_learned_street(street_name: str) -> None:
                 "utf-8",
             )
         except Exception as e:
-            print(f"[catalog] Error guardando learned_streets: {e}")
+            logger.error("Error guardando learned_streets: %s", e)
         _combined = None  # Invalidar caché en memoria
         # Invalidar también el catálogo en memoria de geocoding.py para que
         # el fuzzy matching use la nueva calle en la misma sesión
@@ -105,6 +109,5 @@ def get_combined_catalog() -> list[str]:
         all_streets.update(learned)
 
     _combined = sorted(all_streets)
-    print(f"[catalog] Catálogo combinado: {len(_combined)} calles (OSM={len(osm)}, "
-          f"Aprendidas={len(learned)})")
+    logger.info("Catálogo combinado: %d calles (OSM=%d, Aprendidas=%d)", len(_combined), len(osm), len(learned))
     return _combined

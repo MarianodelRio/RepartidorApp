@@ -1,140 +1,61 @@
 """
-Router de validación
+Router de validación.
 
-Flujo: POST /api/validation/start
-  1. Recibe filas crudas del CSV {cliente, direccion, ciudad, nota, alias}
+POST /api/validation/start
+  1. Recibe filas del CSV {cliente, direccion, ciudad, nota, alias}
   2. Agrupa por dirección normalizada (misma parada = +1 paquete)
-  3. Geocodifica cada dirección única con el pipeline multi-fuente:
-     Google Geocoding → Google Places (si alias) → FAILED
-  4. Devuelve: geocoded (con coords + confidence) y failed (sin coords)
+  3. Geocodifica cada dirección única: Google Geocoding → Places → FAILED
+  4. Devuelve geocoded[] (con coords) y failed[] (sin coords)
 
 POST /api/validation/override
-  Registra coordenadas manuales (pin) para una dirección → caché permanente.
+  Registra coordenadas manuales para una dirección → caché permanente.
 """
 
-import unicodedata
 from collections import OrderedDict
 
-from pydantic import BaseModel
 from fastapi import APIRouter
 
-from app.services.geocoding import geocode, add_override
+from app.core.logging import get_logger
 from app.models import Package
+from app.models.validation import (
+    StartRequest,
+    OverrideRequest,
+    GeocodedStop,
+    FailedStop,
+    StartResponse,
+)
+from app.services.geocoding import geocode, add_override
+from app.utils.normalization import normalize_for_dedup as _normalize_for_dedup
 
 router = APIRouter(prefix="/validation", tags=["validation"])
+logger = get_logger(__name__)
 
-
-# ═══════════════════════════════════════════
-#  Modelos de entrada
-# ═══════════════════════════════════════════
-
-class CsvRow(BaseModel):
-    cliente: str = ""
-    direccion: str
-    ciudad: str = ""
-    nota: str = ""
-    alias: str = ""     # nombre de negocio/lugar (opcional, activa Google Places)
-
-
-class StartRequest(BaseModel):
-    rows: list[CsvRow]
-
-
-class OverrideRequest(BaseModel):
-    address: str
-    lat: float
-    lon: float
-
-
-# ═══════════════════════════════════════════
-#  Modelos de salida
-# ═══════════════════════════════════════════
-
-class GeocodedStop(BaseModel):
-    address: str
-    alias: str = ""             # nombre de negocio/lugar (de Google Places)
-    client_name: str            # primer nombre no vacío del grupo
-    all_client_names: list[str] # retrocompat — derivado de packages
-    packages: list[Package]
-    package_count: int
-    lat: float
-    lon: float
-    confidence: str             # EXACT_ADDRESS | GOOD | EXACT_PLACE | OVERRIDE
-
-
-class FailedStop(BaseModel):
-    address: str
-    alias: str = ""             # nombre de negocio/lugar (si se proporcionó)
-    client_names: list[str]     # retrocompat — derivado de packages
-    packages: list[Package]
-    package_count: int
-
-
-class StartResponse(BaseModel):
-    geocoded: list[GeocodedStop]
-    failed: list[FailedStop]
-    total_packages: int         # total filas recibidas
-    unique_addresses: int       # len(geocoded) + len(failed)
-
-
-# ═══════════════════════════════════════════
-#  Helpers
-# ═══════════════════════════════════════════
-
-def _normalize_for_dedup(addr: str) -> str:
-    """Normalización ligera para detectar duplicados exactos."""
-    s = addr.strip().lower()
-    s = unicodedata.normalize("NFD", s)
-    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
-    s = s.replace(",", " ").replace(".", " ")
-    return " ".join(s.split())
-
-
-# ═══════════════════════════════════════════
-#  Endpoints
-# ═══════════════════════════════════════════
 
 @router.post("/start", response_model=StartResponse)
 def validation_start(req: StartRequest):
-    """Valida todas las direcciones del CSV:
-    1. Agrupa duplicados
-    2. Geocodifica con pipeline: Google → Places → FAILED
-    3. Devuelve listas separadas: geocoded (con coords) y failed (sin coords)
-    """
+    """Valida las direcciones del CSV: dedup → geocodifica → geocoded/failed."""
     rows = req.rows
     total_packages = len(rows)
 
-    # ── 1. Agrupar por dirección normalizada ──────────────────────────────────
+    # 1. Agrupar por dirección normalizada
     groups: OrderedDict[str, dict] = OrderedDict()
-
     for row in rows:
         full_address = row.direccion.strip()
         key = _normalize_for_dedup(full_address)
         if key not in groups:
-            groups[key] = {
-                "address": full_address,
-                "packages": [],
-                "alias": "",
-            }
-        # Usar el primer alias no vacío del grupo
+            groups[key] = {"address": full_address, "packages": [], "alias": ""}
         if not groups[key]["alias"] and row.alias.strip():
             groups[key]["alias"] = row.alias.strip()
         groups[key]["packages"].append(Package(client_name=row.cliente, nota=row.nota))
 
-    # ── 2. Geocodificar cada dirección única ──────────────────────────────────
-    addr_results: list[tuple[str, tuple | None, str]] = []
+    # 2. Geocodificar cada dirección única
+    coord_map: dict[str, tuple[tuple | None, str]] = {}
     for group in groups.values():
         addr = group["address"]
-        alias = group.get("alias", "")
-        coord, confidence = geocode(addr, alias=alias)
-        addr_results.append((addr, coord, confidence))
+        coord, confidence = geocode(addr, alias=group.get("alias", ""))
+        coord_map[addr] = (coord, confidence)
 
-    # ── 3. Construir listas geocoded / failed ──────────────────────────────────
-    coord_map: dict[str, tuple[tuple | None, str]] = {
-        addr: (coord, conf)
-        for addr, coord, conf in addr_results
-    }
-
+    # 3. Clasificar en geocoded / failed
     geocoded: list[GeocodedStop] = []
     failed: list[FailedStop] = []
 
@@ -144,9 +65,9 @@ def validation_start(req: StartRequest):
         package_count = len(packages)
         client_names = [p.client_name for p in packages]
         primary = next((p.client_name for p in packages if p.client_name), "")
-
         coord, confidence = coord_map.get(addr, (None, "FAILED"))
         alias = group.get("alias", "")
+
         if coord:
             lat, lon = coord
             geocoded.append(GeocodedStop(
@@ -179,9 +100,6 @@ def validation_start(req: StartRequest):
 
 @router.post("/override")
 def validation_override(req: OverrideRequest):
-    """
-    Registra coordenadas manuales (pin del usuario) para una dirección.
-    Se guarda en caché permanente y tendrá prioridad en futuros repartos.
-    """
+    """Registra coordenadas manuales (pin) para una dirección (override permanente)."""
     add_override(req.address, req.lat, req.lon)
     return {"ok": True, "address": req.address}

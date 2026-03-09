@@ -31,11 +31,8 @@ class _DeliveryScreenState extends State<DeliveryScreen>
   final GlobalKey<RouteMapState> _mapKey = GlobalKey<RouteMapState>();
   late DeliverySession _session;
 
-  /// Geometría del segmento GPS → siguiente parada.
+  /// Geometría del segmento parada anterior → siguiente parada.
   Map<String, dynamic>? _segmentGeometry;
-
-  /// Timer que refresca el segmento de ruta cada 30 s mientras el usuario conduce.
-  Timer? _segmentTimer;
 
   @override
   void initState() {
@@ -43,27 +40,20 @@ class _DeliveryScreenState extends State<DeliveryScreen>
     WidgetsBinding.instance.addObserver(this);
     _session = widget.session;
 
-    // Centrar en la primera parada pendiente y pedir segmento desde GPS real
+    // Cargar segmento parada anterior → parada actual
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_session.currentStop != null) {
         _fetchSegmentFromGps();
-        // Encuadrar GPS + destino con un pequeño delay para que el mapa tenga GPS
         Future.delayed(const Duration(milliseconds: 1500), () {
           if (mounted) _mapKey.currentState?.fitGpsAndNextStop();
         });
       }
-    });
-
-    // Refrescar el tramo de ruta cada 10 s (el punto GPS se mueve mientras conduce)
-    _segmentTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (mounted && _session.currentStop != null) _fetchSegmentFromGps();
     });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _segmentTimer?.cancel();
     super.dispose();
   }
 
@@ -82,47 +72,11 @@ class _DeliveryScreenState extends State<DeliveryScreen>
   }
 
   // ═══════════════════════════════════════════
-  //  Segmento dinámico GPS → Siguiente Parada
+  //  Segmento parada anterior → siguiente parada
   // ═══════════════════════════════════════════
 
-  /// Obtiene la posición GPS actual del dispositivo.
-  /// Primero intenta desde el mapa (ya en streaming), si no,
-  /// solicita directamente a Geolocator.
-  Future<Position?> _getCurrentGps() async {
-    // Intentar desde el mapa (ya tiene stream activo)
-    final mapPos = _mapKey.currentState?.currentPosition;
-    if (mapPos != null) {
-      return Position(
-        latitude: mapPos.latitude,
-        longitude: mapPos.longitude,
-        timestamp: DateTime.now(),
-        accuracy: 0,
-        altitude: 0,
-        altitudeAccuracy: 0,
-        heading: 0,
-        headingAccuracy: 0,
-        speed: 0,
-        speedAccuracy: 0,
-      );
-    }
-
-    // Solicitar directamente
-    try {
-      return await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 10),
-        ),
-      );
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Solicita al backend el camino OSRM **siempre desde la posición GPS real**
-  /// hasta la siguiente parada pendiente. Si GPS no disponible tras reintentos,
-  /// usa la parada anterior como fallback.
-  /// Para paradas sin geocodificar, no se calcula segmento.
+  /// Solicita al backend el camino OSRM desde la parada anterior
+  /// hasta la siguiente parada pendiente.
   Future<void> _fetchSegmentFromGps() async {
     final currentStop = _session.currentStop;
     if (currentStop == null) {
@@ -130,7 +84,6 @@ class _DeliveryScreenState extends State<DeliveryScreen>
       return;
     }
 
-    // Punto de destino: la siguiente parada
     final destLat = currentStop.lat;
     final destLon = currentStop.lon;
     if (destLat == null || destLon == null) {
@@ -138,39 +91,24 @@ class _DeliveryScreenState extends State<DeliveryScreen>
       return;
     }
 
-    // Punto de origen: siempre GPS real
-    double originLat;
-    double originLon;
+    // Origen: parada anterior ya completada (o primera parada/depósito si es la primera)
+    final prevIdx = _session.currentStopIndex - 1;
+    final prevStop = (prevIdx >= 0 && prevIdx < _session.stops.length)
+        ? _session.stops[prevIdx]
+        : null;
 
-    // Intentar obtener GPS (con reintento si el mapa aún no tiene posición)
-    Position? gps = await _getCurrentGps();
-
-    // Si no se obtuvo en el primer intento, esperar un poco y reintentar
-    if (gps == null) {
-      await Future.delayed(const Duration(seconds: 2));
-      gps = await _getCurrentGps();
-    }
-
-    if (gps != null) {
-      originLat = gps.latitude;
-      originLon = gps.longitude;
+    double? originLat;
+    double? originLon;
+    if (prevStop != null && prevStop.lat != null && prevStop.lon != null) {
+      originLat = prevStop.lat!;
+      originLon = prevStop.lon!;
+    } else if (_session.stops.isNotEmpty &&
+        _session.stops[0].lat != null &&
+        _session.stops[0].lon != null) {
+      originLat = _session.stops[0].lat!;
+      originLon = _session.stops[0].lon!;
     } else {
-      // Fallback: usar la parada anterior completada (con coords válidas)
-      final prevIdx = _session.currentStopIndex - 1;
-      final prevStop = (prevIdx >= 0 && prevIdx < _session.stops.length)
-          ? _session.stops[prevIdx]
-          : null;
-      if (prevStop != null && prevStop.lat != null && prevStop.lon != null) {
-        originLat = prevStop.lat!;
-        originLon = prevStop.lon!;
-      } else if (_session.stops.isNotEmpty &&
-          _session.stops[0].lat != null &&
-          _session.stops[0].lon != null) {
-        originLat = _session.stops[0].lat!;
-        originLon = _session.stops[0].lon!;
-      } else {
-        return;
-      }
+      return;
     }
 
     final geo = await ApiService.getRouteSegment(

@@ -1,7 +1,7 @@
 """
 Tests del endpoint POST /api/optimize.
 
-Se mockean: geocode, geocode_batch, can_osrm_snap, optimize_route, get_route_details.
+Se mockean: geocode, snap_to_street, optimize_route, get_route_details.
 No se necesitan Docker ni clave de Google para ejecutar estos tests.
 """
 
@@ -15,7 +15,7 @@ URL = "/api/optimize"
 
 STOP_COORD = [37.806, -5.100]  # [lat, lon]
 
-VROOM_OK = {
+SOLVER_OK = {
     "waypoint_order": [0, 1],
     "stop_details": [
         {"original_index": 1, "arrival_distance": 1500.0, "arrival_duration": 300.0}
@@ -45,10 +45,20 @@ def _req_con_coords(addresses=None, coords=None, clientes=None):
 
 
 def _mocks_ok():
-    """Contexto con todos los mocks externos devolviendo éxito."""
+    """Contexto con todos los mocks externos devolviendo éxito.
+
+    snap_to_street se llama ahora también para el origen: devuelve las coords
+    del depósito cuando recibe las coords del depósito, y (37.806, -5.100) para
+    las paradas, para que los tests que comprueban stops[0]["lat"] sigan pasando.
+    """
+    def _snap(lat: float, lon: float, hint: str = "") -> tuple[float, float]:
+        if lat == DEPOT_LAT and lon == DEPOT_LON:
+            return (DEPOT_LAT, DEPOT_LON)
+        return (37.806, -5.100)
+
     return [
-        patch("app.routers.optimize.can_osrm_snap", return_value=True),
-        patch("app.routers.optimize.optimize_route", return_value=VROOM_OK),
+        patch("app.routers.optimize.snap_to_street", side_effect=_snap),
+        patch("app.routers.optimize.optimize_route", return_value=SOLVER_OK),
         patch("app.routers.optimize.get_route_details", return_value=OSRM_OK),
     ]
 
@@ -75,8 +85,8 @@ def test_demasiadas_paradas_devuelve_400(client):
 
 # ── Errores de servicios externos ─────────────────────────────────────────────
 
-def test_vroom_caido_devuelve_503(client):
-    with patch("app.routers.optimize.can_osrm_snap", return_value=True), \
+def test_solver_falla_devuelve_503(client):
+    with patch("app.routers.optimize.snap_to_street", return_value=(37.806, -5.100)), \
          patch("app.routers.optimize.optimize_route", return_value=None), \
          patch("app.routers.optimize.get_route_details", return_value=OSRM_OK):
         r = client.post(URL, json=_req_con_coords())
@@ -84,15 +94,15 @@ def test_vroom_caido_devuelve_503(client):
 
 
 def test_osrm_caido_devuelve_503(client):
-    with patch("app.routers.optimize.can_osrm_snap", return_value=True), \
-         patch("app.routers.optimize.optimize_route", return_value=VROOM_OK), \
+    with patch("app.routers.optimize.snap_to_street", return_value=(37.806, -5.100)), \
+         patch("app.routers.optimize.optimize_route", return_value=SOLVER_OK), \
          patch("app.routers.optimize.get_route_details", return_value=None):
         r = client.post(URL, json=_req_con_coords())
     assert r.status_code == 503
 
 
 def test_todas_las_coords_fuera_de_mapa_devuelve_400(client):
-    with patch("app.routers.optimize.can_osrm_snap", return_value=False):
+    with patch("app.routers.optimize.snap_to_street", return_value=None):
         r = client.post(URL, json=_req_con_coords())
     assert r.status_code == 400
 
@@ -100,8 +110,8 @@ def test_todas_las_coords_fuera_de_mapa_devuelve_400(client):
 # ── Ruta exitosa con coords pre-resueltas ─────────────────────────────────────
 
 def test_ruta_simple_devuelve_200(client):
-    with patch("app.routers.optimize.can_osrm_snap", return_value=True), \
-         patch("app.routers.optimize.optimize_route", return_value=VROOM_OK), \
+    with patch("app.routers.optimize.snap_to_street", return_value=(37.806, -5.100)), \
+         patch("app.routers.optimize.optimize_route", return_value=SOLVER_OK), \
          patch("app.routers.optimize.get_route_details", return_value=OSRM_OK):
         r = client.post(URL, json=_req_con_coords())
     assert r.status_code == 200
@@ -109,9 +119,8 @@ def test_ruta_simple_devuelve_200(client):
 
 
 def test_ruta_simple_contiene_origen_y_parada(client):
-    with patch("app.routers.optimize.can_osrm_snap", return_value=True), \
-         patch("app.routers.optimize.optimize_route", return_value=VROOM_OK), \
-         patch("app.routers.optimize.get_route_details", return_value=OSRM_OK):
+    mocks = _mocks_ok()
+    with mocks[0], mocks[1], mocks[2]:
         r = client.post(URL, json=_req_con_coords())
     stops = r.json()["stops"]
     assert len(stops) == 2
@@ -122,8 +131,8 @@ def test_ruta_simple_contiene_origen_y_parada(client):
 
 
 def test_ruta_simple_summary_correcto(client):
-    with patch("app.routers.optimize.can_osrm_snap", return_value=True), \
-         patch("app.routers.optimize.optimize_route", return_value=VROOM_OK), \
+    with patch("app.routers.optimize.snap_to_street", return_value=(37.806, -5.100)), \
+         patch("app.routers.optimize.optimize_route", return_value=SOLVER_OK), \
          patch("app.routers.optimize.get_route_details", return_value=OSRM_OK):
         r = client.post(URL, json=_req_con_coords())
     summary = r.json()["summary"]
@@ -134,30 +143,11 @@ def test_ruta_simple_summary_correcto(client):
 
 
 def test_ruta_simple_incluye_geometry(client):
-    with patch("app.routers.optimize.can_osrm_snap", return_value=True), \
-         patch("app.routers.optimize.optimize_route", return_value=VROOM_OK), \
+    with patch("app.routers.optimize.snap_to_street", return_value=(37.806, -5.100)), \
+         patch("app.routers.optimize.optimize_route", return_value=SOLVER_OK), \
          patch("app.routers.optimize.get_route_details", return_value=OSRM_OK):
         r = client.post(URL, json=_req_con_coords())
     assert r.json()["geometry"]["type"] == "LineString"
-
-
-# ── Ruta con geocodificación (sin coords pre-resueltas) ───────────────────────
-
-def test_ruta_sin_coords_usa_geocode_batch(client):
-    batch_result = [("Calle Mayor 1", (37.806, -5.100))]
-    with patch("app.routers.optimize.geocode_batch", return_value=batch_result), \
-         patch("app.routers.optimize.can_osrm_snap", return_value=True), \
-         patch("app.routers.optimize.optimize_route", return_value=VROOM_OK), \
-         patch("app.routers.optimize.get_route_details", return_value=OSRM_OK):
-        r = client.post(URL, json={"addresses": ["Calle Mayor 1"]})
-    assert r.status_code == 200
-
-
-def test_geocode_batch_falla_todo_devuelve_400(client):
-    batch_result = [("Calle Mayor 1", None)]
-    with patch("app.routers.optimize.geocode_batch", return_value=batch_result):
-        r = client.post(URL, json={"addresses": ["Calle Mayor 1"]})
-    assert r.status_code == 400
 
 
 # ── Validación de coordenadas (_validate_coord) ───────────────────────────────
@@ -225,7 +215,7 @@ def test_coord_lat_invalida_devuelve_400(client):
         "package_counts": [1, 1],
         "client_names": ["Ana", "Luis"],
     }
-    with patch("app.routers.optimize.can_osrm_snap", return_value=True):
+    with patch("app.routers.optimize.snap_to_street", return_value=(37.806, -5.100)):
         r = client.post(URL, json=req)
     assert r.status_code == 400
 
@@ -238,7 +228,7 @@ def test_coord_lon_positiva_devuelve_400(client):
         "package_counts": [1, 1],
         "client_names": ["Ana", "Luis"],
     }
-    with patch("app.routers.optimize.can_osrm_snap", return_value=True):
+    with patch("app.routers.optimize.snap_to_street", return_value=(37.806, -5.100)):
         r = client.post(URL, json=req)
     assert r.status_code == 400
 
@@ -251,7 +241,7 @@ def test_coord_fuera_bbox_madrid_devuelve_400(client):
         "package_counts": [1, 1],
         "client_names": ["Externo", "Local"],
     }
-    with patch("app.routers.optimize.can_osrm_snap", return_value=True):
+    with patch("app.routers.optimize.snap_to_street", return_value=(37.806, -5.100)):
         r = client.post(URL, json=req)
     assert r.status_code == 400
 
@@ -264,6 +254,6 @@ def test_todas_coords_invalidas_devuelve_400(client):
         "package_counts": [1, 1],
         "client_names": ["Ana", "Luis"],
     }
-    with patch("app.routers.optimize.can_osrm_snap", return_value=True):
+    with patch("app.routers.optimize.snap_to_street", return_value=(37.806, -5.100)):
         r = client.post(URL, json=req)
     assert r.status_code == 400

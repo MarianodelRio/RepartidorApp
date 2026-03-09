@@ -1,44 +1,40 @@
-# 📦 Repartidor App
+# Repartidor App
 
 > **Sistema completo de optimización de rutas de reparto para Posadas, Córdoba**
-> Backend FastAPI + Flutter App + OSRM + VROOM
+> Backend FastAPI + Flutter App + OSRM + LKH3
 
-**Versión:** 2.1.0
+**Versión:** 2.2.0
 **Última actualización:** Marzo 2026
-
-
 
 ---
 
-## 🎯 ¿Qué es esto?
+## ¿Qué es esto?
 
 **Repartidor** es una aplicación móvil profesional que permite optimizar rutas de reparto:
 
-- 📂 **Importa** un CSV o Excel con direcciones
-- 🧮 **Calcula** la ruta más eficiente automáticamente
-- 🗺️ **Visualiza** en mapa con navegación GPS
-- ✅ **Gestiona** entregas en tiempo real (Entregado/Ausente/Incidencia)
-- 💾 **Persiste** el progreso (puedes cerrar la app y continuar)
+- Importa un CSV con direcciones
+- Calcula la ruta más eficiente automáticamente (solver LKH3 TSP)
+- Visualiza en mapa con navegación GPS
+- Gestiona entregas en tiempo real (Entregado/Ausente/Incidencia)
+- Persiste el progreso (puedes cerrar la app y continuar)
 
 ---
 
-## ⚡ Up del servidor
+## Up del servidor
 
-### Opción 1: Script Automático 
+### Opción 1: Script automático
 
 ```bash
 cd /home/mariano/Desktop/app_repartir
 ./start.sh
 ```
 
-✅ Inicia todo automáticamente  
-✅ Verifica que funciona correctamente  
-✅ Muestra URLs de acceso y estado
+Inicia OSRM (Docker), backend FastAPI y ngrok. Verifica que todo funciona y muestra las URLs.
 
 ### Opción 2: Manual
 
 ```bash
-# 1. Docker (OSRM + VROOM)
+# 1. Docker (OSRM)
 docker compose up -d
 
 # 2. Backend FastAPI
@@ -51,25 +47,25 @@ nohup ngrok http 8000 --log=stdout > /tmp/ngrok.log 2>&1 &
 
 ---
 
-## 📚 Documentación y archivos relevantes
+## Documentación y archivos relevantes
 
 | Archivo / Carpeta | Descripción |
 |-------------------|-------------|
 | **CHANGELOG.md** | Historial completo de versiones |
-| **start.sh** | Script de arranque automático de todos los servicios |
+| **explicacion.md** | Documentación técnica detallada de todos los módulos |
+| **start.sh** | Script de arranque y gestión de servicios |
 | **run_tests.sh** | Tests + cobertura + análisis estático (backend y Flutter) |
-| **docker-compose.yml** | Definición de servicios Docker (OSRM, VROOM, etc.) |
-| **requirements.txt** | Dependencias Python para el backend |
+| **docker-compose.yml** | Servicios Docker (OSRM) |
+| **requirements.txt** | Dependencias Python del backend |
 | **mypy.ini** | Configuración de análisis estático Python |
-| **vroom-conf/** | Configuraciones de ejemplo para VROOM |
 | **app/** | Código del backend (FastAPI) |
-| **tests/** | Tests del backend (231 tests, pytest) |
-| **flutter_app/** | Código de la app Flutter (115 tests unitarios) |
-
+| **tests/** | Tests del backend (221 tests, pytest) |
+| **flutter_app/** | Código de la app Flutter |
+| **docs/** | Documentación adicional (regenerar OSRM, etc.) |
 
 ---
 
-## 🧪 Tests y Calidad
+## Tests y Calidad
 
 Ejecutar todo (tests + cobertura + análisis estático):
 
@@ -77,77 +73,77 @@ Ejecutar todo (tests + cobertura + análisis estático):
 ./run_tests.sh
 ```
 
-### Backend — 209 tests (pytest)
+### Backend — 221 tests (pytest)
 
-| Módulo | Tests | Cobertura |
-|--------|-------|-----------|
-| `test_health.py` | 7 | — |
-| `test_validation_endpoint.py` | 11 | routers ≥ 81 % |
-| `test_optimize_endpoint.py` | 24 | routers ≥ 81 % |
-| `test_geocoding_service.py` | 26 | services ≥ 71 % |
-| `test_catalog_service.py` | 13 | services ≥ 71 % |
-| `test_routing_service.py` | 21 | services ≥ 71 % |
-| tests unitarios puros | 107 | — |
+| Módulo | Tests |
+|--------|-------|
+| `test_health.py` | 7 |
+| `test_validation_endpoint.py` | 11 |
+| `test_optimize_endpoint.py` | 22 |
+| `test_geocoding_service.py` | 26 |
+| `test_catalog_service.py` | 13 |
+| `test_routing_service.py` | 35 |
+| tests unitarios puros | 107 |
 
 Análisis estático con **mypy** (0 errores). Configuración en `mypy.ini`.
 
 ```bash
-python -m pytest          # sólo tests
-python -m mypy app/       # sólo tipado estático
+python -m pytest          # solo tests
+python -m mypy app/       # solo tipado estático
 ```
 
-### Flutter — 115 tests unitarios
+### Flutter — tests unitarios
 
 Cobertura total: **≥ 98 %** sobre modelos y servicios.
 
 ```bash
 cd flutter_app
-flutter test              # sólo tests
+flutter test              # solo tests
 dart analyze              # análisis estático (0 warnings)
 ```
 
 ---
 
-## 🏗️ Arquitectura
+## Arquitectura
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                   📱 Flutter App                        │
+│                   Flutter App                           │
 │            (Android - Dart + Material 3)                │
 │                                                         │
-│  • import_screen.dart  → Importar CSV/Excel            │
-│  • result_screen.dart  → Ver ruta optimizada           │
-│  • delivery_screen.dart → Ejecutar reparto             │
+│  • import_screen.dart      → Importar CSV              │
+│  • validation_review.dart  → Revisar geocodificación   │
+│  • result_screen.dart      → Ver ruta optimizada       │
+│  • delivery_screen.dart    → Ejecutar reparto          │
 └─────────────────┬───────────────────────────────────────┘
                   │ HTTP JSON
                   ▼
 ┌─────────────────────────────────────────────────────────┐
-│              🐍 Backend FastAPI (Python)                │
+│              Backend FastAPI (Python)                   │
 │                                                         │
-│  • geocoding.py → Convertir texto → GPS                │
-│  • routing.py   → Calcular ruta óptima                 │
-│  • optimize.py  → Endpoint principal                   │
-└──┬──────────────────────────────┬───────────────────────┘
-   │                              │
-   │ ┌────────────────────────┐   │ ┌──────────────────┐
-   └─▶ 🐳 OSRM (Docker)        │   └─▶ 🐳 VROOM (Docker)│
-     │ Motor de rutas reales  │     │ Optimizador TSP  │
-     │ Puerto: 5000           │     │ Puerto: 3000     │
-     └────────────────────────┘     └──────────────────┘
+│  • geocoding.py  → Google Geocoding + Places + fuzzy   │
+│  • routing.py    → LKH3 TSP + OSRM + snap cache        │
+│  • optimize.py   → Endpoint principal                   │
+└──────────────────────────┬──────────────────────────────┘
+                           │
+              ┌────────────────────────┐
+              │     OSRM (Docker)      │
+              │  Motor de rutas reales │
+              │  Puerto: 5000          │
+              └────────────────────────┘
 ```
 
 ---
 
-## 🛠️ Stack Tecnológico
+## Stack Tecnológico
 
 ### Backend
 - **Python 3.10** + FastAPI
-- **OSRM** (rutas reales por calles)
-- **VROOM** (optimización TSP/VRP)
+- **OSRM** (rutas reales por calles, Docker)
+- **LKH3** (solver TSP, binario local)
 - **Google Geocoding API** (geocodificación principal, precisión portal)
 - **Google Places API** (geocodificación de negocios por alias)
 - **Overpass API** (catálogo de calles para fuzzy matching)
-- **Docker Compose** (orquestación)
 
 ### Frontend
 - **Flutter 3.38** (Dart 3.10)
@@ -157,100 +153,72 @@ dart analyze              # análisis estático (0 warnings)
 
 ### Infraestructura
 - **ngrok** (túnel público)
-- **Docker** (contenedores)
+- **Docker** (OSRM)
 
 ---
 
-## 📊 Puertos del Sistema
+## Puertos del Sistema
 
 | Puerto | Servicio | Acceso |
 |--------|----------|--------|
-| **3000** | VROOM | http://localhost:3000 |
 | **5000** | OSRM | http://localhost:5000 |
 | **8000** | Backend | http://localhost:8000 |
 | **4040** | ngrok panel | http://127.0.0.1:4040 |
 
 ---
 
-## 🎮 Comandos del Script
+## Comandos del Script
 
 ```bash
-./start.sh          # Iniciar todos los servicios
-./start.sh status   # Ver estado actual
-./start.sh stop     # Detener todos los servicios
-./start.sh restart  # Reiniciar (útil tras cambios)
+./start.sh                # Iniciar todos los servicios
+./start.sh status         # Ver estado actual
+./start.sh stop           # Detener todos los servicios
+./start.sh restart        # Reiniciar
+./start.sh rebuild-map    # Reprocesar PBF editado y reiniciar OSRM
 ```
 
 ---
 
-## ✅ Verificación Rápida
+## Verificación Rápida
 
 ```bash
 # Backend
 curl http://localhost:8000/health
-# → {"status":"ok","version":"2.0.0"}
+# → {"status":"ok","version":"2.2.0"}
 
 # OSRM
 curl -s "http://localhost:5000/route/v1/driving/-5.105,37.802;-5.110,37.800?overview=false" | grep "Ok"
 # → "code":"Ok"
-
-# VROOM
-curl -I http://localhost:3000/health
-# → HTTP 200
 
 # ngrok
 curl http://127.0.0.1:4040/api/tunnels | grep public_url
 # → "public_url":"https://..."
 ```
 
-## 🐞 Debuggear local (Flutter web + backend)
+---
 
-Si quieres depurar la app sin compilar un APK ni usar un emulador físico, la opción más rápida es ejecutar la app Flutter como web app y conectar al backend local. Resumen de pasos:
+## Depurar local (Flutter web + backend)
 
-1) Cambiar la URL del backend para desarrollo
-
- - Edita `flutter_app/lib/config/api_config.dart` y cambia `baseUrl` por:
-
+1. Edita `flutter_app/lib/config/api_config.dart`:
 ```dart
 static const String baseUrl = 'http://127.0.0.1:8000';
 ```
 
-2) Arrancar el backend y servicios usando el script `start.sh` (recomendado)
-
+2. Arranca los servicios:
 ```bash
-# Desde la raíz del proyecto
-./start.sh start    # inicia Docker (OSRM + VROOM), backend y ngrok
-
-# Comandos útiles del script:
-./start.sh status   # ver estado de servicios
-./start.sh stop     # detener todos los servicios
-./start.sh restart  # reiniciar
+./start.sh start
 ```
 
-Si prefieres arrancar sólo el backend manualmente (por ejemplo para depuración muy rápida), puedes hacerlo con el venv:
-
-```bash
-source venv/bin/activate
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-# o en background
-nohup venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload > /tmp/backend.log 2>&1 &
-```
-
-3) Lanzar la app Flutter como servidor web
-
+3. Lanza Flutter como web:
 ```bash
 cd flutter_app
-flutter pub get
 flutter run -d web-server --web-port=8080
-# abre luego http://localhost:8080 en tu navegador
+# abre http://localhost:8080
 ```
-
 
 ---
 
-## 🚀 Despliegue en Móvil
-
-### Generar APK
+## Despliegue en Móvil
 
 ```bash
 cd flutter_app
@@ -258,32 +226,23 @@ flutter build apk --release
 # APK en: build/app/outputs/flutter-apk/app-release.apk
 ```
 
-### Instalar
-
-1. Copiar APK al móvil
-2. Habilitar "Fuentes desconocidas"
-3. Instalar
-4. Abrir app → debe mostrar 🟢 Online
-
-**La app usa automáticamente el túnel ngrok** configurado en `lib/config/api_config.dart`:
-```dart
-static const String baseUrl = 
-    'https://unpermanently-repairable-devon.ngrok-free.dev';
-```
+La app usa el túnel ngrok configurado en `lib/config/api_config.dart`.
 
 ---
 
-## 📁 Estructura del Proyecto
+## Estructura del Proyecto
 
 ```
 app_repartir/
-├── app/                      # 🐍 Backend Python
+├── app/                      # Backend Python
 │   ├── main.py              # Punto de entrada FastAPI
 │   ├── core/config.py       # Configuración central
 │   ├── routers/             # Endpoints API
-│   └── services/            # Lógica de negocio
+│   ├── services/            # Lógica de negocio
+│   ├── models/              # Modelos Pydantic
+│   └── data/                # Cachés en disco (geocode, snap)
 │
-├── flutter_app/             # 📱 App móvil
+├── flutter_app/             # App móvil
 │   ├── lib/
 │   │   ├── config/          # Tema y API config
 │   │   ├── models/          # Modelos de datos
@@ -292,56 +251,29 @@ app_repartir/
 │   │   └── widgets/         # Componentes UI
 │   └── android/             # Config Android
 │
-├── osrm/                    # 🗺️ Datos OSM Andalucía
-├── vroom-conf/              # ⚙️ Config VROOM
-│
-├── docker-compose.yml       # 🐳 Definición servicios
-├── requirements.txt         # 📦 Dependencias Python
-│
-├── start.sh                 # 🚀 Script de inicio (si está presente)
-└── CHANGELOG.md      # � Changelog y versión inicial
+├── osrm/                    # Datos OSM (mapa de Posadas)
+├── docs/                    # Documentación adicional
+├── docker-compose.yml       # Definición servicios Docker
+├── requirements.txt         # Dependencias Python
+├── start.sh                 # Script de gestión de servicios
+└── CHANGELOG.md             # Historial de versiones
 ```
 
-
-## ⚠️ Mapas OSRM (no incluidos)
+## Mapas OSRM
 
 La carpeta `osrm/` con el mapa no se incluye en el repo por su tamaño.
 
-Si necesitas volver a poner la carpeta `osrm/` en tu entorno local, estos son los pasos recomendados (ejecutar desde la raíz del proyecto, y ajusta nombres según tu fichero PBF):
-
-1. Descarga el PBF de la zona que necesites (por ejemplo, Geofabrik). Ejemplo:
+Tras editar el mapa en JOSM:
 ```bash
-mkdir -p osrm
-cd osrm
-# Ejemplo (sustituye URL por la del área que necesites)
+./start.sh rebuild-map
+```
+
+Desde cero (descargando Andalucía):
+```bash
+mkdir -p osrm && cd osrm
 wget -O andalucia-latest.osm.pbf "https://download.geofabrik.de/europe/spain/andalucia-latest.osm.pbf"
 cd ..
-```
-
-2. Generar los índices OSRM (usando la imagen Docker oficial). Aquí usamos el perfil por defecto (`/opt/car.lua`) y el algoritmo MLD:
-
-```bash
-# Extraer datos
 docker run --rm -t -v "$(pwd)/osrm:/data" osrm/osrm-backend osrm-extract -p /opt/car.lua /data/andalucia-latest.osm.pbf
-
-# Particionar y customizar (MLD)
 docker run --rm -t -v "$(pwd)/osrm:/data" osrm/osrm-backend osrm-partition /data/andalucia-latest.osrm
 docker run --rm -t -v "$(pwd)/osrm:/data" osrm/osrm-backend osrm-customize /data/andalucia-latest.osrm
-
-# Iniciar el servicio OSRM (puerto 5000)
-docker run -d --name osrm -p 5000:5000 -v "$(pwd)/osrm:/data" osrm/osrm-backend osrm-routed --algorithm mld /data/andalucia-latest.osrm
 ```
-
-Alternativa (si prefieres `osrm-contract` en vez de `mld`) — consulta la documentación de OSRM para tu versión y perfil de coste.
-
-3. Verifica que OSRM responde:
-
-```bash
-curl "http://localhost:5000/route/v1/driving/-5.105,37.802;-5.110,37.800?overview=false"
-# deberías ver un JSON con "code":"Ok"
-```
-
-Notas:
-- El repositorio incluye un `.gitignore` que excluye la carpeta `osrm/` para evitar añadir archivos pesados por accidente.
-- Si prefieres no usar Docker, puedes instalar `osrm-backend` localmente y ejecutar los mismos comandos (`osrm-extract`, `osrm-partition`, `osrm-customize`, `osrm-routed`).
-- Los nombres de archivo (`andalucia-latest.osm.pbf` y `andalucia-latest.osrm`) son solo ejemplos; usa los que correspondan a tu área.

@@ -18,17 +18,16 @@ def test_health_incluye_version(client):
 
 # ── /api/services/status ──────────────────────────────────────────────────────
 
-def test_services_status_ambos_caidos(client):
+def test_services_status_osrm_caido(client):
     with patch("requests.get", side_effect=ConnectionError("down")):
         r = client.get("/api/services/status")
     assert r.status_code == 200
     data = r.json()
     assert data["osrm"]["status"] == "down"
-    assert data["vroom"]["status"] == "down"
     assert data["all_ok"] is False
 
 
-def test_services_status_ambos_ok(client):
+def test_services_status_osrm_ok(client):
     mock_resp = Mock(status_code=200)
     with patch("requests.get", return_value=mock_resp):
         r = client.get("/api/services/status")
@@ -36,12 +35,11 @@ def test_services_status_ambos_ok(client):
     assert r.json()["all_ok"] is True
 
 
-def test_services_status_incluye_urls(client):
+def test_services_status_incluye_url_osrm(client):
     with patch("requests.get", side_effect=ConnectionError("down")):
         r = client.get("/api/services/status")
     data = r.json()
     assert "url" in data["osrm"]
-    assert "url" in data["vroom"]
 
 
 # ── /api/route-segment ────────────────────────────────────────────────────────

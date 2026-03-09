@@ -1,5 +1,5 @@
 """
-Tests del servicio geocoding.py: pipeline geocode(), add_override(), geocode_batch().
+Tests del servicio geocoding.py: pipeline geocode(), add_override().
 
 Se mockean las llamadas HTTP a Google y se aísla el estado global entre tests:
   - _cache y _persisted se limpian en cada test
@@ -278,30 +278,3 @@ def test_fuzzy_matching_no_actua_si_calle_ya_esta_en_catalogo(monkeypatch):
     assert "Calle Mayor" in call_params["address"]
 
 
-# ── geocode_batch ─────────────────────────────────────────────────────────────
-
-def test_geocode_batch_lista_vacia():
-    assert geo.geocode_batch([]) == []
-
-
-def test_geocode_batch_preserva_orden():
-    geo.add_override("Calle A", 37.805, -5.099)
-    geo.add_override("Calle B", 37.806, -5.100)
-    result = geo.geocode_batch(["Calle A", "Calle B"])
-    assert result[0] == ("Calle A", (37.805, -5.099))
-    assert result[1] == ("Calle B", (37.806, -5.100))
-
-
-def test_geocode_batch_fallo_devuelve_none_en_esa_posicion():
-    geo.add_override("Calle A", 37.805, -5.099)
-    with patch("app.services.geocoding.requests.get", return_value=_zero_results()):
-        result = geo.geocode_batch(["Calle A", "Calle Inexistente 999"])
-    assert result[0][1] == (37.805, -5.099)
-    assert result[1][1] is None
-
-
-def test_geocode_batch_todos_exitosos():
-    with patch("app.services.geocoding.requests.get", return_value=_google_resp("ROOFTOP")):
-        result = geo.geocode_batch(["Calle Mayor 1", "Calle Gaitán 5"])
-    assert len(result) == 2
-    assert all(coord is not None for _, coord in result)

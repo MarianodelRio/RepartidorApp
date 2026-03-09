@@ -2,6 +2,30 @@
 
 ---
 
+## [2.2.0] — Marzo 2026
+
+### Changed
+- **Motor de optimización: VROOM → LKH3**: el solver TSP pasa de VROOM (servicio Docker externo) a LKH3 (binario local). LKH3 es determinista, más rápido (~350 ms para 48 paradas) y elimina la dependencia Docker de VROOM.
+- **`docker-compose.yml`**: eliminado el servicio VROOM; solo queda OSRM.
+- **`start.sh`**: eliminadas todas las referencias a VROOM; añadido comando `rebuild-map` que reprocesa el PBF editado en JOSM y reinicia OSRM automáticamente (borra snap cache antes del extract).
+- **`config.py`**: eliminadas `VROOM_BASE_URL`, `VROOM_TIMEOUT`, `GOOGLE_DISTANCE_MATRIX_URL`, `GOOGLE_MATRIX_CACHE_TTL_DAYS`; renombrada `NOMINATIM_USER_AGENT` → `OVERPASS_USER_AGENT`.
+
+### Added
+- **Snap cache** (`app/data/snap_cache.json`): persiste en disco los resultados de OSRM `/nearest` por coordenada. Sin TTL; se invalida automáticamente en `rebuild-map`. Reduce las llamadas HTTP a OSRM de 49 a 0 en optimizaciones repetidas (1.5× más rápido en warm cache).
+- **Reagrupación por calle** (`_reorder_no_backtrack`): post-proceso sobre el orden LKH3 que detecta paradas "de paso" (desvío ≤ 20 m) y las adelanta en la ruta, evitando dobles pasadas por la misma calle.
+
+### Removed
+- **OR-Tools fallback**: eliminado. LKH3 es el único solver; si falla, el endpoint devuelve 503.
+- **Google Distance Matrix API**: eliminado el código, caché y tests asociados a `get_google_matrix()`.
+- Scripts de depuración: `comparar_vroom_matrix.py`, `evaluar_ruta.py`, `gen_debug_map3.py`, `investigate_matrix.py`, `test_tomtom.py`.
+- CSVs de prueba intermedios y mapas de debug en `web_map/`.
+
+### Fixed
+- **`optimize.py`**: imports movidos al bloque correcto; variable `ok_coords_vroom` → `ok_coords_snapped`.
+- **Bucle infinito en reagrupación**: `_reorder_no_backtrack` podía ciclar cuando dos paradas tenían distancia OSRM ≈ 0 m. Resuelto con `moved_ids: set`.
+
+---
+
 ## [2.1.0] — Marzo 2026
 
 ### Added

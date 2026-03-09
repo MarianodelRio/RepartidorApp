@@ -1,11 +1,10 @@
 """
 Router de optimización de rutas.
-Endpoint principal: POST /optimize
 
-Descripción:
-    - Recibe direcciones, calcula la orden óptima de visita (TSP/VRP) y devuelve
-        la ruta con geometría, ETAs e instrucciones.
-    - Soporta envío de coordenadas pre-resueltas y datos pre-agrupados.
+POST /optimize
+  Recibe paradas pre-agrupadas y validadas (con coords) desde el flujo de
+  validación, calcula el orden óptimo de visita (TSP via LKH3 + OSRM)
+  y devuelve la ruta completa con geometría y lista de paradas.
 """
 
 import math
@@ -13,11 +12,13 @@ import time
 from collections import OrderedDict
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from app.core.config import (
     START_ADDRESS, MAX_STOPS, DEPOT_LAT, DEPOT_LON,
     BBOX_LAT_MIN, BBOX_LAT_MAX, BBOX_LON_MIN, BBOX_LON_MAX,
 )
+from app.core.logging import get_logger
 from app.models import (
     OptimizeRequest,
     OptimizeResponse,
@@ -26,33 +27,33 @@ from app.models import (
     StopInfo,
     RouteSummary,
 )
-from app.services.geocoding import (
-    geocode, geocode_batch,
-)
-from app.services.routing import (
-    optimize_route,
-    get_route_details,
-    can_osrm_snap,
-    _format_distance,
-)
+from app.services.geocoding import geocode, _parse_address
+from app.services.routing import optimize_route, get_route_details, snap_to_street, _format_distance, get_osrm_matrix
+from app.utils.normalization import normalize_for_dedup as _normalize_for_dedup
+
+
+class RouteEvaluateRequest(BaseModel):
+    """Petición al endpoint /route-evaluate."""
+    coords: list[list[float]]
+
+
+class RouteEvaluateResponse(BaseModel):
+    """Respuesta del endpoint /route-evaluate."""
+    total_distance_m: float
+    total_distance_display: str
+    total_stops: int
 
 router = APIRouter(tags=["optimize"])
+logger = get_logger(__name__)
 
 
-# ═══════════════════════════════════════════
-#  Utilidad: validar coordenadas entrantes
-# ═══════════════════════════════════════════
+# ── Validación de coordenadas ─────────────────────────────────────────────────
 
 def _validate_coord(lat: float, lon: float) -> str | None:
-    """Comprueba que las coordenadas sean geográficamente válidas para la zona.
+    """Valida coordenadas geográficas para la zona de trabajo.
 
-    Devuelve None si la coordenada es correcta, o un mensaje de error si no.
-
-    Orden de comprobaciones:
-      1. Sin NaN ni infinito.
-      2. Rangos globales lat∈[-90,90], lon∈[-180,180].
-      3. En España la longitud siempre es negativa; lon > 0 indica inversión lat/lon.
-      4. Bounding box local: cubre Posadas, comarca y cortijos cercanos (Rivero…).
+    Devuelve None si son correctas, o un mensaje de error descriptivo.
+    Comprueba: finitud, rango global, longitud positiva en España, bbox local.
     """
     if not math.isfinite(lat) or not math.isfinite(lon):
         return f"coordenada no finita: ({lat}, {lon})"
@@ -78,24 +79,7 @@ def _validate_coord(lat: float, lon: float) -> str | None:
     return None
 
 
-# ═══════════════════════════════════════════
-#  Utilidad: agrupar direcciones duplicadas
-# ═══════════════════════════════════════════
-
-def _normalize_for_dedup(addr: str) -> str:
-    """Normalización ligera para detectar duplicados.
-
-    Quita acentos, pasa a minúsculas, elimina espacios extras y
-    separadores comunes para que 'Calle Gaitán 1' == 'calle gaitan  1'.
-    """
-    import unicodedata
-    s = addr.strip().lower()
-    s = unicodedata.normalize("NFD", s)
-    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
-    # Quitar comas, puntos y espacios duplicados
-    s = s.replace(",", " ").replace(".", " ")
-    return " ".join(s.split())
-
+# ── Deduplicación de direcciones ──────────────────────────────────────────────
 
 def _group_duplicate_addresses(
     addresses: list[str],
@@ -104,29 +88,18 @@ def _group_duplicate_addresses(
     """Agrupa filas con la misma dirección normalizada.
 
     Devuelve:
-        unique_addresses: lista de direcciones únicas.
-        unique_primary_names: nombre del cliente principal por grupo.
-        all_client_names: lista de listas con todos los nombres (retrocompat).
-        all_packages: lista de listas de Package por grupo.
-        package_counts: número de paquetes por grupo.
+        unique_addresses, unique_primary_names, all_client_names,
+        all_packages, package_counts
     """
     groups: OrderedDict[str, dict] = OrderedDict()
-
     for addr, pkg in zip(addresses, packages_in):
         key = _normalize_for_dedup(addr)
         if key not in groups:
-            groups[key] = {
-                "address": addr,
-                "packages": [],
-            }
+            groups[key] = {"address": addr, "packages": []}
         groups[key]["packages"].append(pkg)
 
-    unique_addresses = []
-    unique_primary_names = []
-    all_client_names_out = []
-    all_packages_out = []
-    package_counts = []
-
+    unique_addresses, unique_primary_names = [], []
+    all_client_names_out, all_packages_out, package_counts = [], [], []
     for g in groups.values():
         unique_addresses.append(g["address"])
         pkgs: list[Package] = g["packages"]
@@ -139,6 +112,91 @@ def _group_duplicate_addresses(
     return unique_addresses, unique_primary_names, all_client_names_out, all_packages_out, package_counts
 
 
+# ── Resolución de coordenadas desde el request ────────────────────────────────
+
+def _resolve_coords_from_request(
+    req: OptimizeRequest,
+    unique_addresses: list[str],
+) -> tuple[list[tuple[str, tuple[float, float], int]], list[tuple[str, int]]]:
+    """Extrae y valida las coordenadas pre-resueltas del request.
+
+    Devuelve (geocoded_ok, geocoded_fail).
+    """
+    geocoded_ok: list[tuple[str, tuple[float, float], int]] = []
+    geocoded_fail: list[tuple[str, int]] = []
+
+    if req.coords and len(req.coords) == len(unique_addresses):
+        for i, (addr, raw_coord) in enumerate(zip(unique_addresses, req.coords)):
+            if raw_coord and len(raw_coord) == 2:
+                lat, lon = raw_coord[0], raw_coord[1]
+                err = _validate_coord(lat, lon)
+                if err:
+                    logger.warning("Coordenada inválida para '%s': %s", addr, err)
+                    geocoded_fail.append((addr, i))
+                else:
+                    geocoded_ok.append((addr, (lat, lon), i))
+            else:
+                geocoded_fail.append((addr, i))
+        if geocoded_ok:
+            logger.info("%d coords pre-resueltas (validación)", len(geocoded_ok))
+
+    return geocoded_ok, geocoded_fail
+
+
+# ── Construcción de la lista de paradas ───────────────────────────────────────
+
+def _build_stops(
+    wp_order: list[int],
+    all_coords: list[tuple[float, float]],
+    all_addresses: list[str],
+    all_primary_names: list[str],
+    all_names_lists: list[list[str]],
+    all_packages_per_stop: list[list[Package]],
+    all_pkg_counts: list[int],
+    all_aliases_list: list[str],
+    stop_details_map: dict[int, dict],
+) -> list[StopInfo]:
+    """Construye la lista ordenada de StopInfo a partir del orden del solver."""
+    stops: list[StopInfo] = []
+    for seq, orig_idx in enumerate(wp_order):
+        lat, lon = all_coords[orig_idx]
+        addr = all_addresses[orig_idx]
+        cname = all_primary_names[orig_idx] if orig_idx < len(all_primary_names) else ""
+        names_list = all_names_lists[orig_idx] if orig_idx < len(all_names_lists) else []
+        pkgs = all_packages_per_stop[orig_idx] if orig_idx < len(all_packages_per_stop) else []
+        pkg_count = all_pkg_counts[orig_idx] if orig_idx < len(all_pkg_counts) else 1
+
+        if orig_idx == 0:
+            label = "🏠 Origen"
+            stop_type = "origin"
+            dist_m = 0.0
+            pkg_count = 0
+            names_list = []
+            pkgs = []
+        else:
+            label = f"📍 {cname}" if cname else f"📍 {addr[:30]}{'…' if len(addr) > 30 else ''}"
+            stop_type = "stop"
+            dist_m = stop_details_map.get(orig_idx, {}).get("arrival_distance", 0)
+
+        stop_alias = all_aliases_list[orig_idx] if orig_idx < len(all_aliases_list) else ""
+        stops.append(StopInfo(
+            order=seq,
+            address=addr,
+            alias=stop_alias,
+            label=label,
+            client_name=cname,
+            client_names=[n for n in names_list if n],
+            packages=pkgs,
+            type=stop_type,
+            lat=lat,
+            lon=lon,
+            distance_meters=round(dist_m),
+            package_count=pkg_count,
+        ))
+    return stops
+
+
+# ── Endpoint principal ────────────────────────────────────────────────────────
 
 @router.post(
     "/optimize",
@@ -149,11 +207,6 @@ def _group_duplicate_addresses(
         503: {"model": ErrorResponse},
     },
     summary="Optimizar ruta desde lista de direcciones",
-    description=(
-        "Recibe una lista de direcciones, las geocodifica, calcula el orden "
-        "óptimo de visita (TSP via VROOM/OSRM) y devuelve la ruta completa "
-        "con geometría, ETAs e instrucciones de navegación."
-    ),
 )
 def optimize(req: OptimizeRequest):
     t_start = time.perf_counter()
@@ -164,153 +217,80 @@ def optimize(req: OptimizeRequest):
     if len(addresses) > MAX_STOPS:
         raise HTTPException(400, detail=f"Máximo {MAX_STOPS} paradas permitidas")
 
-    # Construir lista de nombres de cliente (puede ser None o parcial)
     client_names_raw = req.client_names or []
-    # Rellenar con vacío si faltan nombres
     client_names = [
         client_names_raw[i].strip() if i < len(client_names_raw) else ""
         for i in range(len(addresses))
     ]
 
-    origin_addr = req.start_address or START_ADDRESS
-
-    # ── 1. Agrupar direcciones duplicadas ─────────────────────
-
-    # Si vienen package_counts, las direcciones ya están agrupadas (de validación)
-    pre_grouped = (
-        req.package_counts is not None
-        and len(req.package_counts) == len(addresses)
-    )
-
-    if pre_grouped:
-        unique_addresses = addresses
-        assert req.package_counts is not None  # garantizado por la condición pre_grouped
-        package_counts = req.package_counts
-        unique_primary_names = client_names
-        aliases_raw = req.aliases or []
-        unique_aliases = [
-            aliases_raw[i] if i < len(aliases_raw) else ""
-            for i in range(len(addresses))
-        ]
-
-        # Packages por parada: usar packages_per_stop si viene, si no derivar
-        if req.packages_per_stop and len(req.packages_per_stop) == len(addresses):
-            all_packages_lists: list[list[Package]] = req.packages_per_stop
-            all_client_names_lists = [[p.client_name for p in pkgs] for pkgs in all_packages_lists]
-        elif req.all_client_names and len(req.all_client_names) == len(addresses):
-            all_client_names_lists = req.all_client_names
-            all_packages_lists = [
-                [Package(client_name=n) for n in names]
-                for names in all_client_names_lists
-            ]
-        else:
-            all_client_names_lists = [[cn] if cn else [] for cn in client_names]
-            all_packages_lists = [
-                [Package(client_name=cn)] if cn else []
-                for cn in client_names
-            ]
-
-        total_packages = sum(package_counts)
-        print(
-            f"[optimize] 📦 Recibidas {len(unique_addresses)} paradas "
-            f"pre-agrupadas ({total_packages} paquetes totales)"
+    # 1. Paradas pre-agrupadas (siempre requerido: viene del flujo de validación)
+    if req.package_counts is None or len(req.package_counts) != len(addresses):
+        raise HTTPException(
+            400,
+            detail="Se requiere package_counts con un valor por dirección (usa el flujo de validación).",
         )
+
+    unique_addresses = addresses
+    package_counts = req.package_counts
+    unique_primary_names = client_names
+    aliases_raw = req.aliases or []
+    unique_aliases = [
+        aliases_raw[i] if i < len(aliases_raw) else ""
+        for i in range(len(addresses))
+    ]
+    if req.packages_per_stop and len(req.packages_per_stop) == len(addresses):
+        all_packages_lists: list[list[Package]] = req.packages_per_stop
+        all_client_names_lists = [[p.client_name for p in pkgs] for pkgs in all_packages_lists]
+    elif req.all_client_names and len(req.all_client_names) == len(addresses):
+        all_client_names_lists = req.all_client_names
+        all_packages_lists = [
+            [Package(client_name=n) for n in names]
+            for names in all_client_names_lists
+        ]
     else:
-        # Construir Package por fila desde client_names (sin nota — llamada legacy)
-        packages_in = [Package(client_name=cn) for cn in client_names]
-        unique_addresses, unique_primary_names, all_client_names_lists, all_packages_lists, package_counts = \
-            _group_duplicate_addresses(addresses, packages_in)
-        unique_aliases = [""] * len(unique_addresses)
+        all_client_names_lists = [[cn] if cn else [] for cn in client_names]
+        all_packages_lists = [[Package(client_name=cn)] if cn else [] for cn in client_names]
 
-        total_packages = sum(package_counts)
+    total_packages = sum(package_counts)
+    logger.info("%d paradas pre-agrupadas (%d paquetes totales)", len(unique_addresses), total_packages)
 
-        if len(unique_addresses) != len(addresses):
-            merged = len(addresses) - len(unique_addresses)
-            print(
-                f"[optimize] 📦 {len(addresses)} filas → {len(unique_addresses)} "
-                f"paradas únicas ({merged} duplicadas fusionadas)"
-            )
-
-    # ── 2. Origen ─────────────────────────────────────────────
-    # Si no se indica dirección personalizada, usar coords exactas del depósito
-    # (más rápido y fiable que geocodificar en cada petición)
+    # 2. Origen — geocodificar si es custom, luego snap a red viaria
+    origin_addr = req.start_address or START_ADDRESS
     if req.start_address:
         origin_coord, _ = geocode(origin_addr)
         if origin_coord is None:
-            raise HTTPException(
-                400,
-                detail=f"No se pudo geocodificar el origen: {origin_addr}",
-            )
+            raise HTTPException(400, detail=f"No se pudo geocodificar el origen: {origin_addr}")
+        origin_hint, _ = _parse_address(origin_addr)
     else:
         origin_coord = (DEPOT_LAT, DEPOT_LON)
+        origin_hint = START_ADDRESS
 
-    # ── 3. Geocodificar paradas (únicas) ──────────────────────
-    geocoded_ok:   list[tuple[str, tuple[float, float], int]] = []
-    geocoded_fail: list[tuple[str, int]] = []
+    origin_snapped = snap_to_street(origin_coord[0], origin_coord[1], origin_hint)
+    if origin_snapped is not None:
+        origin_coord = origin_snapped
 
-    if pre_grouped and req.coords and len(req.coords) == len(unique_addresses):
-        # Coords ya vienen 1:1 con las paradas únicas
-        for i, (addr, raw_coord) in enumerate(zip(unique_addresses, req.coords)):
-            if raw_coord and len(raw_coord) == 2:
-                lat, lon = raw_coord[0], raw_coord[1]
-                err = _validate_coord(lat, lon)
-                if err:
-                    print(f"[optimize] ⚠ Coordenada inválida para '{addr}': {err}")
-                    geocoded_fail.append((addr, i))
-                else:
-                    geocoded_ok.append((addr, (lat, lon), i))
-            else:
-                geocoded_fail.append((addr, i))
-        if geocoded_ok:
-            print(f"[optimize] 🎯 {len(geocoded_ok)} coords pre-resueltas (validación)")
-    elif req.coords and len(req.coords) == len(addresses):
-        # Coords pre-resueltas para filas NO agrupadas — dedup por clave
-        _dedup_map: dict[str, tuple[float, float]] = {}
-        for addr, raw_coord in zip(addresses, req.coords):
-            key = _normalize_for_dedup(addr)
-            if key not in _dedup_map and raw_coord and len(raw_coord) == 2:
-                lat, lon = raw_coord[0], raw_coord[1]
-                err = _validate_coord(lat, lon)
-                if err:
-                    print(f"[optimize] ⚠ Coordenada inválida para '{addr}': {err}")
-                else:
-                    _dedup_map[key] = (lat, lon)
-
-        for i, addr in enumerate(unique_addresses):
-            key = _normalize_for_dedup(addr)
-            snap_coord = _dedup_map.get(key)
-            if snap_coord:
-                geocoded_ok.append((addr, snap_coord, i))
-            else:
-                geocoded_fail.append((addr, i))
-
-        if geocoded_ok:
-            print(f"[optimize] 🎯 Usando {len(geocoded_ok)} coordenadas pre-resueltas (validación)")
-    else:
-        batch = geocode_batch(unique_addresses)
-        geocoded_ok = [(addr, coord, i) for i, (addr, coord) in enumerate(batch) if coord is not None]
-        geocoded_fail = [(addr, i) for i, (addr, coord) in enumerate(batch) if coord is None]
+    # 3. Coordenadas de paradas (pre-resueltas en validación)
+    geocoded_ok, geocoded_fail = _resolve_coords_from_request(req, unique_addresses)
 
     if not geocoded_ok:
-        raise HTTPException(
-            400,
-            detail="No se pudo geocodificar ninguna dirección.",
-        )
+        raise HTTPException(400, detail="No se pudo geocodificar ninguna dirección.")
 
-    # ── 3b. Validar que las coords geocodificadas son ruteables por OSRM ──
-    # Evita que VROOM devuelva 500 al recibir coordenadas fuera del mapa de rutas
-    routable_ok = []
-    for item in geocoded_ok:
-        addr, coord, orig_i = item
+    # 3b. Snap a red viaria (OSRM /nearest) — valida rutabilidad y ajusta coords
+    snap_coord_by_i: dict[int, tuple[float, float]] = {}
+    routable_ok: list[tuple[str, tuple[float, float], int]] = []
+    for addr, coord, orig_i in geocoded_ok:
         lat, lon = coord
-        if can_osrm_snap(lat, lon):
-            routable_ok.append(item)
-        else:
+        street_hint, _ = _parse_address(addr)
+        snapped = snap_to_street(lat, lon, street_hint)
+        if snapped is None:
             geocoded_fail.append((addr, orig_i))
-            print(f"[optimize] ⚠ Coordenada fuera del mapa OSRM: {addr} ({lat:.4f},{lon:.4f}) → excluida")
+            logger.warning("Fuera del mapa OSRM: %s (%.4f, %.4f) → excluida", addr, lat, lon)
+        else:
+            snap_coord_by_i[orig_i] = snapped
+            routable_ok.append((addr, coord, orig_i))
     geocoded_ok = routable_ok
 
-    # ── 3c. Rechazar si alguna parada no tiene coordenadas válidas ──────────
+    # 3c. Rechazar si alguna parada no tiene coords válidas
     if geocoded_fail:
         n = len(geocoded_fail)
         detail_list = ", ".join(f"'{addr}'" for addr, _ in geocoded_fail[:5])
@@ -330,17 +310,16 @@ def optimize(req: OptimizeRequest):
             detail="Ninguna dirección se puede rutear. Verifica que las coordenadas están en la zona de cobertura.",
         )
 
-    # Separar datos de paradas ruteables y fallidas
+    # Preparar listas finales (origen en posición 0)
     ok_addresses = [addr for addr, _, _ in geocoded_ok]
-    ok_coords = [coord for _, coord, _ in geocoded_ok]
+    ok_coords_snapped = [snap_coord_by_i[i] for _, _, i in geocoded_ok]
     ok_primary_names = [unique_primary_names[orig_i] for _, _, orig_i in geocoded_ok]
     ok_all_names = [all_client_names_lists[orig_i] for _, _, orig_i in geocoded_ok]
     ok_packages = [all_packages_lists[orig_i] for _, _, orig_i in geocoded_ok]
     ok_pkg_counts = [package_counts[orig_i] for _, _, orig_i in geocoded_ok]
     ok_aliases = [unique_aliases[orig_i] for _, _, orig_i in geocoded_ok]
 
-    # coords[0] = origen, coords[1..n] = paradas geocodificadas
-    all_coords = [origin_coord] + ok_coords
+    all_coords = [origin_coord] + ok_coords_snapped
     all_addresses = [origin_addr] + ok_addresses
     all_primary_names = [""] + ok_primary_names
     all_names_lists: list[list[str]] = [[]] + ok_all_names
@@ -348,72 +327,34 @@ def optimize(req: OptimizeRequest):
     all_pkg_counts = [0] + ok_pkg_counts
     all_aliases_list = [""] + ok_aliases
 
-    # ── 4. Optimizar orden con VROOM ──────────────────────────
-    vroom_result = optimize_route(all_coords)
-    if vroom_result is None:
+    # 4. Orden óptimo (LKH3)
+    solver_result = optimize_route(all_coords)
+    if solver_result is None:
         raise HTTPException(
             503,
-            detail="VROOM no pudo calcular la ruta. ¿Están corriendo los servicios Docker (OSRM + VROOM)?",
+            detail="LKH3 no pudo calcular la ruta. ¿Está corriendo OSRM (Docker)?",
         )
 
-    wp_order = vroom_result["waypoint_order"]
-    stop_details_map = {
-        sd["original_index"]: sd for sd in vroom_result.get("stop_details", [])
-    }
+    wp_order = solver_result["waypoint_order"]
+    stop_details_map = {sd["original_index"]: sd for sd in solver_result.get("stop_details", [])}
     ordered_coords = [all_coords[i] for i in wp_order]
 
-    # ── 5. Obtener ruta detallada de OSRM ─────────────────────
+    # 5. Geometría GeoJSON (OSRM /route)
     route_details = get_route_details(ordered_coords)
     if route_details is None:
-        raise HTTPException(
-            503,
-            detail="OSRM no pudo calcular la ruta detallada",
-        )
+        raise HTTPException(503, detail="OSRM no pudo calcular la ruta detallada")
 
-    # ── 6. Construir respuesta ────────────────────────────────
-    stops = []
-    for seq, orig_idx in enumerate(wp_order):
-        lat, lon = all_coords[orig_idx]
-        addr = all_addresses[orig_idx]
-        cname = all_primary_names[orig_idx] if orig_idx < len(all_primary_names) else ""
-        names_list = all_names_lists[orig_idx] if orig_idx < len(all_names_lists) else []
-        pkgs = all_packages_per_stop[orig_idx] if orig_idx < len(all_packages_per_stop) else []
-        pkg_count = all_pkg_counts[orig_idx] if orig_idx < len(all_pkg_counts) else 1
+    # 6. Construir respuesta
+    stops = _build_stops(
+        wp_order, all_coords, all_addresses, all_primary_names,
+        all_names_lists, all_packages_per_stop, all_pkg_counts,
+        all_aliases_list, stop_details_map,
+    )
 
-        if orig_idx == 0:
-            label = "🏠 Origen"
-            stop_type = "origin"
-            dist_m = 0.0
-            pkg_count = 0
-            names_list = []
-            pkgs = []
-        else:
-            if cname:
-                label = f"📍 {cname}"
-            else:
-                short_addr = addr[:30] + "…" if len(addr) > 30 else addr
-                label = f"📍 {short_addr}"
-            stop_type = "stop"
-            sd = stop_details_map.get(orig_idx, {})
-            dist_m = sd.get("arrival_distance", 0)
-
-        stop_alias = all_aliases_list[orig_idx] if orig_idx < len(all_aliases_list) else ""
-        stops.append(StopInfo(
-            order=seq,
-            address=addr,
-            alias=stop_alias,
-            label=label,
-            client_name=cname,
-            client_names=[n for n in names_list if n],
-            packages=pkgs,
-            type=stop_type,
-            lat=lat,
-            lon=lon,
-            distance_meters=round(dist_m),
-            package_count=pkg_count,
-        ))
-
-    total_dist = route_details["total_distance"]
+    # Usamos la distancia de la matriz (suma de tramos individuales) en lugar
+    # de la distancia de /route con todos los waypoints, que puede estar inflada
+    # por las restricciones de dirección de llegada/salida en calles de sentido único.
+    total_dist = round(solver_result["total_distance"])
     computing_ms = round((time.perf_counter() - t_start) * 1000, 1)
 
     return OptimizeResponse(
@@ -430,3 +371,35 @@ def optimize(req: OptimizeRequest):
     )
 
 
+# ── Evaluación de ruta pre-ordenada ──────────────────────────────────────────
+
+@router.post(
+    "/route-evaluate",
+    response_model=RouteEvaluateResponse,
+    responses={400: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+    summary="Evaluar distancia de una ruta ya ordenada (OSRM)",
+)
+def route_evaluate(req: RouteEvaluateRequest):
+    """Recibe coords ya ordenadas (depósito en posición 0) y calcula la
+    distancia total sumando pares consecutivos de la matriz OSRM."""
+    if len(req.coords) < 2:
+        raise HTTPException(400, detail="Se necesitan al menos 2 coordenadas (depósito + 1 parada).")
+
+    coords: list[tuple[float, float]] = []
+    for i, raw in enumerate(req.coords):
+        if len(raw) != 2:
+            raise HTTPException(400, detail=f"Coordenada {i} inválida: {raw}")
+        coords.append((raw[0], raw[1]))
+
+    matrix = get_osrm_matrix(coords)
+    if matrix is None:
+        raise HTTPException(503, detail="OSRM no pudo calcular las distancias.")
+
+    _, dist_matrix = matrix
+    total_dist = float(sum(dist_matrix[i][i + 1] for i in range(len(coords) - 1)))
+
+    return RouteEvaluateResponse(
+        total_distance_m=total_dist,
+        total_distance_display=_format_distance(total_dist),
+        total_stops=len(coords) - 1,
+    )

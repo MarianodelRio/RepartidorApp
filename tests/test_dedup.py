@@ -2,11 +2,12 @@
 Tests unitarios — normalización y deduplicación de direcciones.
 
 Cubre:
-  - _normalize_for_dedup  (app/routers/validation.py y app/routers/optimize.py)
+  - _normalize_for_dedup  (implementación única en app/utils/normalization.py,
+                           re-exportada desde validation.py y optimize.py)
   - _group_duplicate_addresses  (app/routers/optimize.py)
 
-Nota: _normalize_for_dedup está duplicada en ambos routers con código idéntico.
-      Se testea contra las dos implementaciones para detectar divergencias futuras.
+Los tests se ejecutan contra ambos puntos de importación para detectar
+regresiones si alguno de los re-exports dejara de apuntar a la misma función.
 """
 
 import pytest
@@ -17,7 +18,7 @@ from app.models import Package
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  Fixture: ejecuta cada test contra las dos copias de la función
+#  Fixture: ejecuta cada test contra los dos puntos de importación
 # ══════════════════════════════════════════════════════════════════════
 
 @pytest.fixture(params=[_norm_val, _norm_opt], ids=["validation", "optimize"])

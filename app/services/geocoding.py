@@ -5,7 +5,7 @@ Caché en disco: clave canónica = normalize(calle)#normalize(número).
 
 Pipeline (en orden de prioridad):
   1. Caché en disco: override permanente, google/places con TTL de GOOGLE_CACHE_TTL_DAYS días.
-  2. Fuzzy matching contra catálogo combinado (OSM + Catastro + aprendidas).
+  2. Fuzzy matching contra catálogo combinado (OSM + aprendidas).
      Sin llamada HTTP. Corrige el nombre de la calle antes de consultar APIs.
   3. Google Geocoding API — ROOFTOP → EXACT_ADDRESS, RANGE_INTERPOLATED → GOOD.
   4. Google Places API — si hay alias de negocio y Google Geocoding no fue exacto.
@@ -29,7 +29,7 @@ from pathlib import Path
 import requests
 
 from app.core.config import (
-    NOMINATIM_USER_AGENT,
+    OVERPASS_USER_AGENT,
     POSADAS_CENTER,
     GOOGLE_API_KEY,
     GOOGLE_GEOCODING_URL,
@@ -37,6 +37,9 @@ from app.core.config import (
     GOOGLE_CACHE_TTL_DAYS,
     GEOCODE_TIMEOUT,
 )
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 GeoResult = tuple[float, float]  # (lat, lon)
 
@@ -204,7 +207,7 @@ def _fetch_streets_from_overpass() -> list[str]:
     r = requests.post(
         _OVERPASS_URL,
         data={"data": query},
-        headers={"User-Agent": NOMINATIM_USER_AGENT},
+        headers={"User-Agent": OVERPASS_USER_AGENT},
         timeout=40,
     )
     r.raise_for_status()
@@ -239,7 +242,7 @@ def _save_streets_to_disk(streets: list[str]) -> None:
             "utf-8",
         )
     except Exception as e:
-        print(f"[geocode] Error guardando catálogo OSM: {e}")
+        logger.error("Error guardando catálogo OSM: %s", e)
 
 
 def _get_street_catalog() -> list[str]:
@@ -262,18 +265,18 @@ def _get_street_catalog() -> list[str]:
             _osm_streets_norm_set = set(_osm_streets_norm)
             return _osm_streets
     except Exception as e:
-        print(f"[geocode] Error cargando catálogo combinado: {e}")
+        logger.error("Error cargando catálogo combinado: %s", e)
 
     # Fallback: solo Overpass
     osm_streets: list[str] | None = _load_streets_from_disk()
     if osm_streets is None:
-        print("[geocode] Descargando catálogo de calles desde Overpass...")
+        logger.info("Descargando catálogo de calles desde Overpass...")
         try:
             osm_streets = _fetch_streets_from_overpass()
             _save_streets_to_disk(osm_streets)
-            print(f"[geocode] Catálogo Overpass listo: {len(osm_streets)} calles")
+            logger.info("Catálogo Overpass listo: %d calles", len(osm_streets))
         except Exception as e:
-            print(f"[geocode] Error descargando Overpass: {e}")
+            logger.error("Error descargando Overpass: %s", e)
             _osm_streets = []
             _osm_streets_norm = []
             _osm_streets_norm_set = set()
@@ -377,10 +380,7 @@ def _find_closest_street(query_street: str) -> str | None:
             best_street = osm_name
 
     if best_score >= FUZZY_THRESHOLD and best_street and best_street != query_street:
-        print(
-            f"[geocode] Fuzzy match: '{query_street}' → '{best_street}' "
-            f"(score={best_score:.2f})"
-        )
+        logger.info("Fuzzy match: '%s' → '%s' (score=%.2f)", query_street, best_street, best_score)
         return best_street
 
     return None
@@ -416,7 +416,7 @@ def _google_geocode(street: str, number: str) -> tuple[GeoResult, str] | None:
         if data.get("status") != "OK" or not data.get("results"):
             status = data.get("status", "?")
             if status not in ("ZERO_RESULTS",):
-                print(f"[geocode] Google status={status} para '{address}'")
+                logger.warning("Google status=%s para '%s'", status, address)
             return None
 
         result = data["results"][0]
@@ -427,14 +427,14 @@ def _google_geocode(street: str, number: str) -> tuple[GeoResult, str] | None:
         lng = float(location["lng"])
 
         if not _in_posadas_bbox(lat, lng):
-            print(f"[geocode] Google fuera de bbox ({lat:.4f},{lng:.4f}) para '{address}'")
+            logger.warning("Google fuera de bbox (%.4f, %.4f) para '%s'", lat, lng, address)
             return None
 
-        print(f"[geocode] Google: '{address}' → {location_type} ({lat:.5f}, {lng:.5f})")
+        logger.info("Google: '%s' → %s (%.5f, %.5f)", address, location_type, lat, lng)
         return (lat, lng), location_type
 
     except Exception as e:
-        print(f"[geocode] Google error: {e}")
+        logger.error("Google error: %s", e)
         return None
 
 
@@ -473,14 +473,14 @@ def _google_places(alias: str) -> GeoResult | None:
         lng = float(location["lng"])
 
         if not _in_posadas_bbox(lat, lng):
-            print(f"[geocode] Google Places fuera de bbox para '{alias}'")
+            logger.warning("Google Places fuera de bbox para '%s'", alias)
             return None
 
-        print(f"[geocode] Google Places: '{alias}' → ({lat:.5f}, {lng:.5f})")
+        logger.info("Google Places: '%s' → (%.5f, %.5f)", alias, lat, lng)
         return (lat, lng)
 
     except Exception as e:
-        print(f"[geocode] Google Places error: {e}")
+        logger.error("Google Places error: %s", e)
         return None
 
 
@@ -504,7 +504,7 @@ def _save_cache() -> None:
             json.dumps(_persisted, ensure_ascii=False, indent=2), "utf-8"
         )
     except Exception as e:
-        print(f"[geocode] Error guardando caché: {e}")
+        logger.error("Error guardando caché: %s", e)
 
 
 def _load_cache() -> None:
@@ -523,7 +523,7 @@ def _load_cache() -> None:
                 lon = float(entry["lon"])
                 src = entry.get("source", "")
                 if src == "cartociudad":
-                    continue  # Eliminado del pipeline: se re-geocodificará con Google
+                    continue  # Fuente antigua eliminada: entrada ignorada
                 if src in ("google", "places") and _google_cache_expired(entry):
                     continue  # Expirada: se re-geocodificará
                 _persisted[key] = entry
@@ -618,7 +618,7 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
     if alias:
         alias_coord = _cache.get("@" + _normalize(alias))
         if alias_coord is not None:
-            print(f"[geocode] Caché por alias '{alias}' → EXACT_PLACE")
+            logger.info("Caché por alias '%s' → EXACT_PLACE", alias)
             return alias_coord, "EXACT_PLACE"
 
     # 2. Fuzzy matching (sin API — solo corrige el nombre de calle)
@@ -665,19 +665,6 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
     # 5. FAILED
     _cache[key] = None
     return None, "FAILED"
-
-
-def geocode_batch(addresses: list[str]) -> list[tuple[str, GeoResult | None]]:
-    """
-    Geocodifica una lista de direcciones (sin alias).
-    Devuelve lista de (dirección_original, (lat, lon) | None).
-    Usado por el path legacy de /optimize cuando no hay coords pre-resueltas.
-    """
-    results = []
-    for addr in addresses:
-        coord, _ = geocode(addr)
-        results.append((addr, coord))
-    return results
 
 
 def add_override(address: str, lat: float, lon: float) -> None:

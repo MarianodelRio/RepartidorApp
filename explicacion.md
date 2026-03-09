@@ -1,7 +1,7 @@
 # Documentación Técnica — App Repartir
 
 Sistema de optimización de rutas de reparto para Posadas, Córdoba (España).
-Compuesto por un backend Python/FastAPI, una app móvil Flutter, y servicios Docker (OSRM + VROOM).
+Compuesto por un backend Python/FastAPI, una app móvil Flutter, y servicios Docker (OSRM) y el solver LKH3.
 
 > **Primera vez en el proyecto?** Sigue primero la [Guía de instalación](GUIA_INSTALACION.md) para montar el entorno desde cero. Este documento asume que ya tienes todo instalado.
 
@@ -13,7 +13,7 @@ Compuesto por un backend Python/FastAPI, una app móvil Flutter, y servicios Doc
 
 ```bash
 cd /ruta/a/app_repartir
-./start.sh start   # inicia Docker (OSRM + VROOM), backend FastAPI y ngrok
+./start.sh start   # inicia OSRM (Docker), backend FastAPI y ngrok
 ./start.sh status  # comprueba que todo está verde
 ```
 
@@ -113,7 +113,7 @@ static const String baseUrl = 'https://xxxx-xxx.ngrok-free.app';
     ├─ POST /api/validation/start
     │       └─ Backend agrupa duplicados y geocodifica cada dirección única:
     │            1. Caché en disco (override permanente > google/places con TTL 30 días)
-    │            2. Fuzzy matching en catálogo OSM+Catastro (sin llamada HTTP)
+    │            2. Fuzzy matching en catálogo OSM + aprendidas (sin llamada HTTP)
     │            3. Google Geocoding API (ROOFTOP → EXACT_ADDRESS, RANGE_INTERPOLATED → GOOD)
     │            4. Google Places API (si hay alias y Google no fue exacto) → EXACT_PLACE
     │            5. FAILED
@@ -124,8 +124,8 @@ static const String baseUrl = 'https://xxxx-xxx.ngrok-free.app';
     │
     ├─ POST /api/optimize
     │       └─ Backend recibe coords ya resueltas (no re-geocodifica)
-    │          → VROOM resuelve el TSP (orden óptimo de visita)
-    │          → Post-proceso: paradas de la misma calle se ordenan por número de portal
+    │          → LKH3 resuelve el TSP (orden óptimo de visita)
+    │          → Post-proceso: _reorder_no_backtrack agrupa paradas "de paso" (desvío ≤ 20 m)
     │          → OSRM calcula geometría de la ruta completa
     │          Devuelve: lista ordenada de paradas + polilínea GeoJSON
     │
@@ -146,7 +146,7 @@ static const String baseUrl = 'https://xxxx-xxx.ngrok-free.app';
 Punto de entrada de la aplicación FastAPI.
 
 **Qué hace:**
-- Inicializa la app con título "Posadas Route Planner" v2.3.0
+- Inicializa la app con título "Posadas Route Planner" v2.2.0
 - Configura CORS abierto (`allow_origins=["*"]`) para cualquier cliente
 - Monta directorio `/static` para archivos estáticos
 - Registra los dos routers: `optimize.router` en `/api` y `validation.router` en `/api`
@@ -154,18 +154,16 @@ Punto de entrada de la aplicación FastAPI.
 
 **GET /health**
 - Sin parámetros
-- Respuesta: `{"status": "ok", "version": "2.3.0"}`
+- Respuesta: `{"status": "ok", "version": "2.2.0"}`
 - Uso: comprobación de vida del servidor desde la app
 
 **GET /api/services/status**
 - Sin parámetros
 - Prueba OSRM: GET `localhost:5000/route/v1/driving/-5.105,37.802;-5.110,37.800?overview=false` (timeout 5s)
-- Prueba VROOM: GET `localhost:3000/health` (timeout 5s)
 - Respuesta:
   ```json
   {
     "osrm": {"url": "http://localhost:5000", "status": "ok|down"},
-    "vroom": {"url": "http://localhost:3000", "status": "ok|down"},
     "all_ok": true|false
   }
   ```
@@ -186,19 +184,18 @@ Fuente única de verdad para todas las constantes del sistema. Carga variables d
 | Constante | Valor | Propósito |
 |-----------|-------|-----------|
 | `OSRM_BASE_URL` | `http://localhost:5000` | Contenedor Docker OSRM |
-| `VROOM_BASE_URL` | `http://localhost:3000` | Contenedor Docker VROOM |
 | `GOOGLE_API_KEY` | (desde `.env`) | Clave para Google Geocoding y Places APIs |
 | `GOOGLE_GEOCODING_URL` | `https://maps.googleapis.com/maps/api/geocode/json` | Endpoint de geocodificación |
 | `GOOGLE_PLACES_URL` | `https://maps.googleapis.com/maps/api/place/findplacefromtext/json` | Endpoint de Places |
 | `GOOGLE_CACHE_TTL_DAYS` | `30` | Días antes de que expiren entradas google/places de la caché |
-| `NOMINATIM_USER_AGENT` | `posadas-route-planner/2.0 (local)` | User-Agent para Overpass API (catálogo de calles) |
+| `OVERPASS_USER_AGENT` | `posadas-route-planner/1.4.0 (local)` | User-Agent para Overpass API (catálogo de calles OSM) |
 | `DEPOT_LAT / DEPOT_LON` | `37.8055, -5.0998` | Coordenadas exactas del depósito (Av. de Andalucía) |
 | `START_ADDRESS` | `"Avenida de Andalucía, Posadas"` | Dirección de origen por defecto |
 | `POSADAS_CENTER` | `(DEPOT_LAT, DEPOT_LON)` | Centro del mapa y bias para Places API |
 | `MAX_STOPS` | `200` | Máximo de paradas por petición |
 | `GEOCODE_TIMEOUT` | `30` s | Timeout por llamada a APIs externas |
 | `OSRM_TIMEOUT` | `60` s | Timeout para OSRM |
-| `VROOM_TIMEOUT` | `120` s | Timeout para VROOM |
+
 
 ---
 
@@ -251,7 +248,7 @@ Contratos de datos Pydantic entre frontend y backend.
 
 ### 2.4 `routers/optimize.py`
 
-Lógica principal de optimización. Orquesta: deduplicación → geocodificación → VROOM → OSRM.
+Lógica principal de optimización. Orquesta: deduplicación → geocodificación → snap → LKH3 → OSRM.
 
 **Funciones auxiliares:**
 
@@ -283,9 +280,9 @@ Agrupa filas del CSV que tienen la misma dirección normalizada. Usa `OrderedDic
 
 5. **Ensamblado de coordenadas**: `all_coords = [origen] + [paradas_ok]`
 
-6. **Optimización TSP con VROOM**: llama a `optimize_route(all_coords)`
-   - Devuelve `waypoint_order`: lista de índices en orden óptimo de visita
-   - Lanza 503 si VROOM no está disponible
+6. **Optimización TSP con LKH3**: llama a `optimize_route(all_coords)`
+   - Devuelve `waypoint_order`: lista de índices en orden óptimo; aplica `_reorder_no_backtrack` (desvío ≤ 20 m)
+   - Lanza 503 si LKH3 falla o OSRM no está disponible
 
 7. **Ruta detallada con OSRM**: reordena coords según `waypoint_order` y llama a `get_route_details()`
    - Devuelve geometría GeoJSON de la ruta completa
@@ -300,7 +297,7 @@ Agrupa filas del CSV que tienen la misma dirección normalizada. Usa `OrderedDic
 
 ### 2.5 `routers/validation.py`
 
-Valida y geocodifica direcciones antes de la optimización. No llama a VROOM ni OSRM.
+Valida y geocodifica direcciones antes de la optimización. No llama a OSRM.
 
 **Modelos propios:**
 
@@ -351,7 +348,7 @@ Convierte direcciones en coordenadas GPS usando Google Geocoding API y Google Pl
 
 **Catálogo de calles y fuzzy matching:**
 
-`_get_street_catalog()` → devuelve el catálogo combinado (OSM + Catastro + aprendidas) cargado desde `catalog.py`. Si falla, cae back a Overpass API con TTL de 7 días en disco (`osm_streets.json`).
+`_get_street_catalog()` → devuelve el catálogo combinado (OSM + aprendidas) cargado desde `catalog.py`. Si falla, cae back a Overpass API con TTL de 7 días en disco (`osm_streets.json`).
 
 `_find_closest_street(query_street)` → compara `query_street` contra el catálogo con `_token_set_ratio()`. Solo devuelve coincidencia si supera `FUZZY_THRESHOLD = 0.80` y la calle no está ya en el catálogo. Estrategia conservadora: todos los tokens de la query deben tener cobertura en la entrada del catálogo (typos de 1-2 chars admitidos, diferencias semánticas rechazadas).
 
@@ -367,7 +364,7 @@ Convierte direcciones en coordenadas GPS usando Google Geocoding API y Google Pl
 
 **Persistencia:**
 
-`_load_cache()` — al importar el módulo, carga `geocode_cache.json` en `_cache` y `_persisted`. Descarta entradas con `source: cartociudad` y entradas google/places expiradas.
+`_load_cache()` — al importar el módulo, carga `geocode_cache.json` en `_cache` y `_persisted`. Descarta entradas con source cartociudad (fuente antigua) y entradas google/places expiradas.
 
 `_persist_entry(key, lat, lon, street, number, source, confidence, ...)` — guarda en `_persisted` y llama a `_save_cache()` para escribir el JSON en disco.
 
@@ -383,55 +380,76 @@ Convierte direcciones en coordenadas GPS usando Google Geocoding API y Google Pl
 
 ### 2.7 `services/routing.py`
 
-Interfaz con VROOM (TSP) y OSRM (geometría de ruta).
+Motor de optimización de rutas: LKH3 (TSP), OSRM (geometría y matriz de distancias), snap cache.
 
-**`optimize_route(coords: list[tuple]) → dict | None`**
+**Caché de snap** (`_snap_cache`, `snap_cache.json`)
 
-Resuelve el TSP (Problema del Viajante) usando VROOM.
+Persiste en disco los resultados de OSRM `/nearest` (coordenada de entrada → coordenada snapeada a la red viaria). Sin TTL: los datos son estables mientras no cambie el mapa OSM. Se invalida borrando el fichero (lo hace `start.sh rebuild-map` automáticamente antes del extract).
+- Clave: `"{lat:.5f},{lon:.5f}>{hint_normalizado}"`
+- Valor: `[snap_lat, snap_lon]`
+- Los fallos (None) no se cachean: se reintentan en cada llamada.
 
-Petición a VROOM (`POST localhost:3000`):
-```json
-{
-  "vehicles": [{"id": 0, "profile": "car", "start": [lon, lat]}],
-  "jobs": [{"id": 1, "location": [lon, lat]}, ...],
-  "options": {"g": true}
-}
+**`snap_to_street(lat, lon, street_hint) → tuple | None`**
+
+Ajusta una coordenada al nodo de red viaria más cercano cuyo nombre de calle coincida con `street_hint`. Primero comprueba el caché en memoria; si hay miss, llama a OSRM `/nearest` con hasta 15 candidatos, selecciona el que mejor encaje con el hint (fuzzy sobre palabras significativas), guarda el resultado en caché y lo persiste en disco.
+
+Devuelve `None` si el nodo más cercano supera 150 m (coordenada fuera del mapa OSRM).
+
+**`get_osrm_matrix(coords) → tuple | None`**
+
+Llama a OSRM `/table` con todas las coords snapeadas. Devuelve `(dur_matrix, dist_matrix)` como listas de listas de enteros. Una sola petición HTTP para N coords.
+
+**`_solve_with_lkh(dist_matrix, dur_matrix) → list[int] | None`**
+
+Resuelve el TSP abierto (sin retorno al depósito) vía subprocess al binario LKH3. Usa el truco ATSP + nodo fantasma:
+- `cost(i → fantasma) = 0` → cualquier nodo puede ser el último
+- `cost(fantasma → depósito) = 0` → retorno gratuito
+
+Escribe los ficheros `.atsp` y `.par` en un directorio temporal, ejecuta LKH3, parsea el fichero `.tour`. Devuelve `None` si el binario no está disponible o falla.
+
+**`_reorder_no_backtrack(ordered_ids, dist_matrix, threshold_m=20) → tuple`**
+
+Post-proceso sobre el orden LKH3. Para cada parada `j` en posición `i`, busca el primer tramo anterior `(a → b)` donde el desvío para visitar `j` sea ≤ 20 m:
+
+```
+desvío = dist[a][j] + dist[j][b] − dist[a][b]
 ```
 
-El vehículo no tiene punto de llegada ("Open Trip Problem"): el repartidor no vuelve al origen.
+Si lo encuentra, mueve `j` a esa posición. Usa `moved_ids: set` para evitar ciclos (una parada se mueve como máximo una vez). Complejidad O(N²), < 1 ms para N=50.
 
-Respuesta procesada:
+**`optimize_route(coords) → dict | None`**
+
+Flujo completo:
+1. `get_osrm_matrix(coords)` → `(dur_matrix, dist_matrix)`
+2. `_solve_with_lkh(dist_matrix, dur_matrix)` → `ordered_ids` (usa dist como coste)
+3. `_reorder_no_backtrack(ordered_ids, dist_matrix)` → post-proceso
+4. `_build_stop_details(ordered_ids, dur_matrix, dist_matrix)` → distancias acumuladas
+
+Devuelve:
 ```python
 {
-  "waypoint_order": [0, 3, 1, 2],        # índices en orden óptimo
+  "waypoint_order": [0, 3, 1, 2],
   "stop_details": [
     {"original_index": 3, "arrival_distance": 500.0, "arrival_duration": 45.0},
     ...
   ],
-  "total_distance": 2500.0,              # metros
-  "total_duration": 180.0,               # segundos
-  "computing_time_ms": 50
+  "total_distance": 2500.0,
+  "total_duration": 180.0,
+  "computing_time_ms": 350
 }
 ```
 
-**`get_route_details(coords_ordered: list[tuple]) → dict | None`**
+**`get_route_details(coords_ordered) → dict | None`**
 
-Obtiene la geometría GeoJSON de la ruta completa desde OSRM, dado un orden de visita ya optimizado.
+Dado el orden optimizado, llama a OSRM `/route` para obtener la geometría GeoJSON de la ruta completa.
 
-Petición: `GET localhost:5000/route/v1/driving/{lon,lat};.../overview=full&geometries=geojson`
-
-Respuesta:
 ```python
 {
-  "geometry": {...},   # GeoJSON LineString
+  "geometry": {...},        # GeoJSON LineString
   "total_distance": 2500,   # metros
   "total_duration": 180     # segundos
 }
 ```
-
-**`can_osrm_snap(lat, lon) → bool`**
-
-Comprueba que OSRM puede mapear la coordenada a un nodo de la red viaria a menos de 500 m. Se llama antes de enviar coords a VROOM para evitar errores 500 por coordenadas fuera del mapa. Las coordenadas que no superan este test pasan a `geocode_failed=True`.
 
 ---
 
@@ -944,7 +962,7 @@ CSV (bytes)
               │    └─ optimize.py
               │         ├─ coords pre-resueltas (no re-geocodifica)
               │         ├─ routing.optimize_route()
-              │         │      └─ VROOM (HTTP) → waypoint_order
+              │         │      └─ LKH3 (subprocess) → waypoint_order
               │         ├─ _sort_street_runs() (post-proceso portales)
               │         └─ routing.get_route_details()
               │                └─ OSRM (HTTP) → geometry GeoJSON
@@ -983,6 +1001,6 @@ CSV (bytes)
 | **Google Places API** | `maps.googleapis.com/maps/api/place/findplacefromtext/json` | HTTPS | Geocodificación de negocios por alias | 30s/llamada |
 | **Overpass API** | `overpass-api.de/api/interpreter` | HTTPS | Catálogo de calles OSM para fuzzy matching (TTL 7 días) | 40s |
 | **OSRM** | `localhost:5000` | HTTP (Docker) | Rutas por carretera, geometría GeoJSON, snap de coordenadas | 60s |
-| **VROOM** | `localhost:3000` | HTTP (Docker) | Resolución del TSP (orden óptimo de visita) | 120s |
+| **LKH3** | binario local | subprocess | Resolución del TSP (orden óptimo de visita) | 60s |
 | **Google Maps** | externo | URL scheme | Navegación giro a giro (abre la app del sistema) | — |
 | **OpenStreetMap tiles** | `tile.openstreetmap.org` | HTTPS | Teselas del mapa base en la app Flutter | — |
