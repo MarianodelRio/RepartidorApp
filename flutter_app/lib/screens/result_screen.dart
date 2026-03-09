@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../config/app_theme.dart';
 import '../models/route_models.dart';
@@ -169,11 +168,42 @@ class _ResultScreenState extends State<ResultScreen> {
   }
 
   Future<void> _exportCsv(BuildContext context) async {
-    final stops = widget.response.stops.where((s) => !s.isOrigin).toList();
+    // ── Confirmación ──
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.download, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text('Descargar ruta CSV',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+          ],
+        ),
+        content: const Text(
+          'Se guardará el fichero ruta_optimizada.csv en el almacenamiento del dispositivo.',
+          style: TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.download, size: 18),
+            label: const Text('Descargar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
 
+    // ── Generar CSV ──
+    final stops = widget.response.stops.where((s) => !s.isOrigin).toList();
     final buffer = StringBuffer();
     buffer.writeln('orden,direccion,alias,num_paquetes,paquetes');
-
     for (final stop in stops) {
       buffer.writeln(
         '${stop.order},'
@@ -184,19 +214,31 @@ class _ResultScreenState extends State<ResultScreen> {
       );
     }
 
+    // ── Guardar en almacenamiento externo de la app (accesible via gestor de archivos) ──
     try {
-      final dir = await getTemporaryDirectory();
+      final dir = await getExternalStorageDirectory() ??
+          await getApplicationDocumentsDirectory();
       final file = File('${dir.path}/ruta_optimizada.csv');
       await file.writeAsString(buffer.toString(), encoding: utf8);
-      await Share.shareXFiles(
-        [XFile(file.path, mimeType: 'text/csv')],
-        subject: 'Ruta optimizada',
-      );
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('✅ CSV guardado en el dispositivo'),
+            backgroundColor: AppColors.success,
+            action: SnackBarAction(
+              label: 'OK',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ),
+        );
+      }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al exportar: $e'),
+            content: Text('Error al guardar: $e'),
             backgroundColor: AppColors.error,
           ),
         );
