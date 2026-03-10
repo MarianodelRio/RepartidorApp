@@ -478,12 +478,6 @@ class _ImportScreenState extends State<ImportScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          if (result != null)
-            IconButton(
-              icon: const Icon(Icons.fit_screen),
-              tooltip: 'Centrar mapa',
-              onPressed: _fitMapToStops,
-            ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: _isCheckingServer
@@ -531,12 +525,34 @@ class _ImportScreenState extends State<ImportScreen> {
               if (result != null) ...[
                 const SizedBox(height: 20),
 
-                // Mapa con altura fija
+                // Mapa con altura fija y botón de centrar en esquina
                 ClipRRect(
                   borderRadius: BorderRadius.circular(16),
                   child: SizedBox(
                     height: MediaQuery.of(context).size.height * 0.38,
-                    child: _buildReviewMap(),
+                    child: Stack(
+                      children: [
+                        _buildReviewMap(),
+                        Positioned(
+                          top: 10,
+                          right: 10,
+                          child: Material(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            elevation: 3,
+                            child: InkWell(
+                              onTap: _fitMapToStops,
+                              borderRadius: BorderRadius.circular(8),
+                              child: const Padding(
+                                padding: EdgeInsets.all(8),
+                                child: Icon(Icons.fit_screen,
+                                    size: 20, color: AppColors.primary),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
 
