@@ -49,6 +49,7 @@ class _ImportScreenState extends State<ImportScreen> {
   // ── Fase de revisión ──
   ValidationResult? _reviewResult;
   final _mapController = MapController();
+  final _mapSectionKey = GlobalKey();
   OriginMode _originMode = OriginMode.defaultAddress;
   String _manualAddress = '';
   bool _isCalculating = false;
@@ -130,10 +131,16 @@ class _ImportScreenState extends State<ImportScreen> {
         return;
       }
 
+      // Si hay reparto en curso, descartarlo al iniciar uno nuevo.
+      if (_hasActiveSession) {
+        await PersistenceService.clearSession();
+      }
+
       setState(() {
         _csvData = csvData;
         _fileName = file.name;
         _error = null;
+        _hasActiveSession = false;
       });
 
       await _validate();
@@ -189,8 +196,17 @@ class _ImportScreenState extends State<ImportScreen> {
       Navigator.of(context).pop();
 
       setState(() => _reviewResult = result);
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => _fitMapToStops());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _fitMapToStops();
+        final ctx = _mapSectionKey.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(
+            ctx,
+            duration: const Duration(milliseconds: 450),
+            curve: Curves.easeOut,
+          );
+        }
+      });
     } on ApiException catch (e) {
       if (mounted) Navigator.of(context).pop();
       _showError(e.message);
@@ -518,6 +534,7 @@ class _ImportScreenState extends State<ImportScreen> {
 
                 // Mapa con altura fija y botón de centrar en esquina
                 ClipRRect(
+                  key: _mapSectionKey,
                   borderRadius: BorderRadius.circular(16),
                   child: SizedBox(
                     height: MediaQuery.of(context).size.height * 0.38,
@@ -966,7 +983,7 @@ class _ImportScreenState extends State<ImportScreen> {
     return GestureDetector(
       onTap: _pickFile,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
         decoration: BoxDecoration(
           color: AppColors.cardLight,
           borderRadius: BorderRadius.circular(16),
@@ -986,16 +1003,16 @@ class _ImportScreenState extends State<ImportScreen> {
           children: [
             Icon(
               _csvData != null ? Icons.check_circle : Icons.upload_file,
-              size: 48,
+              size: 36,
               color: _csvData != null ? AppColors.success : AppColors.primary,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Text(
               _csvData != null
                   ? 'Archivo cargado'
                   : 'Toca para importar CSV',
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: _csvData != null
                     ? AppColors.success
