@@ -1,24 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'dart:typed_data';
 
 import '../config/api_config.dart';
 import '../config/app_theme.dart';
 import '../models/csv_data.dart';
+import '../models/route_models.dart';
+import '../models/validation_models.dart';
 import '../services/api_service.dart';
 import '../services/csv_service.dart';
+import '../services/location_service.dart';
 import '../services/persistence_service.dart';
+import '../widgets/origin_selector.dart';
 import 'delivery_screen.dart';
-import 'validation_review_screen.dart';
+import 'map_picker_screen.dart';
+import 'result_screen.dart';
 
 // ═══════════════════════════════════════════
-//  Pantalla de importación
+//  Pantalla de importación + revisión de validación
 //
-//  Flujo:
+//  Flujo en una sola pantalla:
 //    1. Subir CSV (cliente, direccion, ciudad[, nota, alias])
-//    2. Validación automática → navega a ValidationReviewScreen
-//    3. En ValidationReviewScreen: pin manual + calcular ruta
+//    2. Validación automática → transforma el body en mapa + panel
+//    3. Pin manual de fallidas + calcular ruta
 // ═══════════════════════════════════════════
 
 class ImportScreen extends StatefulWidget {
@@ -38,6 +45,16 @@ class _ImportScreenState extends State<ImportScreen> {
   String? _error;
   bool _serverOnline = false;
   bool _hasActiveSession = false;
+
+  // ── Fase de revisión ──
+  ValidationResult? _reviewResult;
+  final _mapController = MapController();
+  OriginMode _originMode = OriginMode.defaultAddress;
+  String _manualAddress = '';
+  bool _isCalculating = false;
+  String? _reviewError;
+
+  static const _defaultCenter = LatLng(37.805503, -5.099805);
 
   @override
   void initState() {
@@ -119,7 +136,6 @@ class _ImportScreenState extends State<ImportScreen> {
         _error = null;
       });
 
-      // Auto-trigger validación inmediatamente tras cargar el CSV
       await _validate();
     } on FormatException catch (e) {
       _showError(e.message);
@@ -133,6 +149,10 @@ class _ImportScreenState extends State<ImportScreen> {
       _csvData = null;
       _fileName = '';
       _error = null;
+      _reviewResult = null;
+      _reviewError = null;
+      _originMode = OriginMode.defaultAddress;
+      _manualAddress = '';
     });
   }
 
@@ -166,16 +186,11 @@ class _ImportScreenState extends State<ImportScreen> {
     try {
       final result = await ApiService.validationStart(csvData: _csvData!);
       if (!mounted) return;
-      Navigator.of(context).pop(); // cerrar diálogo
+      Navigator.of(context).pop();
 
-      // Navegar a la pantalla de revisión
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => ValidationReviewScreen(validationResult: result),
-        ),
-      );
-      // Al volver, refrescar sesión activa por si se completó un reparto
-      await _checkActiveSession();
+      setState(() => _reviewResult = result);
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _fitMapToStops());
     } on ApiException catch (e) {
       if (mounted) Navigator.of(context).pop();
       _showError(e.message);
@@ -188,11 +203,272 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   // ═══════════════════════════════════════════
+  //  Revisión: mapa + pines
+  // ═══════════════════════════════════════════
+
+  void _fitMapToStops() {
+    final geocoded = _reviewResult?.geocoded ?? [];
+    if (geocoded.isEmpty) return;
+    final points = geocoded.map((s) => LatLng(s.lat, s.lon)).toList();
+    if (points.length == 1) {
+      _mapController.move(points.first, 15);
+      return;
+    }
+    _mapController.fitCamera(
+      CameraFit.coordinates(
+        coordinates: points,
+        padding: const EdgeInsets.all(60),
+      ),
+    );
+  }
+
+  Future<void> _pinStop(FailedStop stop) async {
+    final result = await Navigator.of(context).push<LatLng>(
+      MaterialPageRoute(
+        builder: (_) => MapPickerScreen(address: stop.address),
+      ),
+    );
+    if (result != null) _applyPin(stop, result.latitude, result.longitude);
+  }
+
+  void _applyPin(FailedStop stop, double lat, double lon) {
+    ApiService.postOverride(address: stop.address, lat: lat, lon: lon);
+
+    final newGeocoded = GeocodedStop(
+      address: stop.address,
+      alias: stop.alias,
+      clientName:
+          stop.clientNames.firstWhere((n) => n.isNotEmpty, orElse: () => ''),
+      allClientNames: stop.clientNames,
+      packages: stop.packages,
+      packageCount: stop.packageCount,
+      lat: lat,
+      lon: lon,
+      confidence: GeoConfidence.override,
+    );
+
+    setState(() {
+      _reviewResult = ValidationResult(
+        geocoded: [..._reviewResult!.geocoded, newGeocoded],
+        failed: _reviewResult!.failed
+            .where((f) => f.address != stop.address)
+            .toList(),
+        totalPackages: _reviewResult!.totalPackages,
+        uniqueAddresses: _reviewResult!.uniqueAddresses,
+      );
+    });
+
+    _mapController.move(LatLng(lat, lon), 16);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pin guardado correctamente'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    }
+  }
+
+  Future<void> _repinGeocodedStop(GeocodedStop stop) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.edit_location_alt, color: AppColors.primary, size: 22),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text('Cambiar ubicación',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            ),
+          ],
+        ),
+        content: Text(
+          stop.alias.isNotEmpty
+              ? '${stop.address}  —  ${stop.alias}'
+              : stop.address,
+          style: const TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.edit_location_alt, size: 18),
+            label: const Text('Continuar'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final result = await Navigator.of(context).push<LatLng>(
+      MaterialPageRoute(builder: (_) => MapPickerScreen(address: stop.address)),
+    );
+    if (result != null) {
+      _applyRepinGeocoded(stop, result.latitude, result.longitude);
+    }
+  }
+
+  void _applyRepinGeocoded(GeocodedStop stop, double lat, double lon) {
+    ApiService.postOverride(address: stop.address, lat: lat, lon: lon);
+
+    final updated = GeocodedStop(
+      address: stop.address,
+      alias: stop.alias,
+      clientName: stop.clientName,
+      allClientNames: stop.allClientNames,
+      packages: stop.packages,
+      packageCount: stop.packageCount,
+      lat: lat,
+      lon: lon,
+      confidence: GeoConfidence.override,
+    );
+
+    setState(() {
+      _reviewResult = ValidationResult(
+        geocoded: _reviewResult!.geocoded
+            .map((s) => s.address == stop.address ? updated : s)
+            .toList(),
+        failed: _reviewResult!.failed,
+        totalPackages: _reviewResult!.totalPackages,
+        uniqueAddresses: _reviewResult!.uniqueAddresses,
+      );
+    });
+
+    _mapController.move(LatLng(lat, lon), 16);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ubicación actualizada manualmente'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    }
+  }
+
+  // ═══════════════════════════════════════════
+  //  Calcular ruta
+  // ═══════════════════════════════════════════
+
+  Future<void> _calculateRoute() async {
+    setState(() {
+      _isCalculating = true;
+      _reviewError = null;
+    });
+
+    String? startAddress;
+    if (_originMode == OriginMode.manual && _manualAddress.isNotEmpty) {
+      startAddress = _manualAddress;
+    } else if (_originMode == OriginMode.gps) {
+      try {
+        final pos = await LocationService.getCurrentPosition();
+        startAddress = '${pos.latitude}, ${pos.longitude}';
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _isCalculating = false;
+            _reviewError = 'Error GPS: $e';
+          });
+        }
+        return;
+      }
+    }
+
+    WakelockPlus.enable();
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _RouteProgressDialog(
+          totalAddresses: _reviewResult!.geocoded.length),
+    );
+
+    try {
+      final geocoded = _reviewResult!.geocoded;
+      if (geocoded.isEmpty) {
+        throw Exception('No hay paradas válidas para calcular la ruta');
+      }
+
+      final optimizeAddresses = <String>[];
+      final optimizeClientNames = <String>[];
+      final preResolvedCoords = <List<double>?>[];
+      final packageCounts = <int>[];
+      final packagesPerStop = <List<Package>>[];
+      final aliases = <String>[];
+
+      for (final st in geocoded) {
+        optimizeAddresses.add(st.address);
+        optimizeClientNames.add(st.clientName);
+        preResolvedCoords.add([st.lat, st.lon]);
+        packageCounts.add(st.packageCount);
+        packagesPerStop.add(st.packages);
+        aliases.add(st.alias);
+      }
+
+      final result = await ApiService.optimize(
+        addresses: optimizeAddresses,
+        clientNames: optimizeClientNames,
+        startAddress: startAddress,
+        coords: preResolvedCoords,
+        packageCounts: packageCounts,
+        packagesPerStop: packagesPerStop,
+        aliases: aliases,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      PersistenceService.clearValidationState();
+
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => ResultScreen(response: result)),
+      );
+    } on ApiException catch (e) {
+      if (mounted) Navigator.of(context).pop();
+      if (mounted) setState(() => _reviewError = e.message);
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop();
+      if (mounted) setState(() => _reviewError = e.toString());
+    } finally {
+      WakelockPlus.disable();
+      if (mounted) setState(() => _isCalculating = false);
+    }
+  }
+
+  Color _markerColor(GeoConfidence confidence) {
+    switch (confidence) {
+      case GeoConfidence.exactAddress:
+        return AppColors.success;
+      case GeoConfidence.good:
+        return AppColors.successLight;
+      case GeoConfidence.exactPlace:
+        return const Color(0xFF1565C0);
+      case GeoConfidence.override:
+        return const Color(0xFF6A1B9A);
+      case GeoConfidence.failed:
+        return AppColors.error;
+    }
+  }
+
+  // ═══════════════════════════════════════════
   //  BUILD
   // ═══════════════════════════════════════════
 
   @override
   Widget build(BuildContext context) {
+    final result = _reviewResult;
+    final hasFailed = result != null && result.failed.isNotEmpty;
+    final canCalculate =
+        result != null && !_isCalculating && result.geocoded.isNotEmpty && !hasFailed;
+
     return Scaffold(
       backgroundColor: AppColors.scaffoldLight,
       appBar: AppBar(
@@ -202,6 +478,12 @@ class _ImportScreenState extends State<ImportScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          if (result != null)
+            IconButton(
+              icon: const Icon(Icons.fit_screen),
+              tooltip: 'Centrar mapa',
+              onPressed: _fitMapToStops,
+            ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: _isCheckingServer
@@ -244,6 +526,83 @@ class _ImportScreenState extends State<ImportScreen> {
               ],
               if (_error != null) _buildErrorBanner(),
               _buildUploadSection(),
+
+              // ── Resultados de validación (aparecen bajo la zona de carga) ──
+              if (result != null) ...[
+                const SizedBox(height: 20),
+
+                // Mapa con altura fija
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.38,
+                    child: _buildReviewMap(),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // Error de cálculo
+                if (_reviewError != null) ...[
+                  _buildReviewErrorBanner(),
+                  const SizedBox(height: 12),
+                ],
+
+                // Chips de resumen
+                _buildReviewSummary(),
+                const SizedBox(height: 8),
+                _buildLegend(),
+
+                // Paradas fallidas
+                if (hasFailed) ...[
+                  const SizedBox(height: 12),
+                  _buildFailedList(result.failed),
+                ],
+
+                const SizedBox(height: 16),
+
+                // Selector de origen
+                OriginSelector(
+                  mode: _originMode,
+                  manualAddress: _manualAddress,
+                  onModeChanged: (m) => setState(() => _originMode = m),
+                  onAddressChanged: (a) => setState(() => _manualAddress = a),
+                ),
+
+                const SizedBox(height: 16),
+
+                // Botón calcular ruta
+                SizedBox(
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    onPressed: canCalculate ? _calculateRoute : null,
+                    icon: _isCalculating
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.route, size: 22),
+                    label: Text(
+                      _isCalculating ? 'Calculando...' : 'Calcular ruta óptima',
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor:
+                          AppColors.textSecondary.withAlpha(180),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      elevation: 2,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+              ],
             ],
           ),
         ),
@@ -252,7 +611,208 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   // ═══════════════════════════════════════════
-  //  Widgets de la UI
+  //  Widgets fase de revisión
+  // ═══════════════════════════════════════════
+
+  Widget _buildReviewMap() {
+    final markers = _reviewResult!.geocoded.map((stop) {
+      final color = _markerColor(stop.confidence);
+      return Marker(
+        point: LatLng(stop.lat, stop.lon),
+        width: 36,
+        height: 44,
+        alignment: Alignment.topCenter,
+        child: GestureDetector(
+          onTap: () => _repinGeocodedStop(stop),
+          child: Tooltip(
+            message: '${stop.address}'
+                '${stop.alias.isNotEmpty ? '\n📍 ${stop.alias}' : ''}'
+                '${stop.clientName.isNotEmpty ? '\n${stop.clientName}' : ''}'
+                '\n✏ Toca para cambiar ubicación',
+            child: Icon(Icons.location_pin, color: color, size: 36),
+          ),
+        ),
+      );
+    }).toList();
+
+    return FlutterMap(
+      mapController: _mapController,
+      options: const MapOptions(
+        initialCenter: _defaultCenter,
+        initialZoom: 13,
+      ),
+      children: [
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.posadas.repartir_app',
+        ),
+        if (markers.isNotEmpty) MarkerLayer(markers: markers),
+      ],
+    );
+  }
+
+  Widget _buildReviewErrorBanner() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.errorSurface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.error.withAlpha(100)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.warning_amber_rounded, color: AppColors.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(_reviewError!,
+                style: TextStyle(
+                    color: AppColors.error,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500)),
+          ),
+          GestureDetector(
+            onTap: () => setState(() => _reviewError = null),
+            child: Icon(Icons.close, size: 18, color: AppColors.error),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReviewSummary() {
+    return Row(
+      children: [
+        _SummaryChip(
+          count: _reviewResult!.geocoded.length,
+          label: 'geocodificadas',
+          color: AppColors.success,
+        ),
+        const SizedBox(width: 8),
+        _SummaryChip(
+          count: _reviewResult!.failed.length,
+          label: 'sin resolver',
+          color: _reviewResult!.failed.isEmpty
+              ? AppColors.textTertiary
+              : AppColors.error,
+        ),
+        const SizedBox(width: 8),
+        _SummaryChip(
+          count: _reviewResult!.totalPackages,
+          label: 'paquetes',
+          color: AppColors.primary,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLegend() {
+    return const Wrap(
+      spacing: 12,
+      runSpacing: 4,
+      children: [
+        _LegendItem(color: AppColors.success, label: 'Exacto'),
+        _LegendItem(color: AppColors.successLight, label: 'Bueno'),
+        _LegendItem(color: Color(0xFF1565C0), label: 'Lugar'),
+        _LegendItem(color: Color(0xFF6A1B9A), label: 'Manual'),
+      ],
+    );
+  }
+
+  Widget _buildFailedList(List<FailedStop> failed) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.errorSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.error.withAlpha(100)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+            child: Row(
+              children: [
+                Icon(Icons.location_off, size: 16, color: AppColors.error),
+                const SizedBox(width: 6),
+                Text(
+                  '${failed.length} dirección${failed.length > 1 ? 'es' : ''} sin geocodificar',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.error),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          ...failed.map((stop) => _buildFailedTile(stop)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFailedTile(FailedStop stop) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                RichText(
+                  text: TextSpan(
+                    style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary),
+                    children: [
+                      TextSpan(text: stop.address),
+                      if (stop.alias.isNotEmpty)
+                        TextSpan(
+                          text: '  —  ${stop.alias}',
+                          style: const TextStyle(
+                              fontStyle: FontStyle.italic,
+                              fontWeight: FontWeight.w400,
+                              color: AppColors.primary),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${stop.packageCount} paquete${stop.packageCount > 1 ? 's' : ''}',
+                  style: const TextStyle(
+                      fontSize: 11, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            height: 32,
+            child: ElevatedButton.icon(
+              onPressed: () => _pinStop(stop),
+              icon: const Icon(Icons.add_location_alt, size: 14),
+              label: const Text('Situar', style: TextStyle(fontSize: 12)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.success,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+                elevation: 0,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════
+  //  Widgets fase de carga (upload)
   // ═══════════════════════════════════════════
 
   Widget _buildHeader() {
@@ -297,7 +857,6 @@ class _ImportScreenState extends State<ImportScreen> {
       ),
       child: Stack(
         children: [
-          // ── Área principal tappable ──
           Material(
             color: Colors.transparent,
             child: InkWell(
@@ -342,7 +901,6 @@ class _ImportScreenState extends State<ImportScreen> {
               ),
             ),
           ),
-          // ── Botón X para descartar ──
           Positioned(
             top: 6,
             right: 6,
@@ -355,8 +913,7 @@ class _ImportScreenState extends State<ImportScreen> {
                   color: Colors.black.withAlpha(50),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.close,
-                    color: Colors.white, size: 14),
+                child: const Icon(Icons.close, color: Colors.white, size: 14),
               ),
             ),
           ),
@@ -555,6 +1112,179 @@ class _ValidationProgressDialogState
           ),
         ),
       ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════
+//  Diálogo de progreso de CÁLCULO DE RUTA
+// ═══════════════════════════════════════════
+
+class _RouteProgressDialog extends StatefulWidget {
+  final int totalAddresses;
+
+  const _RouteProgressDialog({required this.totalAddresses});
+
+  @override
+  State<_RouteProgressDialog> createState() => _RouteProgressDialogState();
+}
+
+class _RouteProgressDialogState extends State<_RouteProgressDialog> {
+  int _messageIndex = 0;
+  int _elapsedSeconds = 0;
+
+  static const _steps = [
+    (Icons.upload_file, 'Enviando datos…', AppColors.primary),
+    (Icons.route, 'Calculando distancias…', AppColors.success),
+    (Icons.auto_fix_high, 'Optimizando ruta…', AppColors.warning),
+    (Icons.hourglass_top, 'Casi listo…', AppColors.primary),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    Future.doWhile(() async {
+      await Future.delayed(const Duration(seconds: 8));
+      if (!mounted) return false;
+      setState(() => _messageIndex = (_messageIndex + 1) % _steps.length);
+      return mounted;
+    });
+    Future.doWhile(() async {
+      await Future.delayed(const Duration(seconds: 1));
+      if (!mounted) return false;
+      setState(() => _elapsedSeconds++);
+      return mounted;
+    });
+  }
+
+  String _formatTime(int seconds) {
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    if (m > 0) return '${m}m ${s.toString().padLeft(2, '0')}s';
+    return '${s}s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final step = _steps[_messageIndex];
+    return PopScope(
+      canPop: false,
+      child: Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: step.$3.withAlpha(25),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(step.$1, size: 32, color: step.$3),
+              ),
+              const SizedBox(height: 20),
+              Text(step.$2,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
+              const SizedBox(height: 6),
+              Text('${widget.totalAddresses} direcciones',
+                  style:
+                      TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+              const SizedBox(height: 24),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  minHeight: 6,
+                  backgroundColor: AppColors.border,
+                  valueColor: AlwaysStoppedAnimation(step.$3),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('Tiempo: ${_formatTime(_elapsedSeconds)}',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary)),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.screen_lock_portrait,
+                      size: 12, color: AppColors.textTertiary),
+                  const SizedBox(width: 4),
+                  Text('No cierres la app',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textTertiary,
+                          fontStyle: FontStyle.italic)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════
+//  Widgets auxiliares de revisión
+// ═══════════════════════════════════════════
+
+class _SummaryChip extends StatelessWidget {
+  final int count;
+  final String label;
+  final Color color;
+
+  const _SummaryChip(
+      {required this.count, required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withAlpha(20),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withAlpha(80)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('$count',
+              style: TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.w800, color: color)),
+          const SizedBox(width: 4),
+          Text(label, style: TextStyle(fontSize: 11, color: color)),
+        ],
+      ),
+    );
+  }
+}
+
+class _LegendItem extends StatelessWidget {
+  final Color color;
+  final String label;
+
+  const _LegendItem({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.location_pin, color: color, size: 14),
+        const SizedBox(width: 3),
+        Text(label,
+            style: const TextStyle(
+                fontSize: 11, color: AppColors.textSecondary)),
+      ],
     );
   }
 }
