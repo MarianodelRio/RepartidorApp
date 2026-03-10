@@ -13,6 +13,7 @@ import '../models/route_models.dart';
 import '../services/api_service.dart';
 import '../services/persistence_service.dart';
 import '../widgets/route_map.dart';
+import '../widgets/stop_packages_section.dart';
 
 /// Pantalla de ejecución de reparto.
 ///
@@ -570,7 +571,8 @@ class _DeliveryScreenState extends State<DeliveryScreen>
                                 ],
                               ),
                             ),
-                            subtitle: _buildReorderSubtitle(entry.stop),
+                            subtitle: StopPackagesSection(
+                                packages: entry.stop.packages, fontSize: 11),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -932,49 +934,6 @@ class _DeliveryScreenState extends State<DeliveryScreen>
     return indices;
   }
 
-  /// Subtítulo del tile de reorden: muestra cliente y nota de cada paquete.
-  /// Para 1 paquete: "Cliente  📝 nota" en una línea.
-  /// Para N paquetes: una línea por paquete numerada "1. Cliente  📝 nota".
-  Widget _buildReorderSubtitle(DeliveryStop stop) {
-    // Construir una línea por paquete con cliente + nota
-    final lines = <String>[];
-    final multiPkg = stop.packages.length > 1;
-
-    for (int k = 0; k < stop.packages.length; k++) {
-      final p = stop.packages[k];
-      final parts = <String>[
-        if (p.clientName.isNotEmpty) p.clientName,
-        if (p.nota.isNotEmpty) '📝 ${p.nota}',
-      ];
-      if (parts.isEmpty) continue;
-      final prefix = multiPkg ? '${k + 1}. ' : '';
-      lines.add('$prefix${parts.join('  ')}');
-    }
-
-    // Fallback: usar clientNames si packages está vacío
-    if (lines.isEmpty) {
-      final names = stop.clientNames.where((n) => n.isNotEmpty).join(', ');
-      if (names.isNotEmpty) lines.add(names);
-    }
-
-    if (lines.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: lines
-          .map((line) => Text(
-                line,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textSecondary,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ))
-          .toList(),
-    );
-  }
-
   Widget _buildFinishedBanner() {
     return Container(
       width: double.infinity,
@@ -1203,69 +1162,7 @@ class _NextStopCard extends StatelessWidget {
                             ],
                           ),
                         ),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                stop.clientNames
-                                    .where((n) => n.isNotEmpty)
-                                    .join(', '),
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: AppColors.textSecondary,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (stop.hasMultiplePackages)
-                              Container(
-                                margin: const EdgeInsets.only(left: 6),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 7, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: AppColors.warning.withAlpha(25),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                      color: AppColors.warning, width: 1),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.inventory_2,
-                                        size: 13, color: AppColors.warning),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      '×${stop.packageCount}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.warning,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        ),
-                        if (!stop.hasMultiplePackages &&
-                            stop.packages.isNotEmpty &&
-                            stop.packages.first.nota.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Text(
-                              stop.packages.first.nota,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: AppColors.textTertiary,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        if (stop.hasMultiplePackages &&
-                            stop.packages.isNotEmpty)
-                          _PackagesExpandable(packages: stop.packages),
+                        StopPackagesSection(packages: stop.packages),
                       ],
                     ),
                   ),
@@ -1412,10 +1309,7 @@ class _CompletedTile extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: AppColors.textPrimary),
             children: [
-              TextSpan(
-                text: '${stop.order}. ${stop.address}'
-                    '${stop.hasMultiplePackages ? '  📦×${stop.packageCount}' : ''}',
-              ),
+              TextSpan(text: '${stop.order}. ${stop.address}'),
               if (stop.alias.isNotEmpty)
                 TextSpan(
                   text: '  —  ${stop.alias}',
@@ -1437,41 +1331,14 @@ class _CompletedTile extends StatelessWidget {
                   color: statusColor,
                   fontWeight: FontWeight.w600),
             ),
-            // Para parada de un solo paquete: mostrar el cliente aquí.
-            // Para múltiples paquetes: se muestra en la lista de abajo.
-            if (!stop.hasMultiplePackages &&
-                stop.clientNames.any((n) => n.isNotEmpty))
-              Text(
-                stop.clientNames.where((n) => n.isNotEmpty).join(', '),
-                style: const TextStyle(
-                    fontSize: 11, color: AppColors.textSecondary),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+            StopPackagesSection(packages: stop.packages, fontSize: 11),
             if (stop.note != null && stop.note!.isNotEmpty)
               Text(
                 '📝 ${stop.note}',
-                style:
-                    const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                style: const TextStyle(
+                    fontSize: 11, color: Color(0xFF64748B)),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-              ),
-            if (stop.hasMultiplePackages && stop.packages.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: stop.packages
-                      .map((p) => Text(
-                            '· ${[p.clientName, p.nota].where((s) => s.isNotEmpty).join('  ')}',
-                            style: const TextStyle(
-                                fontSize: 10,
-                                color: AppColors.textTertiary),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ))
-                      .toList(),
-                ),
               ),
           ],
         ),
@@ -1483,85 +1350,6 @@ class _CompletedTile extends StatelessWidget {
                     fontSize: 11, color: Color(0xFF94A3B8)),
               )
             : null,
-      ),
-    );
-  }
-}
-
-/// Lista de paquetes expandible/colapsable para la tarjeta de siguiente parada.
-class _PackagesExpandable extends StatefulWidget {
-  final List<Package> packages;
-
-  const _PackagesExpandable({required this.packages});
-
-  @override
-  State<_PackagesExpandable> createState() => _PackagesExpandableState();
-}
-
-class _PackagesExpandableState extends State<_PackagesExpandable> {
-  late bool _expanded;
-
-  @override
-  void initState() {
-    super.initState();
-    _expanded = widget.packages.length <= 4;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () => setState(() => _expanded = !_expanded),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.inventory_2,
-                    size: 13, color: AppColors.textTertiary),
-                const SizedBox(width: 4),
-                Text(
-                  '${widget.packages.length} paquetes',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textTertiary,
-                  ),
-                ),
-                const SizedBox(width: 2),
-                Icon(
-                  _expanded
-                      ? Icons.keyboard_arrow_up
-                      : Icons.keyboard_arrow_down,
-                  size: 14,
-                  color: AppColors.textTertiary,
-                ),
-              ],
-            ),
-          ),
-          if (_expanded)
-            Padding(
-              padding: const EdgeInsets.only(top: 2, left: 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: widget.packages
-                    .map((p) => Padding(
-                          padding: const EdgeInsets.only(top: 1),
-                          child: Text(
-                            '· ${[p.clientName, p.nota].where((s) => s.isNotEmpty).join('  ')}',
-                            style: const TextStyle(
-                                fontSize: 11,
-                                color: AppColors.textSecondary),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ))
-                    .toList(),
-              ),
-            ),
-        ],
       ),
     );
   }
@@ -1699,39 +1487,9 @@ class _StopCallout extends StatelessWidget {
                               ),
                             ],
 
-                            // Clientes
-                            if (stop.clientNames.isNotEmpty) ...[
-                              const SizedBox(height: 3),
-                              Text(
-                                stop.clientNames.join(' · '),
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.textSecondary,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-
-                            // Paquetes
-                            if (stop.packageCount > 1) ...[
-                              const SizedBox(height: 2),
-                              Row(
-                                children: [
-                                  const Icon(Icons.inventory_2_outlined,
-                                      size: 11,
-                                      color: AppColors.textTertiary),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    '${stop.packageCount} paquetes',
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: AppColors.textTertiary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                            // Clientes y paquetes
+                            StopPackagesSection(
+                                packages: stop.packages, fontSize: 11),
                           ],
                         ),
                       ),

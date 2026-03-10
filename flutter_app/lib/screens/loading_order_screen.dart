@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
 import '../models/route_models.dart';
+import '../widgets/stop_packages_section.dart';
 
 /// Pantalla de ayuda para ordenar paquetes en la furgoneta.
 /// Lógica LIFO: muestra la lista en orden inverso (de N a 1).
@@ -336,22 +337,7 @@ class _PackageTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 2),
-                  // Clientes de la parada
-                  Builder(builder: (context) {
-                    final names = stop.clientNames
-                        .where((n) => n.isNotEmpty)
-                        .join(', ');
-                    if (names.isEmpty) return const SizedBox.shrink();
-                    return Text(
-                      names,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    );
-                  }),
+                  StopPackagesSection(packages: stop.packages),
                 ],
               ),
             ),

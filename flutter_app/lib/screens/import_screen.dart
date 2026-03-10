@@ -444,18 +444,9 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   Color _markerColor(GeoConfidence confidence) {
-    switch (confidence) {
-      case GeoConfidence.exactAddress:
-        return AppColors.success;
-      case GeoConfidence.good:
-        return AppColors.successLight;
-      case GeoConfidence.exactPlace:
-        return const Color(0xFF1565C0);
-      case GeoConfidence.override:
-        return const Color(0xFF6A1B9A);
-      case GeoConfidence.failed:
-        return AppColors.error;
-    }
+    return confidence == GeoConfidence.override
+        ? const Color(0xFF7B1FA2) // morado = ubicación manual
+        : AppColors.success;     // verde  = geocodificación automática
   }
 
   // ═══════════════════════════════════════════
@@ -564,10 +555,12 @@ class _ImportScreenState extends State<ImportScreen> {
                   const SizedBox(height: 12),
                 ],
 
-                // Chips de resumen
-                _buildReviewSummary(),
-                const SizedBox(height: 8),
+                // Leyenda justo bajo el mapa
                 _buildLegend(),
+                const SizedBox(height: 10),
+
+                // Resumen centrado
+                _buildReviewSummary(),
 
                 // Paradas fallidas
                 if (hasFailed) ...[
@@ -641,10 +634,9 @@ class _ImportScreenState extends State<ImportScreen> {
         child: GestureDetector(
           onTap: () => _repinGeocodedStop(stop),
           child: Tooltip(
-            message: '${stop.address}'
-                '${stop.alias.isNotEmpty ? '\n📍 ${stop.alias}' : ''}'
-                '${stop.clientName.isNotEmpty ? '\n${stop.clientName}' : ''}'
-                '\n✏ Toca para cambiar ubicación',
+            message: stop.alias.isNotEmpty
+                ? '${stop.address}  —  ${stop.alias}'
+                : stop.address,
             child: Icon(Icons.location_pin, color: color, size: 36),
           ),
         ),
@@ -696,40 +688,43 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   Widget _buildReviewSummary() {
-    return Row(
-      children: [
-        _SummaryChip(
-          count: _reviewResult!.geocoded.length,
-          label: 'geocodificadas',
-          color: AppColors.success,
-        ),
-        const SizedBox(width: 8),
-        _SummaryChip(
-          count: _reviewResult!.failed.length,
-          label: 'sin resolver',
-          color: _reviewResult!.failed.isEmpty
-              ? AppColors.textTertiary
-              : AppColors.error,
-        ),
-        const SizedBox(width: 8),
-        _SummaryChip(
-          count: _reviewResult!.totalPackages,
-          label: 'paquetes',
-          color: AppColors.primary,
-        ),
-      ],
+    final geocoded = _reviewResult!.geocoded.length;
+    final packages = _reviewResult!.totalPackages;
+    final failed = _reviewResult!.failed.length;
+    return Center(
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 10,
+        runSpacing: 8,
+        children: [
+          _SummaryChip(
+            count: geocoded,
+            label: 'direcciones',
+            color: AppColors.success,
+          ),
+          _SummaryChip(
+            count: packages,
+            label: 'paquetes',
+            color: AppColors.primary,
+          ),
+          if (failed > 0)
+            _SummaryChip(
+              count: failed,
+              label: 'sin resolver',
+              color: AppColors.error,
+            ),
+        ],
+      ),
     );
   }
 
   Widget _buildLegend() {
     return const Wrap(
-      spacing: 12,
+      spacing: 16,
       runSpacing: 4,
       children: [
-        _LegendItem(color: AppColors.success, label: 'Exacto'),
-        _LegendItem(color: AppColors.successLight, label: 'Bueno'),
-        _LegendItem(color: Color(0xFF1565C0), label: 'Lugar'),
-        _LegendItem(color: Color(0xFF6A1B9A), label: 'Manual'),
+        _LegendItem(color: AppColors.success, label: 'Automático'),
+        _LegendItem(color: Color(0xFF7B1FA2), label: 'Manual'),
       ],
     );
   }

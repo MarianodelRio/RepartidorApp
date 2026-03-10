@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../models/route_models.dart';
+import 'stop_packages_section.dart';
 
 /// Lista de paradas ordenadas con distancia y nombre del cliente.
 class StopsList extends StatelessWidget {
@@ -49,7 +50,6 @@ class _StopTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isOrigin = stop.isOrigin;
-    final clientSummary = stop.clientNames.where((n) => n.isNotEmpty).join(', ');
 
     return GestureDetector(
       onTap: onTap,
@@ -135,15 +135,8 @@ class _StopTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 )
-              else if (clientSummary.isNotEmpty)
-                Text(
-                  clientSummary,
-                  style: const TextStyle(
-                      fontSize: 11, color: AppColors.textSecondary),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              if (!isOrigin)
+              else ...[
+                StopPackagesSection(packages: stop.packages, fontSize: 11),
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Row(
@@ -164,11 +157,7 @@ class _StopTile extends StatelessWidget {
                     ],
                   ),
                 ),
-              if (!isOrigin &&
-                  stop.packages.isNotEmpty &&
-                  (stop.hasMultiplePackages ||
-                      stop.packages.first.nota.isNotEmpty))
-                _PackagesList(packages: stop.packages),
+              ],
             ],
           ),
         ),
@@ -215,51 +204,6 @@ class _InfoChip extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Lista compacta de paquetes (cliente + nota) para un tile de parada.
-class _PackagesList extends StatelessWidget {
-  final List<Package> packages;
-
-  const _PackagesList({required this.packages});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 3),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: packages.map((p) {
-          return Padding(
-            padding: const EdgeInsets.only(top: 1),
-            child: RichText(
-              overflow: TextOverflow.ellipsis,
-              text: TextSpan(
-                style: TextStyle(
-                    fontSize: 11, color: AppColors.textSecondary),
-                children: [
-                  const TextSpan(text: '· '),
-                  if (p.clientName.isNotEmpty)
-                    TextSpan(
-                      text: p.clientName,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary),
-                    ),
-                  if (p.nota.isNotEmpty)
-                    TextSpan(
-                      text: '  ${p.nota}',
-                      style: const TextStyle(
-                          color: AppColors.textTertiary),
-                    ),
-                ],
-              ),
-            ),
-          );
-        }).toList(),
       ),
     );
   }
