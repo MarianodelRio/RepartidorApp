@@ -377,6 +377,9 @@ class RouteMapState extends State<RouteMap> with TickerProviderStateMixin {
     );
   }
 
+  /// Distancia en metros por debajo de la cual una parada se considera "cercana".
+  static const double _nearbyThresholdMeters = 400.0;
+
   List<Marker> _buildStopMarkers() {
     final completed = widget.completedIndices ?? <int>{};
     final isDelivery = widget.deliveryMode;
@@ -392,16 +395,31 @@ class RouteMapState extends State<RouteMap> with TickerProviderStateMixin {
       final isCompleted = completed.contains(index);
       final isNextStop = isDelivery && index == nextIdx;
 
-      // En deliveryMode: siguiente parada grande, resto pequeños
+      // Parada geográficamente cercana al GPS actual (solo en delivery, no completadas ni origen).
+      final isNear = isDelivery &&
+          !isNextStop &&
+          !isCompleted &&
+          !isOrigin &&
+          _currentPosition != null &&
+          Geolocator.distanceBetween(
+                _currentPosition!.latitude,
+                _currentPosition!.longitude,
+                stop.lat!,
+                stop.lon!,
+              ) <=
+              _nearbyThresholdMeters;
+
       double size;
       if (isNextStop) {
-        size = 50; // Significativamente más grande
+        size = 50;
       } else if (isHighlighted) {
         size = 44;
       } else if (isOrigin) {
         size = 40;
+      } else if (isNear) {
+        size = 38; // Cercana: intermedia entre pendiente y parada actual
       } else if (isDelivery) {
-        size = 24; // Más pequeños en modo reparto
+        size = 24;
       } else {
         size = 34;
       }
@@ -426,7 +444,8 @@ class RouteMapState extends State<RouteMap> with TickerProviderStateMixin {
                 isHighlighted: isHighlighted || isNextStop,
                 isCompleted: isCompleted,
                 isNextStop: isNextStop,
-                isSmall: isDelivery && !isNextStop && !isOrigin && !isCompleted,
+                isNear: isNear,
+                isSmall: isDelivery && !isNextStop && !isNear && !isOrigin && !isCompleted,
               ),
             ),
           ),
@@ -447,6 +466,7 @@ class _StopMarkerIcon extends StatelessWidget {
   final bool isHighlighted;
   final bool isCompleted;
   final bool isNextStop;
+  final bool isNear;
   final bool isSmall;
 
   const _StopMarkerIcon({
@@ -455,15 +475,17 @@ class _StopMarkerIcon extends StatelessWidget {
     required this.isHighlighted,
     this.isCompleted = false,
     this.isNextStop = false,
+    this.isNear = false,
     this.isSmall = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Tamaño del contenedor interno
     final double size;
     if (isNextStop) {
       size = 46.0;
+    } else if (isNear) {
+      size = 32.0;
     } else if (isSmall) {
       size = 20.0;
     } else if (isHighlighted) {
@@ -474,18 +496,27 @@ class _StopMarkerIcon extends StatelessWidget {
       size = 30.0;
     }
 
-    Color bgColor;
+    final Color bgColor;
     if (isCompleted) {
-      bgColor = AppColors.markerCompleted; // Gris piedra para completadas
+      bgColor = AppColors.markerCompleted;
     } else if (isNextStop) {
-      bgColor = AppColors.markerNext; // Azul profundo para siguiente parada
+      bgColor = AppColors.markerNext;
     } else if (isOrigin) {
       bgColor = AppColors.markerOrigin;
+    } else if (isNear) {
+      bgColor = const Color(0xFF42A5F5); // Azul medio para cercanas
     } else if (isSmall) {
-      bgColor = AppColors.markerCompleted.withAlpha(180); // Gris claro para las demás
+      bgColor = const Color(0xFF7A9DB8); // Azul acero apagado para pendientes
     } else {
       bgColor = AppColors.markerDefault;
     }
+
+    final double shadowAlpha = isNextStop ? 180 : (isNear ? 130 : (isHighlighted ? 150 : 80));
+    final double blurRadius  = isNextStop ? 16  : (isNear ? 10  : (isHighlighted ? 12  : 6));
+    final double spreadRadius = isNextStop ? 4  : (isNear ? 2   : (isHighlighted ? 2   : 0));
+    final double borderWidth  = isNextStop ? 3.5 : (isNear ? 2.5 : (isHighlighted ? 3  : 2));
+
+    final double fontSize = isNextStop ? 20 : (isNear ? 13 : (isSmall ? 10 : (isHighlighted ? 16 : 13)));
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
@@ -494,40 +525,26 @@ class _StopMarkerIcon extends StatelessWidget {
       decoration: BoxDecoration(
         color: bgColor,
         shape: BoxShape.circle,
-        border: Border.all(
-          color: Colors.white,
-          width: isNextStop ? 3.5 : (isHighlighted ? 3 : 2),
-        ),
+        border: Border.all(color: Colors.white, width: borderWidth),
         boxShadow: [
           BoxShadow(
-            color: bgColor.withAlpha(isNextStop ? 180 : (isHighlighted ? 150 : 80)),
-            blurRadius: isNextStop ? 16 : (isHighlighted ? 12 : 6),
-            spreadRadius: isNextStop ? 4 : (isHighlighted ? 2 : 0),
+            color: bgColor.withAlpha(shadowAlpha.toInt()),
+            blurRadius: blurRadius,
+            spreadRadius: spreadRadius,
           ),
         ],
       ),
       child: Center(
-        child: isCompleted
-            ? Icon(Icons.check, size: isSmall ? 12 : (isHighlighted ? 20 : 16), color: AppColors.markerCompletedCheck)
-            : isOrigin
-                ? Icon(Icons.home, size: isHighlighted ? 20 : 16, color: Colors.white)
-                : isSmall
-                    ? Text(
-                        '$order',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 10,
-                        ),
-                      )
-                    : Text(
-                        '$order',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: isNextStop ? 20 : (isHighlighted ? 16 : 13),
-                        ),
-                      ),
+        child: isOrigin
+            ? Icon(Icons.home, size: isHighlighted ? 20 : 16, color: Colors.white)
+            : Text(
+                '$order',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: fontSize,
+                ),
+              ),
       ),
     );
   }

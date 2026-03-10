@@ -42,7 +42,6 @@ abstract final class AppColors {
   static const Color polylineNav = Color(0xFF2979FF);          // Azul eléctrico
   static const Color polylineBorder = Color(0xB3FFFFFF);       // Blanco 70%
   static const Color markerCompleted = Color(0xFF9E9E9E);      // Gris piedra
-  static const Color markerCompletedCheck = Color(0xFF2E7D32); // Check esmeralda
   static const Color markerOrigin = Color(0xFFE65100);         // Ámbar intenso
   static const Color markerNext = Color(0xFF003399);           // Azul profundo
   static const Color markerDefault = Color(0xFF003399);
