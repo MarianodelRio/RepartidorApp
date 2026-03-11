@@ -50,13 +50,13 @@ def _google_resp(location_type: str, lat: float = 37.805, lng: float = -5.099):
     return m
 
 
-def _places_resp(lat: float = 37.805, lng: float = -5.099):
+def _places_resp(lat: float = 37.805, lng: float = -5.099, name: str = ""):
     """Mock de una respuesta exitosa de Google Places."""
     m = Mock()
     m.raise_for_status.return_value = None
     m.json.return_value = {
         "status": "OK",
-        "candidates": [{"geometry": {"location": {"lat": lat, "lng": lng}}}],
+        "candidates": [{"geometry": {"location": {"lat": lat, "lng": lng}}, "name": name}],
     }
     return m
 
@@ -154,13 +154,12 @@ def test_google_range_interpolated_devuelve_good():
     assert conf == "GOOD"
 
 
-def test_google_geometric_center_no_guarda_ni_devuelve_coord():
-    """GEOMETRIC_CENTER no es suficientemente preciso → no se guarda, cae a FAILED."""
+def test_google_geometric_center_sin_alias_devuelve_good():
+    """GEOMETRIC_CENTER sin alias → se acepta como aproximación (GOOD)."""
     with patch("app.services.geocoding.requests.get", return_value=_google_resp("GEOMETRIC_CENTER")):
         coord, conf = geo.geocode("Calle Mayor 1")
-    # Sin alias → cae a FAILED
-    assert coord is None
-    assert conf == "FAILED"
+    assert coord is not None
+    assert conf == "GOOD"
 
 
 def test_google_fuera_de_bbox_devuelve_failed():
@@ -208,11 +207,11 @@ def test_resultado_exitoso_se_guarda_en_cache():
 # ── Google Places ─────────────────────────────────────────────────────────────
 
 def test_places_con_alias_cuando_google_impreciso():
-    """Con alias y Google GEOMETRIC_CENTER (impreciso), debe usar Places."""
+    """Con alias y Google GEOMETRIC_CENTER (impreciso), debe usar Places si nombre coincide."""
     with patch("app.services.geocoding.requests.get") as mock_get:
         mock_get.side_effect = [
-            _google_resp("GEOMETRIC_CENTER"),   # 1ª llamada: Geocoding
-            _places_resp(),                     # 2ª llamada: Places
+            _google_resp("GEOMETRIC_CENTER"),             # 1ª llamada: Geocoding
+            _places_resp(name="Bar El Sol"),              # 2ª llamada: Places (nombre coincide)
         ]
         coord, conf = geo.geocode("Calle Mayor 1", alias="Bar El Sol")
     assert coord is not None
@@ -227,13 +226,51 @@ def test_places_solo_se_llama_con_alias():
     assert mock_get.call_count == 1
 
 
-def test_places_fuera_de_bbox_devuelve_failed():
+def test_places_fuera_de_bbox_usa_fallback_geocoding():
+    """Places fuera de bbox → rechazado; pero Geocoding aproximado sirve de fallback (GOOD)."""
     with patch("app.services.geocoding.requests.get") as mock_get:
         mock_get.side_effect = [
             _google_resp("GEOMETRIC_CENTER"),
-            _places_resp(lat=40.4, lng=-3.7),  # Madrid → fuera de bbox
+            _places_resp(lat=40.4, lng=-3.7, name="Lugar Lejano"),  # Madrid → fuera de bbox
         ]
         coord, conf = geo.geocode("Calle Mayor 1", alias="Lugar Lejano")
+    assert coord is not None
+    assert conf == "GOOD"
+
+
+def test_places_nombre_no_coincide_usa_fallback_geocoding():
+    """Places devuelve nombre muy distinto → rechazado; fallback a Geocoding aproximado."""
+    with patch("app.services.geocoding.requests.get") as mock_get:
+        mock_get.side_effect = [
+            _google_resp("GEOMETRIC_CENTER"),
+            _places_resp(name="Ferretería García"),  # nada que ver con "Supermercado Los Olivos"
+        ]
+        coord, conf = geo.geocode("Calle Mayor 1", alias="Supermercado Los Olivos")
+    assert coord is not None
+    assert conf == "GOOD"  # fallback al GEOMETRIC_CENTER
+
+
+def test_places_demasiado_lejos_usa_fallback_geocoding():
+    """Places a > 300 m de la coord de Geocoding → rechazado; fallback a GOOD."""
+    with patch("app.services.geocoding.requests.get") as mock_get:
+        # ref_coord: (37.805, -5.099). Places a ~3 km → rechazado
+        mock_get.side_effect = [
+            _google_resp("GEOMETRIC_CENTER", lat=37.805, lng=-5.099),
+            _places_resp(lat=37.830, lng=-5.060, name="Bar El Sol"),
+        ]
+        coord, conf = geo.geocode("Calle Mayor 1", alias="Bar El Sol")
+    assert coord is not None
+    assert conf == "GOOD"
+
+
+def test_places_sin_geocoding_y_nombre_no_coincide_devuelve_failed():
+    """Places con nombre incorrecto y sin Geocoding de referencia → FAILED."""
+    with patch("app.services.geocoding.requests.get") as mock_get:
+        mock_get.side_effect = [
+            _zero_results(),                         # Geocoding: nada
+            _places_resp(name="Ferretería García"),  # nombre no coincide
+        ]
+        coord, conf = geo.geocode("Calle Inexistente 1", alias="Supermercado Los Olivos")
     assert coord is None
     assert conf == "FAILED"
 

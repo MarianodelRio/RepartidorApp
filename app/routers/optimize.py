@@ -7,17 +7,13 @@ POST /optimize
   y devuelve la ruta completa con geometría y lista de paradas.
 """
 
-import math
 import time
 from collections import OrderedDict
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.core.config import (
-    START_ADDRESS, MAX_STOPS, DEPOT_LAT, DEPOT_LON,
-    BBOX_LAT_MIN, BBOX_LAT_MAX, BBOX_LON_MIN, BBOX_LON_MAX,
-)
+from app.core.config import START_ADDRESS, MAX_STOPS, DEPOT_LAT, DEPOT_LON
 from app.core.logging import get_logger
 from app.models import (
     OptimizeRequest,
@@ -30,6 +26,7 @@ from app.models import (
 from app.services.geocoding import geocode, _parse_address
 from app.services.routing import optimize_route, snap_to_street, _format_distance, get_osrm_matrix
 from app.utils.normalization import normalize_for_dedup as _normalize_for_dedup
+from app.utils.validation import validate_coord as _validate_coord
 
 
 class RouteEvaluateRequest(BaseModel):
@@ -45,38 +42,6 @@ class RouteEvaluateResponse(BaseModel):
 
 router = APIRouter(tags=["optimize"])
 logger = get_logger(__name__)
-
-
-# ── Validación de coordenadas ─────────────────────────────────────────────────
-
-def _validate_coord(lat: float, lon: float) -> str | None:
-    """Valida coordenadas geográficas para la zona de trabajo.
-
-    Devuelve None si son correctas, o un mensaje de error descriptivo.
-    Comprueba: finitud, rango global, longitud positiva en España, bbox local.
-    """
-    if not math.isfinite(lat) or not math.isfinite(lon):
-        return f"coordenada no finita: ({lat}, {lon})"
-    if not (-90 <= lat <= 90):
-        return f"latitud {lat} fuera del rango global [-90, 90]"
-    if not (-180 <= lon <= 180):
-        return f"longitud {lon} fuera del rango global [-180, 180]"
-    if lon > 0:
-        return (
-            f"longitud positiva ({lon:.4f}) en zona española — "
-            f"¿lat y lon invertidos? recibido ({lat:.4f}, {lon:.4f})"
-        )
-    if not (BBOX_LAT_MIN <= lat <= BBOX_LAT_MAX):
-        return (
-            f"latitud {lat:.4f} fuera del área de trabajo "
-            f"[{BBOX_LAT_MIN}, {BBOX_LAT_MAX}]"
-        )
-    if not (BBOX_LON_MIN <= lon <= BBOX_LON_MAX):
-        return (
-            f"longitud {lon:.4f} fuera del área de trabajo "
-            f"[{BBOX_LON_MIN}, {BBOX_LON_MAX}]"
-        )
-    return None
 
 
 # ── Deduplicación de direcciones ──────────────────────────────────────────────

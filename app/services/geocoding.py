@@ -21,6 +21,7 @@ Confianza devuelta (str):
 
 import difflib
 import json
+import math
 import re
 import time
 import unicodedata
@@ -37,6 +38,7 @@ from app.core.config import (
     GOOGLE_CACHE_TTL_DAYS,
     GEOCODE_TIMEOUT,
 )
+from app.utils.validation import in_work_bbox
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -176,19 +178,6 @@ def _portal_display(number: str) -> str:
 def _cache_key(street: str, number: str) -> str:
     """Clave canónica: normalize(calle)#normalize(número)."""
     return f"{_normalize(street)}#{_normalize(number)}"
-
-
-# ─── Bounding box de Posadas ───────────────────────────────────────────────────
-
-_POSADAS_LAT_MIN, _POSADAS_LAT_MAX = 37.76, 37.84
-_POSADAS_LON_MIN, _POSADAS_LON_MAX = -5.16, -5.04
-
-
-def _in_posadas_bbox(lat: float, lng: float) -> bool:
-    return (
-        _POSADAS_LAT_MIN <= lat <= _POSADAS_LAT_MAX and
-        _POSADAS_LON_MIN <= lng <= _POSADAS_LON_MAX
-    )
 
 
 # ─── Catálogo de calles (Overpass + Catastro + aprendidas) ─────────────────────
@@ -426,7 +415,7 @@ def _google_geocode(street: str, number: str) -> tuple[GeoResult, str] | None:
         lat = float(location["lat"])
         lng = float(location["lng"])
 
-        if not _in_posadas_bbox(lat, lng):
+        if not in_work_bbox(lat, lng):
             logger.warning("Google fuera de bbox (%.4f, %.4f) para '%s'", lat, lng, address)
             return None
 
@@ -438,12 +427,32 @@ def _google_geocode(street: str, number: str) -> tuple[GeoResult, str] | None:
         return None
 
 
+# ─── Distancia haversine ───────────────────────────────────────────────────────
+
+_PLACES_NAME_SIM_THRESHOLD = 0.55   # similitud mínima nombre Places vs alias
+_PLACES_MAX_DIST_M = 300.0          # distancia máxima (m) entre Places y ref Geocoding
+
+
+def _haversine_m(a: GeoResult, b: GeoResult) -> float:
+    """Distancia en metros entre dos coordenadas (lat, lon)."""
+    lat1, lon1 = math.radians(a[0]), math.radians(a[1])
+    lat2, lon2 = math.radians(b[0]), math.radians(b[1])
+    dlat, dlon = lat2 - lat1, lon2 - lon1
+    h = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    return 2 * 6_371_000 * math.asin(math.sqrt(h))
+
+
 # ─── Google Places API ─────────────────────────────────────────────────────────
 
-def _google_places(alias: str) -> GeoResult | None:
+def _google_places(alias: str, ref_coord: GeoResult | None = None) -> GeoResult | None:
     """
     Busca un negocio/lugar por nombre con Google Places Find Place.
     Solo se usa cuando Google Geocoding falla/es impreciso y hay alias.
+
+    Validaciones:
+      1. bbox de comarca.
+      2. Similitud del nombre devuelto con el alias buscado ≥ _PLACES_NAME_SIM_THRESHOLD.
+      3. Si ref_coord proporcionada: distancia ≤ _PLACES_MAX_DIST_M.
     """
     if not GOOGLE_API_KEY or not alias:
         return None
@@ -451,8 +460,7 @@ def _google_places(alias: str) -> GeoResult | None:
     params = {
         "input": f"{alias}, Posadas, Córdoba",
         "inputtype": "textquery",
-        "fields": "geometry",
-        # Radio 1500 m: cubre el casco urbano de Posadas sin salir al extrarradio
+        "fields": "geometry,name",
         "locationbias": f"circle:1500@{POSADAS_CENTER[0]},{POSADAS_CENTER[1]}",
         "key": GOOGLE_API_KEY,
         "language": "es",
@@ -466,18 +474,41 @@ def _google_places(alias: str) -> GeoResult | None:
         if data.get("status") != "OK" or not data.get("candidates"):
             return None
 
-        # Tomar el primer candidato (el más relevante según Google).
-        # El filtro real de seguridad es el bbox de Posadas más abajo.
-        location = data["candidates"][0]["geometry"]["location"]
+        candidate = data["candidates"][0]
+        location = candidate["geometry"]["location"]
         lat = float(location["lat"])
         lng = float(location["lng"])
 
-        if not _in_posadas_bbox(lat, lng):
-            logger.warning("Google Places fuera de bbox para '%s'", alias)
+        if not in_work_bbox(lat, lng):
+            logger.warning("Places fuera de bbox para '%s'", alias)
             return None
 
-        logger.info("Google Places: '%s' → (%.5f, %.5f)", alias, lat, lng)
-        return (lat, lng)
+        # Validar que el nombre devuelto se parece al alias buscado
+        name_returned = candidate.get("name", "")
+        sim = difflib.SequenceMatcher(
+            None, _normalize(alias), _normalize(name_returned)
+        ).ratio()
+        if sim < _PLACES_NAME_SIM_THRESHOLD:
+            logger.warning(
+                "Places: nombre '%s' no coincide con alias '%s' (sim=%.2f) → rechazado",
+                name_returned, alias, sim,
+            )
+            return None
+
+        coord: GeoResult = (lat, lng)
+
+        # Validar distancia respecto a la coord de referencia de Geocoding (si existe)
+        if ref_coord is not None:
+            dist_m = _haversine_m(ref_coord, coord)
+            if dist_m > _PLACES_MAX_DIST_M:
+                logger.warning(
+                    "Places: '%s' a %.0f m de la dirección → rechazado (umbral %d m)",
+                    alias, dist_m, _PLACES_MAX_DIST_M,
+                )
+                return None
+
+        logger.info("Places: '%s' → '%s' (%.5f, %.5f)", alias, name_returned, lat, lng)
+        return coord
 
     except Exception as e:
         logger.error("Google Places error: %s", e)
@@ -580,8 +611,11 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
       1. Caché (_cache): clave de dirección ("calle#num") o clave de alias ("@nombre").
       2. Fuzzy matching en catálogo (corrección de nombre sin API).
       3. Google Geocoding ROOFTOP → EXACT_ADDRESS / RANGE_INTERPOLATED → GOOD.
-      4. Google Places (solo si alias) → EXACT_PLACE.
-      5. FAILED.
+         GEOMETRIC_CENTER/APPROXIMATE → se guarda como ref para validar Places.
+      4. Google Places (solo si alias): valida nombre (sim≥0.55) y distancia (≤300m).
+         Si Places es rechazado pero hay ref de Geocoding → GOOD (coord aproximada).
+      5. Sin alias y Geocoding aproximado → GOOD.
+      6. FAILED.
     """
     if not address or not address.strip():
         return None, "FAILED"
@@ -630,6 +664,7 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
         corrected_street = closest
 
     # 3. Google Geocoding
+    approx_coord: GeoResult | None = None
     google_result = _google_geocode(corrected_street, number)
     if google_result:
         coord, location_type = google_result
@@ -640,6 +675,7 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
                 key, coord[0], coord[1], street, number,
                 source="google", confidence=confidence,
                 corrected_to=corrected_to,
+                alias=alias if alias else None,
             )
             if corrected_to:
                 try:
@@ -648,11 +684,12 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
                 except Exception:
                     pass
             return coord, confidence
-        # GEOMETRIC_CENTER / APPROXIMATE: no es suficiente → intentar Places si hay alias
+        # GEOMETRIC_CENTER / APPROXIMATE: guardar como referencia para validar Places
+        approx_coord = coord
 
     # 4. Google Places (solo si hay alias de negocio)
     if alias:
-        places_coord = _google_places(alias)
+        places_coord = _google_places(alias, ref_coord=approx_coord)
         if places_coord:
             _cache[key] = places_coord
             _persist_entry(
@@ -661,6 +698,30 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
                 corrected_to=corrected_to, alias=alias,
             )
             return places_coord, "EXACT_PLACE"
+
+        # Places rechazado o sin resultado: usar Geocoding aproximado si lo hay
+        if approx_coord is not None:
+            logger.info(
+                "Places rechazado, usando Geocoding aproximado para '%s'", address
+            )
+            _cache[key] = approx_coord
+            _persist_entry(
+                key, approx_coord[0], approx_coord[1], street, number,
+                source="google", confidence="GOOD",
+                corrected_to=corrected_to,
+                alias=alias,
+            )
+            return approx_coord, "GOOD"
+
+    elif approx_coord is not None:
+        # Sin alias: usar directamente la aproximación de Geocoding
+        _cache[key] = approx_coord
+        _persist_entry(
+            key, approx_coord[0], approx_coord[1], street, number,
+            source="google", confidence="GOOD",
+            corrected_to=corrected_to,
+        )
+        return approx_coord, "GOOD"
 
     # 5. FAILED
     _cache[key] = None

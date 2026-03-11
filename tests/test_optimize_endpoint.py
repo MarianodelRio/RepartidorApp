@@ -124,9 +124,9 @@ def test_ruta_simple_summary_correcto(client):
     assert summary["total_distance_display"] == "1.5 km"
 
 
-# ── Validación de coordenadas (_validate_coord) ───────────────────────────────
+# ── Validación de coordenadas (validate_coord) ────────────────────────────────
 
-from app.routers.optimize import _validate_coord  # noqa: E402
+from app.utils.validation import validate_coord as _validate_coord  # noqa: E402
 
 
 def test_validate_coord_nan_rechazado():

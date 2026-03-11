@@ -1,12 +1,12 @@
 """
-Tests unitarios — funciones puras de app/services/geocoding.py.
+Tests unitarios — funciones puras de app/services/geocoding.py y app/utils/validation.py.
 
 Cubre (sin red, sin caché, sin API key):
   - _normalize        → minúsculas, sin acentos, espacios simples
   - _parse_address    → extrae (calle, número) de texto libre
   - _portal_display   → extrae número primario de un rango "96-98" → "96"
   - _cache_key        → clave canónica para la caché en disco
-  - _in_posadas_bbox  → valida que una coordenada cae en el área de trabajo
+  - in_work_bbox      → valida que una coordenada cae en el área de trabajo (comarca)
 """
 
 import pytest
@@ -16,8 +16,8 @@ from app.services.geocoding import (
     _parse_address,
     _portal_display,
     _cache_key,
-    _in_posadas_bbox,
 )
+from app.utils.validation import in_work_bbox
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -248,42 +248,47 @@ class TestCacheKey:
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  _in_posadas_bbox
-# Límites: lat [37.76, 37.84]  lon [-5.16, -5.04]
+#  in_work_bbox
+# Límites comarca: lat [37.3, 38.2]  lon [-5.6, -4.4]
 # ══════════════════════════════════════════════════════════════════════
 
-class TestInPosadasBbox:
+class TestInWorkBbox:
 
     def test_centro_de_posadas(self):
         """El depósito central debe estar dentro del bbox."""
-        assert _in_posadas_bbox(37.805503, -5.099805) is True
+        assert in_work_bbox(37.805503, -5.099805) is True
 
     def test_coordenada_tipica_de_reparto(self):
-        assert _in_posadas_bbox(37.80, -5.10) is True
+        assert in_work_bbox(37.80, -5.10) is True
+
+    def test_comarca_palma_del_rio(self):
+        """Palma del Río (dentro de la comarca) debe estar dentro."""
+        assert in_work_bbox(37.70, -5.28) is True
 
     def test_madrid_fuera(self):
-        assert _in_posadas_bbox(40.4168, -3.7038) is False
+        assert in_work_bbox(40.4168, -3.7038) is False
 
     def test_sevilla_fuera(self):
-        assert _in_posadas_bbox(37.3886, -5.9823) is False
+        """Sevilla: longitud demasiado oeste."""
+        assert in_work_bbox(37.3886, -5.9823) is False
 
     def test_latitud_demasiado_alta(self):
-        assert _in_posadas_bbox(37.85, -5.10) is False
+        assert in_work_bbox(38.3, -5.10) is False
 
     def test_latitud_demasiado_baja(self):
-        assert _in_posadas_bbox(37.75, -5.10) is False
+        assert in_work_bbox(37.2, -5.10) is False
 
     def test_longitud_demasiado_este(self):
-        assert _in_posadas_bbox(37.80, -5.03) is False
+        assert in_work_bbox(37.80, -4.3) is False
 
     def test_longitud_demasiado_oeste(self):
-        assert _in_posadas_bbox(37.80, -5.17) is False
+        assert in_work_bbox(37.80, -5.7) is False
 
     def test_en_el_borde_incluido(self):
         """Los límites son inclusivos."""
-        assert _in_posadas_bbox(37.76, -5.16) is True
-        assert _in_posadas_bbox(37.84, -5.04) is True
+        assert in_work_bbox(37.3, -5.6) is True
+        assert in_work_bbox(38.2, -4.4) is True
 
     def test_justo_fuera_del_borde(self):
-        assert _in_posadas_bbox(37.759, -5.10) is False
-        assert _in_posadas_bbox(37.841, -5.10) is False
+        assert in_work_bbox(37.29, -5.1) is False
+        assert in_work_bbox(38.21, -5.1) is False
