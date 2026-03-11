@@ -3,10 +3,9 @@ Servicio de optimización de rutas con LKH3 + OSRM.
 Resuelve el TSP (Problema del Viajante) y devuelve detalles de ruta.
 
 Flujo:
-  snap_to_street()    — ajusta coords a la red viaria (OSRM /nearest)
-  get_osrm_matrix()   — calcula matriz NxN de duración/distancia (OSRM /table)
-  optimize_route()    — ordena paradas con LKH3
-  get_route_details() — obtiene geometría GeoJSON de la ruta (OSRM /route)
+  snap_to_street()  — ajusta coords a la red viaria (OSRM /nearest)
+  get_osrm_matrix() — calcula matriz NxN de duración/distancia (OSRM /table)
+  optimize_route()  — ordena paradas con LKH3
 
 Solver: LKH3 — determinista, óptimo para el tamaño de problema típico (~50 paradas).
 """
@@ -482,54 +481,6 @@ def optimize_route(
         "total_duration": cumulative_dur,
         "computing_time_ms": computing_ms,
     }
-
-
-# ═══════════════════════════════════════════
-#  OSRM: Ruta detallada con geometría GeoJSON
-# ═══════════════════════════════════════════
-
-def get_route_details(
-    coords_ordered: list[tuple[float, float]],
-) -> dict | None:
-    """Dado un orden de coordenadas ya optimizado, obtiene la geometría GeoJSON
-    de la ruta completa desde OSRM /route.
-
-    Args:
-        coords_ordered: Lista de (lat, lon) en el orden de visita.
-
-    Returns:
-        dict con geometry (GeoJSON), total_distance, total_duration; o None si falla.
-    """
-    if len(coords_ordered) < 2:
-        return None
-
-    coords_str = ";".join(f"{lon},{lat}" for lat, lon in coords_ordered)
-    url = f"{OSRM_BASE_URL}/route/v1/driving/{coords_str}"
-    params = {
-        "overview": "full",
-        "geometries": "geojson",
-    }
-
-    try:
-        r = requests.get(url, params=params, timeout=OSRM_TIMEOUT)
-        r.raise_for_status()
-        data = r.json()
-
-        if data.get("code") != "Ok":
-            logger.error("OSRM error: %s — %s", data.get("code"), data.get("message", ""))
-            return None
-
-        route = data["routes"][0]
-
-        return {
-            "geometry": route["geometry"],
-            "total_distance": round(route.get("distance", 0)),
-            "total_duration": round(route.get("duration", 0)),
-        }
-
-    except Exception as e:
-        logger.error("OSRM error: %s", e)
-        return None
 
 
 # Cargar caché de snap al importar el módulo

@@ -144,20 +144,12 @@ void main() {
         'success': true,
         'summary': _routeSummaryJson(),
         'stops': [_stopInfoJson(type: 'origin'), _stopInfoJson()],
-        'geometry': {
-          'type': 'LineString',
-          'coordinates': [
-            [-5.0998, 37.8055],
-            [-5.1050, 37.8012],
-          ],
-        },
       });
 
       expect(response.success, isTrue);
       expect(response.stops.length, 2);
       expect(response.stops[0].isOrigin, isTrue);
       expect(response.summary.totalStops, 5);
-      expect(response.geometry['type'], 'LineString');
     });
 
     test('lista de paradas vacía es válida', () {
@@ -165,7 +157,6 @@ void main() {
         'success': true,
         'summary': _routeSummaryJson(),
         'stops': [],
-        'geometry': {'type': 'LineString', 'coordinates': []},
       });
       expect(response.stops, isEmpty);
     });

@@ -16,7 +16,6 @@ import '../models/route_models.dart';
 ///     El marcador de la siguiente parada [nextStopIndex] se dibuja más grande.
 class RouteMap extends StatefulWidget {
   final List<StopInfo> stops;
-  final Map<String, dynamic> geometry;
   final int? highlightedStopIndex;
   final ValueChanged<int>? onMarkerTapped;
   final Set<int>? completedIndices;
@@ -33,7 +32,6 @@ class RouteMap extends StatefulWidget {
   const RouteMap({
     super.key,
     required this.stops,
-    required this.geometry,
     this.highlightedStopIndex,
     this.onMarkerTapped,
     this.completedIndices,
@@ -248,23 +246,22 @@ class RouteMapState extends State<RouteMap> with TickerProviderStateMixin {
   }
 
   LatLngBounds? _getRouteBounds() {
-    final coords = widget.geometry['coordinates'] as List?;
-    if (coords == null || coords.isEmpty) return null;
+    final points = widget.stops
+        .where((s) => s.lat != null && s.lon != null)
+        .map((s) => LatLng(s.lat!, s.lon!))
+        .toList();
+    if (points.isEmpty) return null;
 
-    double minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
-    for (final c in coords) {
-      final lon = (c as List)[0] as num;
-      final lat = c[1] as num;
-      if (lat < minLat) minLat = lat.toDouble();
-      if (lat > maxLat) maxLat = lat.toDouble();
-      if (lon < minLon) minLon = lon.toDouble();
-      if (lon > maxLon) maxLon = lon.toDouble();
+    double minLat = points.first.latitude, maxLat = points.first.latitude;
+    double minLon = points.first.longitude, maxLon = points.first.longitude;
+    for (final p in points) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLon) minLon = p.longitude;
+      if (p.longitude > maxLon) maxLon = p.longitude;
     }
 
-    return LatLngBounds(
-      LatLng(minLat, minLon),
-      LatLng(maxLat, maxLon),
-    );
+    return LatLngBounds(LatLng(minLat, minLon), LatLng(maxLat, maxLon));
   }
 
   /// Convierte el segmento GeoJSON (GPS → siguiente parada) a puntos.

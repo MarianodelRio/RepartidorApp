@@ -847,7 +847,6 @@ class _DeliveryScreenState extends State<DeliveryScreen>
                     RouteMap(
                       key: _mapKey,
                       stops: _deliveryToStopInfo(mapStops),
-                      geometry: _session.geometry,
                       highlightedStopIndex:
                           isFinished ? null : _session.currentStopIndex,
                       completedIndices: _completedIndices(),

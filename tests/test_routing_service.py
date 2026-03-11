@@ -1,6 +1,6 @@
 """
 Tests del servicio routing.py: snap_to_street, get_osrm_matrix,
-optimize_route, get_route_details, _reorder_no_backtrack.
+optimize_route, _reorder_no_backtrack.
 Se mockean las llamadas HTTP a OSRM; LKH3 resuelve con matrices reales pequeñas.
 """
 
@@ -11,7 +11,6 @@ from app.services.routing import (
     snap_to_street,
     get_osrm_matrix,
     optimize_route,
-    get_route_details,
     _reorder_no_backtrack,
     _snap_key,
 )
@@ -279,41 +278,6 @@ def test_optimize_lkh_falla_devuelve_none():
     with patch("app.services.routing.get_osrm_matrix", return_value=_MATRIX_2), \
          patch("app.services.routing._solve_with_lkh", return_value=None):
         assert optimize_route(COORDS_2) is None
-
-
-# ── get_route_details ─────────────────────────────────────────────────────────
-
-def test_route_details_menos_de_2_coords_devuelve_none():
-    assert get_route_details([(37.805, -5.099)]) is None
-
-
-def test_route_details_devuelve_geometry():
-    with patch("app.services.routing.requests.get", return_value=_mock_osrm_route()):
-        result = get_route_details(COORDS_2)
-    assert result is not None
-    assert result["geometry"]["type"] == "LineString"
-
-
-def test_route_details_devuelve_distancia():
-    with patch("app.services.routing.requests.get", return_value=_mock_osrm_route(distance=3200)):
-        result = get_route_details(COORDS_2)
-    assert result["total_distance"] == 3200
-
-
-def test_route_details_osrm_error_code_devuelve_none():
-    with patch("app.services.routing.requests.get", return_value=_mock_osrm_route(code="Error")):
-        assert get_route_details(COORDS_2) is None
-
-
-def test_route_details_osrm_caido_devuelve_none():
-    with patch("app.services.routing.requests.get", side_effect=Exception("timeout")):
-        assert get_route_details(COORDS_2) is None
-
-
-def test_route_details_3_puntos():
-    with patch("app.services.routing.requests.get", return_value=_mock_osrm_route()):
-        result = get_route_details(COORDS_3)
-    assert result is not None
 
 
 # ── _reorder_no_backtrack ─────────────────────────────────────────────────────

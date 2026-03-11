@@ -124,7 +124,6 @@ class OptimizeResponse(BaseModel):
     success: bool = True
     summary: RouteSummary
     stops: list[StopInfo]
-    geometry: dict = Field(..., description="GeoJSON de la polilínea de la ruta")
 
 
 class ErrorResponse(BaseModel):

@@ -28,7 +28,7 @@ from app.models import (
     RouteSummary,
 )
 from app.services.geocoding import geocode, _parse_address
-from app.services.routing import optimize_route, get_route_details, snap_to_street, _format_distance, get_osrm_matrix
+from app.services.routing import optimize_route, snap_to_street, _format_distance, get_osrm_matrix
 from app.utils.normalization import normalize_for_dedup as _normalize_for_dedup
 
 
@@ -339,12 +339,7 @@ def optimize(req: OptimizeRequest):
     stop_details_map = {sd["original_index"]: sd for sd in solver_result.get("stop_details", [])}
     ordered_coords = [all_coords[i] for i in wp_order]
 
-    # 5. Geometría GeoJSON (OSRM /route)
-    route_details = get_route_details(ordered_coords)
-    if route_details is None:
-        raise HTTPException(503, detail="OSRM no pudo calcular la ruta detallada")
-
-    # 6. Construir respuesta
+    # 5. Construir respuesta
     stops = _build_stops(
         wp_order, all_coords, all_addresses, all_primary_names,
         all_names_lists, all_packages_per_stop, all_pkg_counts,
@@ -367,7 +362,6 @@ def optimize(req: OptimizeRequest):
             computing_time_ms=computing_ms,
         ),
         stops=stops,
-        geometry=route_details["geometry"],
     )
 
 

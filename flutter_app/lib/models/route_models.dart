@@ -133,13 +133,11 @@ class OptimizeResponse {
   final bool success;
   final RouteSummary summary;
   final List<StopInfo> stops;
-  final Map<String, dynamic> geometry; // GeoJSON
 
   const OptimizeResponse({
     required this.success,
     required this.summary,
     required this.stops,
-    required this.geometry,
   });
 
   factory OptimizeResponse.fromJson(Map<String, dynamic> json) {
@@ -150,7 +148,6 @@ class OptimizeResponse {
       stops: (json['stops'] as List)
           .map((e) => StopInfo.fromJson(e as Map<String, dynamic>))
           .toList(),
-      geometry: json['geometry'] as Map<String, dynamic>,
     );
   }
 }

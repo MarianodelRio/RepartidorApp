@@ -139,7 +139,6 @@ class DeliverySession {
   final String id;
   final DateTime createdAt;
   final List<DeliveryStop> stops;
-  final Map<String, dynamic> geometry;
   final int totalStops;
   final int totalPackages;
   final String totalDistanceDisplay;
@@ -150,7 +149,6 @@ class DeliverySession {
     required this.id,
     required this.createdAt,
     required this.stops,
-    required this.geometry,
     required this.totalStops,
     this.totalPackages = 0,
     required this.totalDistanceDisplay,
@@ -207,7 +205,6 @@ class DeliverySession {
         'id': id,
         'createdAt': createdAt.toIso8601String(),
         'stops': stops.map((s) => s.toMap()).toList(),
-        'geometry': geometry,
         'totalStops': totalStops,
         'totalPackages': totalPackages,
         'totalDistanceDisplay': totalDistanceDisplay,
@@ -222,7 +219,6 @@ class DeliverySession {
       stops: (map['stops'] as List)
           .map((s) => DeliveryStop.fromMap(s as Map<dynamic, dynamic>))
           .toList(),
-      geometry: Map<String, dynamic>.from(map['geometry'] as Map),
       totalStops: map['totalStops'] as int,
       totalPackages: (map['totalPackages'] as int?) ?? 0,
       totalDistanceDisplay: map['totalDistanceDisplay'] as String,

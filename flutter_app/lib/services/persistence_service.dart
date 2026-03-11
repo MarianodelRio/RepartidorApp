@@ -97,7 +97,6 @@ class PersistenceService {
       id: id,
       createdAt: DateTime.now(),
       stops: stops,
-      geometry: response.geometry,
       totalStops: response.summary.totalStops,
       totalPackages: response.summary.totalPackages,
       totalDistanceDisplay: response.summary.totalDistanceDisplay,

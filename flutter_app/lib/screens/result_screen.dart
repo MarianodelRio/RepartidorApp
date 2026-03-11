@@ -131,7 +131,6 @@ class _ResultScreenState extends State<ResultScreen> {
                   RouteMap(
                     key: _mapKey,
                     stops: response.stops,
-                    geometry: response.geometry,
                     highlightedStopIndex: _highlightedStop,
                     onMarkerTapped: _onMarkerTapped,
                   ),
