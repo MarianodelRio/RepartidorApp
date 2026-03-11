@@ -249,7 +249,7 @@ class TestCacheKey:
 
 # ══════════════════════════════════════════════════════════════════════
 #  in_work_bbox
-# Límites comarca: lat [37.3, 38.2]  lon [-5.6, -4.4]
+# Límites comarca: lat [37.65, 37.95]  lon [-5.35, -4.90]
 # ══════════════════════════════════════════════════════════════════════
 
 class TestInWorkBbox:
@@ -286,9 +286,9 @@ class TestInWorkBbox:
 
     def test_en_el_borde_incluido(self):
         """Los límites son inclusivos."""
-        assert in_work_bbox(37.3, -5.6) is True
-        assert in_work_bbox(38.2, -4.4) is True
+        assert in_work_bbox(37.65, -5.35) is True
+        assert in_work_bbox(37.95, -4.90) is True
 
     def test_justo_fuera_del_borde(self):
-        assert in_work_bbox(37.29, -5.1) is False
-        assert in_work_bbox(38.21, -5.1) is False
+        assert in_work_bbox(37.64, -5.1) is False
+        assert in_work_bbox(37.96, -5.1) is False

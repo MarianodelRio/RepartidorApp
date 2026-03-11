@@ -147,19 +147,20 @@ def test_google_rooftop_devuelve_exact_address():
     assert conf == "EXACT_ADDRESS"
 
 
-def test_google_range_interpolated_devuelve_good():
+def test_google_range_interpolated_sin_alias_devuelve_failed():
+    """RANGE_INTERPOLATED sin alias → no se acepta, requiere pin manual."""
     with patch("app.services.geocoding.requests.get", return_value=_google_resp("RANGE_INTERPOLATED")):
         coord, conf = geo.geocode("Calle Mayor 1")
-    assert coord is not None
-    assert conf == "GOOD"
+    assert coord is None
+    assert conf == "FAILED"
 
 
-def test_google_geometric_center_sin_alias_devuelve_good():
-    """GEOMETRIC_CENTER sin alias → se acepta como aproximación (GOOD)."""
+def test_google_geometric_center_sin_alias_devuelve_failed():
+    """GEOMETRIC_CENTER sin alias → no se acepta, requiere pin manual."""
     with patch("app.services.geocoding.requests.get", return_value=_google_resp("GEOMETRIC_CENTER")):
         coord, conf = geo.geocode("Calle Mayor 1")
-    assert coord is not None
-    assert conf == "GOOD"
+    assert coord is None
+    assert conf == "FAILED"
 
 
 def test_google_fuera_de_bbox_devuelve_failed():
@@ -190,17 +191,16 @@ def test_cache_none_devuelve_failed_sin_llamar_google():
     assert conf == "FAILED"
 
 
-def test_places_error_de_red_devuelve_none():
-    """Si Places lanza excepción de red, devuelve None y hace fallback a approx_coord."""
+def test_places_error_de_red_devuelve_failed():
+    """Si Places lanza excepción de red, sin fallback → FAILED."""
     with patch("app.services.geocoding.requests.get") as mock_get:
         mock_get.side_effect = [
-            _google_resp("GEOMETRIC_CENTER"),   # Geocoding: approx_coord disponible
+            _google_resp("GEOMETRIC_CENTER"),   # Geocoding: no exacto
             Exception("timeout"),               # Places: error de red
         ]
         coord, conf = geo.geocode("Calle Mayor 1", alias="Bar El Sol")
-    # Fallback al GEOMETRIC_CENTER de Geocoding
-    assert coord is not None
-    assert conf == "GOOD"
+    assert coord is None
+    assert conf == "FAILED"
 
 
 def test_google_sin_api_key_no_llama_y_devuelve_failed(monkeypatch):
@@ -251,32 +251,32 @@ def test_places_solo_se_llama_con_alias():
     assert mock_get.call_count == 1
 
 
-def test_places_fuera_de_bbox_usa_fallback_geocoding():
-    """Places fuera de bbox → rechazado; pero Geocoding aproximado sirve de fallback (GOOD)."""
+def test_places_fuera_de_bbox_devuelve_failed():
+    """Places fuera de bbox → rechazado, sin fallback → FAILED."""
     with patch("app.services.geocoding.requests.get") as mock_get:
         mock_get.side_effect = [
             _google_resp("GEOMETRIC_CENTER"),
             _places_resp(lat=40.4, lng=-3.7, name="Lugar Lejano"),  # Madrid → fuera de bbox
         ]
         coord, conf = geo.geocode("Calle Mayor 1", alias="Lugar Lejano")
-    assert coord is not None
-    assert conf == "GOOD"
+    assert coord is None
+    assert conf == "FAILED"
 
 
-def test_places_nombre_no_coincide_usa_fallback_geocoding():
-    """Places devuelve nombre muy distinto → rechazado; fallback a Geocoding aproximado."""
+def test_places_nombre_no_coincide_devuelve_failed():
+    """Places devuelve nombre muy distinto → rechazado, sin fallback → FAILED."""
     with patch("app.services.geocoding.requests.get") as mock_get:
         mock_get.side_effect = [
             _google_resp("GEOMETRIC_CENTER"),
             _places_resp(name="Ferretería García"),  # nada que ver con "Supermercado Los Olivos"
         ]
         coord, conf = geo.geocode("Calle Mayor 1", alias="Supermercado Los Olivos")
-    assert coord is not None
-    assert conf == "GOOD"  # fallback al GEOMETRIC_CENTER
+    assert coord is None
+    assert conf == "FAILED"
 
 
-def test_places_demasiado_lejos_usa_fallback_geocoding():
-    """Places a > 300 m de la coord de Geocoding → rechazado; fallback a GOOD."""
+def test_places_demasiado_lejos_devuelve_failed():
+    """Places a > 300 m de la coord de Geocoding → rechazado, sin fallback → FAILED."""
     with patch("app.services.geocoding.requests.get") as mock_get:
         # ref_coord: (37.805, -5.099). Places a ~3 km → rechazado
         mock_get.side_effect = [
@@ -284,8 +284,8 @@ def test_places_demasiado_lejos_usa_fallback_geocoding():
             _places_resp(lat=37.830, lng=-5.060, name="Bar El Sol"),
         ]
         coord, conf = geo.geocode("Calle Mayor 1", alias="Bar El Sol")
-    assert coord is not None
-    assert conf == "GOOD"
+    assert coord is None
+    assert conf == "FAILED"
 
 
 def test_places_sin_geocoding_y_nombre_no_coincide_devuelve_failed():

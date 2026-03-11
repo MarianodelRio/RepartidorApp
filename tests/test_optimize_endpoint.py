@@ -175,8 +175,8 @@ def test_validate_coord_valida_posadas():
 
 
 def test_validate_coord_valida_rivero():
-    # Cortijo Rivero, ~55 km al sur-este — debe estar dentro del bbox
-    assert _validate_coord(37.55, -4.5) is None
+    # Rivero de Posadas — dentro del bbox de reparto
+    assert _validate_coord(37.77, -5.12) is None
 
 
 # ── Tests HTTP con coords inválidas ───────────────────────────────────────────

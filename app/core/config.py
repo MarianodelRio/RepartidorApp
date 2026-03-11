@@ -38,10 +38,10 @@ GEOCODE_TIMEOUT = 30    # timeout por llamada a APIs externas
 OSRM_TIMEOUT = 60       # timeout para llamadas a OSRM
 
 # ── Bounding box del área de reparto ─────────────────────────
-# Cubre Posadas, Palma del Río, Córdoba, Écija y zonas rurales
-# de la comarca (incluye cortijos como Rivero, radio ~60 km).
-# Coords fuera de este rectángulo se rechazan antes de optimizar.
-BBOX_LAT_MIN = 37.3
-BBOX_LAT_MAX = 38.2
-BBOX_LON_MIN = -5.6
-BBOX_LON_MAX = -4.4
+# Cubre Posadas, Rivero de Posadas, Palma del Río y carreteras
+# de acceso (~25 km radio). Excluye Córdoba capital y Montilla
+# para evitar geocodificaciones erróneas en calles homónimas.
+BBOX_LAT_MIN = 37.65
+BBOX_LAT_MAX = 37.95
+BBOX_LON_MIN = -5.35
+BBOX_LON_MAX = -4.90

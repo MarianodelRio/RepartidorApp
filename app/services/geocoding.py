@@ -7,16 +7,17 @@ Pipeline (en orden de prioridad):
   1. Caché en disco: override permanente, google/places con TTL de GOOGLE_CACHE_TTL_DAYS días.
   2. Fuzzy matching contra catálogo combinado (OSM + aprendidas).
      Sin llamada HTTP. Corrige el nombre de la calle antes de consultar APIs.
-  3. Google Geocoding API — ROOFTOP → EXACT_ADDRESS, RANGE_INTERPOLATED → GOOD.
-  4. Google Places API — si hay alias de negocio y Google Geocoding no fue exacto.
+  3. Google Geocoding API — solo ROOFTOP → EXACT_ADDRESS.
+     Cualquier otro resultado (RANGE_INTERPOLATED, GEOMETRIC_CENTER, APPROXIMATE)
+     no se acepta directamente; se intenta con Places si hay alias.
+  4. Google Places API — si hay alias de negocio.
   5. FAILED → devuelve None.
 
 Confianza devuelta (str):
   EXACT_ADDRESS  — portal exacto (Google ROOFTOP)
-  GOOD           — buena estimación (Google RANGE_INTERPOLATED)
   EXACT_PLACE    — lugar/negocio encontrado por Places
   OVERRIDE       — pin manual
-  FAILED         — no geocodificado
+  FAILED         — no geocodificado (requiere pin manual)
 """
 
 import difflib
@@ -604,18 +605,17 @@ def _persist_entry(
 def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
     """
     Geocodifica una dirección. Devuelve ((lat, lon), confidence).
-    confidence: EXACT_ADDRESS | GOOD | EXACT_PLACE | OVERRIDE | FAILED
+    confidence: EXACT_ADDRESS | EXACT_PLACE | OVERRIDE | FAILED
 
     Pipeline:
       0. Formato "lat,lon" directo → OVERRIDE.
       1. Caché (_cache): clave de dirección ("calle#num") o clave de alias ("@nombre").
       2. Fuzzy matching en catálogo (corrección de nombre sin API).
-      3. Google Geocoding ROOFTOP → EXACT_ADDRESS / RANGE_INTERPOLATED → GOOD.
-         GEOMETRIC_CENTER/APPROXIMATE → se guarda como ref para validar Places.
+      3. Google Geocoding: solo ROOFTOP → EXACT_ADDRESS.
+         Resto de resultados (RANGE_INTERPOLATED, GEOMETRIC_CENTER, APPROXIMATE)
+         se usan solo como referencia de distancia para validar Places.
       4. Google Places (solo si alias): valida nombre (sim≥0.55) y distancia (≤300m).
-         Si Places es rechazado pero hay ref de Geocoding → GOOD (coord aproximada).
-      5. Sin alias y Geocoding aproximado → GOOD.
-      6. FAILED.
+      5. FAILED (requiere pin manual).
     """
     if not address or not address.strip():
         return None, "FAILED"
@@ -663,17 +663,16 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
         corrected_to = closest
         corrected_street = closest
 
-    # 3. Google Geocoding
-    approx_coord: GeoResult | None = None
+    # 3. Google Geocoding — solo ROOFTOP es aceptado directamente
+    ref_coord: GeoResult | None = None
     google_result = _google_geocode(corrected_street, number)
     if google_result:
         coord, location_type = google_result
-        if location_type in ("ROOFTOP", "RANGE_INTERPOLATED"):
-            confidence = "EXACT_ADDRESS" if location_type == "ROOFTOP" else "GOOD"
+        if location_type == "ROOFTOP":
             _cache[key] = coord
             _persist_entry(
                 key, coord[0], coord[1], street, number,
-                source="google", confidence=confidence,
+                source="google", confidence="EXACT_ADDRESS",
                 corrected_to=corrected_to,
                 alias=alias if alias else None,
             )
@@ -683,13 +682,14 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
                     save_learned_street(corrected_to)
                 except Exception:
                     pass
-            return coord, confidence
-        # GEOMETRIC_CENTER / APPROXIMATE: guardar como referencia para validar Places
-        approx_coord = coord
+            return coord, "EXACT_ADDRESS"
+        # RANGE_INTERPOLATED / GEOMETRIC_CENTER / APPROXIMATE:
+        # guardar como referencia de distancia para validar Places
+        ref_coord = coord
 
     # 4. Google Places (solo si hay alias de negocio)
     if alias:
-        places_coord = _google_places(alias, ref_coord=approx_coord)
+        places_coord = _google_places(alias, ref_coord=ref_coord)
         if places_coord:
             _cache[key] = places_coord
             _persist_entry(
@@ -698,30 +698,6 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
                 corrected_to=corrected_to, alias=alias,
             )
             return places_coord, "EXACT_PLACE"
-
-        # Places rechazado o sin resultado: usar Geocoding aproximado si lo hay
-        if approx_coord is not None:
-            logger.info(
-                "Places rechazado, usando Geocoding aproximado para '%s'", address
-            )
-            _cache[key] = approx_coord
-            _persist_entry(
-                key, approx_coord[0], approx_coord[1], street, number,
-                source="google", confidence="GOOD",
-                corrected_to=corrected_to,
-                alias=alias,
-            )
-            return approx_coord, "GOOD"
-
-    elif approx_coord is not None:
-        # Sin alias: usar directamente la aproximación de Geocoding
-        _cache[key] = approx_coord
-        _persist_entry(
-            key, approx_coord[0], approx_coord[1], street, number,
-            source="google", confidence="GOOD",
-            corrected_to=corrected_to,
-        )
-        return approx_coord, "GOOD"
 
     # 5. FAILED
     _cache[key] = None
