@@ -59,25 +59,28 @@ void main() {
   });
 
   group('CsvData — columnas opcionales', () {
-    test('notas y aliases tienen valor por defecto []', () {
+    test('notas, agencias y aliases tienen valor por defecto []', () {
       const data = CsvData(
         clientes: ['Juan'],
         direcciones: ['Calle A 1'],
         ciudades: ['Posadas'],
       );
       expect(data.notas, isEmpty);
+      expect(data.agencias, isEmpty);
       expect(data.aliases, isEmpty);
     });
 
-    test('acepta notas y aliases explícitos', () {
+    test('acepta notas, agencias y aliases explícitos', () {
       const data = CsvData(
         clientes: ['Juan'],
         direcciones: ['Calle A 1'],
         ciudades: ['Posadas'],
         notas: ['bajo'],
+        agencias: ['MRW'],
         aliases: ['Bar El Gato'],
       );
       expect(data.notas, ['bajo']);
+      expect(data.agencias, ['MRW']);
       expect(data.aliases, ['Bar El Gato']);
     });
   });

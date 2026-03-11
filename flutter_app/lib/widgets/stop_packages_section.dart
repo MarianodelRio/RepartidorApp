@@ -7,8 +7,8 @@ import '../models/route_models.dart';
 ///
 /// Renderiza la lista de paquetes de una parada con formato consistente:
 ///   - 0 paquetes o todos vacíos → nada
-///   - 1 paquete → "clientName · nota"  en una línea
-///   - N paquetes → "· clientName · nota" por línea (lista sin collapsible)
+///   - 1 paquete → "clientName · nota · agencia"  en una línea
+///   - N paquetes → "· clientName · nota · agencia" por línea (lista sin collapsible)
 class StopPackagesSection extends StatelessWidget {
   final List<Package> packages;
 
@@ -44,7 +44,7 @@ class StopPackagesSection extends StatelessWidget {
 
   List<String> _buildLines() {
     final filtered = packages
-        .where((p) => p.clientName.isNotEmpty || p.nota.isNotEmpty)
+        .where((p) => p.clientName.isNotEmpty || p.nota.isNotEmpty || p.agencia.isNotEmpty)
         .toList();
 
     if (filtered.isEmpty) return [];
@@ -54,6 +54,7 @@ class StopPackagesSection extends StatelessWidget {
       final parts = [
         if (p.clientName.isNotEmpty) p.clientName,
         if (p.nota.isNotEmpty) p.nota,
+        if (p.agencia.isNotEmpty) p.agencia,
       ];
       return [parts.join(' · ')];
     }
@@ -62,6 +63,7 @@ class StopPackagesSection extends StatelessWidget {
       final parts = [
         if (p.clientName.isNotEmpty) p.clientName,
         if (p.nota.isNotEmpty) p.nota,
+        if (p.agencia.isNotEmpty) p.agencia,
       ];
       final content = parts.join(' · ');
       return '· $content';

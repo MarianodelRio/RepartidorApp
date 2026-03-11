@@ -5,31 +5,36 @@ library;
 //  Paquete individual (cliente + nota)
 // ═══════════════════════════════════════════
 
-/// Un paquete individual dentro de una parada: cliente + nota de entrega.
+/// Un paquete individual dentro de una parada: cliente + nota + agencia.
 class Package {
   final String clientName;
   final String nota;
+  final String agencia; // empresa de reparto (MRW, SEUR, etc.) — solo informativo
 
-  const Package({this.clientName = '', this.nota = ''});
+  const Package({this.clientName = '', this.nota = '', this.agencia = ''});
 
   factory Package.fromJson(Map<String, dynamic> json) => Package(
         clientName: (json['client_name'] as String?) ?? '',
         nota: (json['nota'] as String?) ?? '',
+        agencia: (json['agencia'] as String?) ?? '',
       );
 
   Map<String, dynamic> toJson() => {
         'client_name': clientName,
         'nota': nota,
+        'agencia': agencia,
       };
 
   Map<String, dynamic> toMap() => {
         'client_name': clientName,
         'nota': nota,
+        'agencia': agencia,
       };
 
   factory Package.fromMap(Map<dynamic, dynamic> map) => Package(
         clientName: (map['client_name'] as String?) ?? '',
         nota: (map['nota'] as String?) ?? '',
+        agencia: (map['agencia'] as String?) ?? '',
       );
 }
 

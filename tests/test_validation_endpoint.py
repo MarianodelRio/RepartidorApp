@@ -14,13 +14,14 @@ URL_START = "/api/validation/start"
 URL_OVERRIDE = "/api/validation/override"
 
 
-def _rows(*direcciones, clientes=None, alias=None):
+def _rows(*direcciones, clientes=None, alias=None, agencia=None):
     """Helper: construye la lista rows para el body de la petición."""
     clientes = clientes or [""] * len(direcciones)
     alias = alias or [""] * len(direcciones)
+    agencia = agencia or [""] * len(direcciones)
     return [
-        {"cliente": c, "direccion": d, "ciudad": "Posadas", "alias": a}
-        for c, d, a in zip(clientes, direcciones, alias)
+        {"cliente": c, "direccion": d, "ciudad": "Posadas", "alias": a, "agencia": ag}
+        for c, d, a, ag in zip(clientes, direcciones, alias, agencia)
     ]
 
 
@@ -117,6 +118,44 @@ def test_mezcla_geocodificado_y_fallido(client):
     assert len(data["geocoded"]) == 1
     assert len(data["failed"]) == 1
     assert data["total_packages"] == 2
+
+
+# ── Agencia ───────────────────────────────────────────────────────────────────
+
+def test_agencia_se_incluye_en_paquete(client):
+    """El campo agencia del CSV viaja en el Package de la parada geocodificada."""
+    with patch("app.routers.validation.geocode", return_value=GEOCODE_OK):
+        r = client.post(URL_START, json={"rows": _rows(
+            "Calle Mayor 1", clientes=["Ana"], agencia=["MRW"],
+        )})
+    assert r.status_code == 200
+    packages = r.json()["geocoded"][0]["packages"]
+    assert packages[0]["agencia"] == "MRW"
+
+
+def test_agencia_vacia_cuando_no_se_provee(client):
+    """Si el CSV no tiene agencia, el campo llega vacío en el Package."""
+    with patch("app.routers.validation.geocode", return_value=GEOCODE_OK):
+        r = client.post(URL_START, json={"rows": _rows("Calle Mayor 1")})
+    assert r.status_code == 200
+    packages = r.json()["geocoded"][0]["packages"]
+    assert packages[0]["agencia"] == ""
+
+
+def test_agencia_distintas_en_mismo_destino(client):
+    """Dos paquetes en la misma dirección pueden tener agencias distintas."""
+    with patch("app.routers.validation.geocode", return_value=GEOCODE_OK):
+        r = client.post(URL_START, json={"rows": [
+            {"cliente": "Ana", "direccion": "Calle Mayor 1", "ciudad": "Posadas",
+             "agencia": "MRW", "alias": ""},
+            {"cliente": "Luis", "direccion": "Calle Mayor 1", "ciudad": "Posadas",
+             "agencia": "SEUR", "alias": ""},
+        ]})
+    assert r.status_code == 200
+    packages = r.json()["geocoded"][0]["packages"]
+    assert len(packages) == 2
+    agencias = {p["agencia"] for p in packages}
+    assert agencias == {"MRW", "SEUR"}
 
 
 # ── Alias ─────────────────────────────────────────────────────────────────────

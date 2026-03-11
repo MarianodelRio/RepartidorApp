@@ -139,6 +139,7 @@ class ApiService {
         'direccion': csvData.direcciones[i],
         'ciudad': i < csvData.ciudades.length ? csvData.ciudades[i] : '',
         'nota': i < csvData.notas.length ? csvData.notas[i] : '',
+        'agencia': i < csvData.agencias.length ? csvData.agencias[i] : '',
         'alias': i < csvData.aliases.length ? csvData.aliases[i] : '',
       });
     }

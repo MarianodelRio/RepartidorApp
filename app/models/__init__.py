@@ -11,9 +11,10 @@ from pydantic import BaseModel, Field
 # ═══════════════════════════════════════════
 
 class Package(BaseModel):
-    """Un paquete individual dentro de una parada: cliente + nota de entrega."""
+    """Un paquete individual dentro de una parada: cliente + nota + agencia."""
     client_name: str = Field("", description="Nombre del destinatario")
     nota: str = Field("", description="Nota de entrega (piso, instrucciones, etc.)")
+    agencia: str = Field("", description="Empresa de reparto (MRW, SEUR, etc.)")
 
 
 # ═══════════════════════════════════════════

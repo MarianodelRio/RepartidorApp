@@ -28,7 +28,6 @@ DeliverySession _makeSession(List<DeliveryStop> stops) => DeliverySession(
       id: 'test-session-1',
       createdAt: DateTime(2026, 3, 1, 10, 0, 0),
       stops: stops,
-      geometry: {'type': 'LineString', 'coordinates': []},
       totalStops: stops.where((s) => !s.isOrigin).length,
       totalPackages: stops.fold(0, (sum, s) => sum + s.packageCount),
       totalDistanceDisplay: '2.5 km',

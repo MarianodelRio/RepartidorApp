@@ -46,7 +46,7 @@ def validation_start(req: StartRequest):
             groups[key] = {"address": full_address, "packages": [], "alias": ""}
         if not groups[key]["alias"] and row.alias.strip():
             groups[key]["alias"] = row.alias.strip()
-        groups[key]["packages"].append(Package(client_name=row.cliente, nota=row.nota))
+        groups[key]["packages"].append(Package(client_name=row.cliente, nota=row.nota, agencia=row.agencia))
 
     # 2. Geocodificar cada dirección única
     coord_map: dict[str, tuple[tuple | None, str]] = {}

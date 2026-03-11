@@ -11,8 +11,8 @@ Map<String, dynamic> _geocodedStopJson({
       'client_name': 'Juan García',
       'all_client_names': ['Juan García', 'María López'],
       'packages': [
-        {'client_name': 'Juan García', 'nota': ''},
-        {'client_name': 'María López', 'nota': '2º izq'},
+        {'client_name': 'Juan García', 'nota': '', 'agencia': 'MRW'},
+        {'client_name': 'María López', 'nota': '2º izq', 'agencia': ''},
       ],
       'package_count': 2,
       'lat': 37.8012,
@@ -25,7 +25,7 @@ Map<String, dynamic> _failedStopJson() => {
       'alias': '',
       'client_names': ['Pedro Ruiz'],
       'packages': [
-        {'client_name': 'Pedro Ruiz', 'nota': ''},
+        {'client_name': 'Pedro Ruiz', 'nota': '', 'agencia': 'SEUR'},
       ],
       'package_count': 1,
     };
@@ -96,11 +96,13 @@ void main() {
       expect(stop.confidence, GeoConfidence.exactAddress);
     });
 
-    test('deserializa la lista de packages', () {
+    test('deserializa la lista de packages con agencia', () {
       final stop = GeocodedStop.fromJson(_geocodedStopJson());
       expect(stop.packages.length, 2);
       expect(stop.packages[0].clientName, 'Juan García');
+      expect(stop.packages[0].agencia, 'MRW');
       expect(stop.packages[1].nota, '2º izq');
+      expect(stop.packages[1].agencia, '');
     });
 
     test('confidence GOOD se mapea correctamente', () {

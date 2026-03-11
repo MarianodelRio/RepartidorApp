@@ -6,7 +6,7 @@ import '../models/csv_data.dart';
 /// Servicio para parsear archivos CSV de paradas.
 ///
 /// Formato esperado:
-///   cliente,direccion,ciudad[,nota]
+///   cliente,direccion,ciudad[,nota][,agencia][,alias]
 ///
 /// Cada fila = 1 paquete.
 class CsvService {
@@ -35,6 +35,7 @@ class CsvService {
     final direcciones = <String>[];
     final ciudades = <String>[];
     final notas = <String>[];
+    final agencias = <String>[];
     final aliases = <String>[];
 
     for (int i = 1; i < lines.length; i++) {
@@ -49,6 +50,7 @@ class CsvService {
       direcciones.add(dir);
       ciudades.add(_safeGet(fields, colMap['ciudad']!).trim());
       notas.add(_safeGet(fields, colMap['nota']!).trim());
+      agencias.add(_safeGet(fields, colMap['agencia']!).trim());
       aliases.add(_safeGet(fields, colMap['alias']!).trim());
     }
 
@@ -57,13 +59,15 @@ class CsvService {
       direcciones: direcciones,
       ciudades: ciudades,
       notas: notas,
+      agencias: agencias,
       aliases: aliases,
     );
   }
 
-  /// Detecta las columnas cliente, direccion, ciudad, nota por nombre.
+  /// Detecta las columnas cliente, direccion, ciudad, nota, agencia, alias por nombre.
   static Map<String, int> _detectColumns(List<String> headers) {
-    int clienteIdx = -1, direccionIdx = -1, ciudadIdx = -1, notaIdx = -1, aliasIdx = -1;
+    int clienteIdx = -1, direccionIdx = -1, ciudadIdx = -1, notaIdx = -1,
+        agenciaIdx = -1, aliasIdx = -1;
 
     for (int i = 0; i < headers.length; i++) {
       final h = headers[i].toLowerCase().trim();
@@ -88,6 +92,11 @@ class CsvService {
            h == 'obs' || h.contains('observac'))) {
         notaIdx = i;
       }
+      if (agenciaIdx < 0 &&
+          (h == 'agencia' || h == 'transportista' || h == 'empresa' ||
+           h == 'carrier' || h.contains('agencia') || h.contains('transport'))) {
+        agenciaIdx = i;
+      }
       if (aliasIdx < 0 &&
           (h == 'alias' || h == 'negocio' || h == 'local' || h == 'establecimiento' ||
            h.contains('alias'))) {
@@ -100,6 +109,7 @@ class CsvService {
       'direccion': direccionIdx,
       'ciudad': ciudadIdx,
       'nota': notaIdx,
+      'agencia': agenciaIdx,
       'alias': aliasIdx,
     };
   }

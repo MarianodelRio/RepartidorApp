@@ -103,7 +103,7 @@ def test_ruta_simple_devuelve_200(client):
 
 def test_ruta_simple_contiene_origen_y_parada(client):
     mocks = _mocks_ok()
-    with mocks[0], mocks[1], mocks[2]:
+    with mocks[0], mocks[1]:
         r = client.post(URL, json=_req_con_coords())
     stops = r.json()["stops"]
     assert len(stops) == 2

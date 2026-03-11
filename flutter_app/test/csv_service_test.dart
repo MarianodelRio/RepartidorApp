@@ -91,6 +91,22 @@ void main() {
       expect(data.notas, ['']);
     });
 
+    test('parsea columna agencia', () {
+      final data = CsvService.parse(_bytes(
+        'cliente,direccion,ciudad,agencia\n'
+        'Juan,Calle A 1,Posadas,MRW',
+      ));
+      expect(data.agencias, ['MRW']);
+    });
+
+    test('agencia vacía cuando no existe la columna', () {
+      final data = CsvService.parse(_bytes(
+        'cliente,direccion,ciudad\n'
+        'Juan,Calle A 1,Posadas',
+      ));
+      expect(data.agencias, ['']);
+    });
+
     test('parsea columna alias', () {
       final data = CsvService.parse(_bytes(
         'cliente,direccion,ciudad,alias\n'
@@ -109,11 +125,12 @@ void main() {
 
     test('parsea todas las columnas a la vez', () {
       final data = CsvService.parse(_bytes(
-        'cliente,direccion,ciudad,nota,alias\n'
-        'Juan,Calle A 1,Posadas,bajo,Bar El Gato',
+        'cliente,direccion,ciudad,nota,agencia,alias\n'
+        'Juan,Calle A 1,Posadas,bajo,SEUR,Bar El Gato',
       ));
       expect(data.clientes[0], 'Juan');
       expect(data.notas[0], 'bajo');
+      expect(data.agencias[0], 'SEUR');
       expect(data.aliases[0], 'Bar El Gato');
     });
   });
@@ -161,6 +178,22 @@ void main() {
         'Juan,Calle A 1,Posadas',
       ));
       expect(data.ciudades, ['Posadas']);
+    });
+
+    test('acepta "transportista" como columna de agencia', () {
+      final data = CsvService.parse(_bytes(
+        'cliente,direccion,ciudad,transportista\n'
+        'Juan,Calle A 1,Posadas,GLS',
+      ));
+      expect(data.agencias, ['GLS']);
+    });
+
+    test('acepta "empresa" como columna de agencia', () {
+      final data = CsvService.parse(_bytes(
+        'cliente,direccion,ciudad,empresa\n'
+        'Juan,Calle A 1,Posadas,Correos Express',
+      ));
+      expect(data.agencias, ['Correos Express']);
     });
 
     test('acepta cabeceras en mayúsculas', () {

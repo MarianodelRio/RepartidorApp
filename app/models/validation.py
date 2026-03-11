@@ -12,7 +12,8 @@ class CsvRow(BaseModel):
     direccion: str
     ciudad: str = ""
     nota: str = ""
-    alias: str = ""  # nombre de negocio/lugar (activa Google Places si se provee)
+    agencia: str = ""  # empresa de reparto (MRW, SEUR, etc.) — solo informativo
+    alias: str = ""    # nombre de negocio/lugar (activa Google Places si se provee)
 
 
 class StartRequest(BaseModel):
