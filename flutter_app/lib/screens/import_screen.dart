@@ -1023,7 +1023,7 @@ class _ImportScreenState extends State<ImportScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                    'Formato: .csv (cliente, direccion, ciudad[, nota, alias])',
+                    'Formato: .csv (cliente, direccion, ciudad, nota, agencia, alias)',
                     style: TextStyle(
                         fontSize: 12, color: AppColors.textTertiary)),
               ),
