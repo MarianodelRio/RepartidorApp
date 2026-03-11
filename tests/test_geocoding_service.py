@@ -178,6 +178,31 @@ def test_google_zero_results_devuelve_failed():
     assert conf == "FAILED"
 
 
+def test_cache_none_devuelve_failed_sin_llamar_google():
+    """Dirección ya intentada y fallida (cache=None) devuelve FAILED sin llamar a Google."""
+    with patch("app.services.geocoding.requests.get", return_value=_zero_results()):
+        geo.geocode("Calle Inexistente 999")  # primer intento → FAILED, cache[key]=None
+
+    with patch("app.services.geocoding.requests.get") as mock_get:
+        coord, conf = geo.geocode("Calle Inexistente 999")  # segundo intento → desde caché
+        mock_get.assert_not_called()
+    assert coord is None
+    assert conf == "FAILED"
+
+
+def test_places_error_de_red_devuelve_none():
+    """Si Places lanza excepción de red, devuelve None y hace fallback a approx_coord."""
+    with patch("app.services.geocoding.requests.get") as mock_get:
+        mock_get.side_effect = [
+            _google_resp("GEOMETRIC_CENTER"),   # Geocoding: approx_coord disponible
+            Exception("timeout"),               # Places: error de red
+        ]
+        coord, conf = geo.geocode("Calle Mayor 1", alias="Bar El Sol")
+    # Fallback al GEOMETRIC_CENTER de Geocoding
+    assert coord is not None
+    assert conf == "GOOD"
+
+
 def test_google_sin_api_key_no_llama_y_devuelve_failed(monkeypatch):
     monkeypatch.setattr(geo, "GOOGLE_API_KEY", "")
     with patch("app.services.geocoding.requests.get") as mock_get:
