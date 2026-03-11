@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../config/app_theme.dart';
 import '../models/route_models.dart';
@@ -245,18 +246,27 @@ class _ResultScreenState extends State<ResultScreen> {
       );
     }
 
-    // ── Guardar en almacenamiento externo de la app (accesible via gestor de archivos) ──
+    // ── Guardar en carpeta Descargas ──
     try {
-      final dir = await getExternalStorageDirectory() ??
-          await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/ruta_optimizada.csv');
+      // Solicitar permiso en Android ≤ 9; en Android 10+ actúa requestLegacyExternalStorage
+      await Permission.storage.request();
+
+      const downloadsPath = '/storage/emulated/0/Download';
+      final downloadsDir = Directory(downloadsPath);
+      final targetDir = downloadsDir.existsSync()
+          ? downloadsDir
+          : (await getExternalStorageDirectory() ??
+              await getApplicationDocumentsDirectory());
+
+      final file = File('${targetDir.path}/ruta_optimizada.csv');
       await file.writeAsString(buffer.toString(), encoding: utf8);
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('✅ CSV guardado en el dispositivo'),
+            content: Text('✅ CSV guardado en ${targetDir.path}'),
             backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 5),
             action: SnackBarAction(
               label: 'OK',
               textColor: Colors.white,
@@ -279,15 +289,15 @@ class _ResultScreenState extends State<ResultScreen> {
 
   /// Construye el contenido de la columna "paquetes" para una parada.
   ///
-  /// 1 paquete  → "Juan García - nota"  (sin número)
-  /// N paquetes → "1. Juan García - nota | 2. María López | 3. Pedro - otra nota"
+  /// 1 paquete  → "Juan García - nota - agencia"  (sin número)
+  /// N paquetes → "1. Juan García - nota - agencia | 2. María López - SEUR | ..."
   ///
-  /// Si cliente o nota están vacíos se omiten, nunca quedan guiones solos.
+  /// Los campos vacíos se omiten, nunca quedan guiones solos.
   String _buildPaquetesCell(StopInfo stop) {
     if (stop.packages.isEmpty) return '';
 
     String formatPackage(Package p) {
-      return [p.clientName, p.nota]
+      return [p.clientName, p.nota, p.agencia]
           .where((s) => s.isNotEmpty)
           .join(' - ');
     }
