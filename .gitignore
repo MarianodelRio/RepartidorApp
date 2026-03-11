@@ -49,3 +49,5 @@ data_input/
 # Claude 
 CLAUDE*
 
+# OSM app
+osm_app/
