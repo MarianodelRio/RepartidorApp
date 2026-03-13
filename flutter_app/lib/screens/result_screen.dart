@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../config/app_theme.dart';
 import '../models/route_models.dart';
@@ -65,8 +65,8 @@ class _ResultScreenState extends State<ResultScreen> {
           // ── Botón de Exportar CSV ──
           IconButton(
             onPressed: () => _exportCsv(context),
-            icon: const Icon(Icons.download),
-            tooltip: 'Descargar ruta CSV',
+            icon: const Icon(Icons.share),
+            tooltip: 'Exportar ruta CSV',
           ),
           // ── Botón de Ordenar Paquetes ──
           IconButton(
@@ -207,14 +207,14 @@ class _ResultScreenState extends State<ResultScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
-            Icon(Icons.download, color: AppColors.primary),
+            Icon(Icons.share, color: AppColors.primary),
             SizedBox(width: 8),
-            Text('Descargar ruta CSV',
+            Text('Exportar ruta CSV',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
           ],
         ),
         content: const Text(
-          'Se guardará el fichero ruta_optimizada.csv en el almacenamiento del dispositivo.',
+          'Se generará el fichero ruta_optimizada.csv y podrás guardarlo donde quieras (Descargas, Drive, WhatsApp…).',
           style: TextStyle(fontSize: 14),
         ),
         actions: [
@@ -224,8 +224,8 @@ class _ResultScreenState extends State<ResultScreen> {
           ),
           FilledButton.icon(
             onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.download, size: 18),
-            label: const Text('Descargar'),
+            icon: const Icon(Icons.share, size: 18),
+            label: const Text('Compartir'),
           ),
         ],
       ),
@@ -246,40 +246,21 @@ class _ResultScreenState extends State<ResultScreen> {
       );
     }
 
-    // ── Guardar en carpeta Descargas ──
+    // ── Compartir / guardar CSV via sistema ──
     try {
-      // Solicitar permiso en Android ≤ 9; en Android 10+ actúa requestLegacyExternalStorage
-      await Permission.storage.request();
-
-      const downloadsPath = '/storage/emulated/0/Download';
-      final downloadsDir = Directory(downloadsPath);
-      final targetDir = downloadsDir.existsSync()
-          ? downloadsDir
-          : (await getExternalStorageDirectory() ??
-              await getApplicationDocumentsDirectory());
-
-      final file = File('${targetDir.path}/ruta_optimizada.csv');
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/ruta_optimizada.csv');
       await file.writeAsString(buffer.toString(), encoding: utf8);
 
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ CSV guardado en ${targetDir.path}'),
-            backgroundColor: AppColors.success,
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: 'OK',
-              textColor: Colors.white,
-              onPressed: () {},
-            ),
-          ),
-        );
-      }
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'text/csv', name: 'ruta_optimizada.csv')],
+        subject: 'Ruta optimizada',
+      );
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al guardar: $e'),
+            content: Text('Error al exportar: $e'),
             backgroundColor: AppColors.error,
           ),
         );
