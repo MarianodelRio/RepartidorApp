@@ -2,14 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../config/app_theme.dart';
+import '../models/origin_mode.dart';
 import '../screens/map_picker_screen.dart';
-
-/// Modos de selección de origen.
-enum OriginMode {
-  defaultAddress,
-  manual,
-  gps,
-}
 
 /// Selector del punto de inicio de la ruta.
 class OriginSelector extends StatefulWidget {

@@ -8,7 +8,6 @@ POST /optimize
 """
 
 import time
-from collections import OrderedDict
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -23,9 +22,8 @@ from app.models import (
     StopInfo,
     RouteSummary,
 )
-from app.services.geocoding import geocode, _parse_address
-from app.services.routing import optimize_route, snap_to_street, _format_distance, get_osrm_matrix
-from app.utils.normalization import normalize_for_dedup as _normalize_for_dedup
+from app.services.geocoding import geocode, parse_address
+from app.services.routing import optimize_route, snap_to_street, format_distance, get_osrm_matrix
 from app.utils.validation import validate_coord as _validate_coord
 
 
@@ -42,39 +40,6 @@ class RouteEvaluateResponse(BaseModel):
 
 router = APIRouter(tags=["optimize"])
 logger = get_logger(__name__)
-
-
-# ── Deduplicación de direcciones ──────────────────────────────────────────────
-
-def _group_duplicate_addresses(
-    addresses: list[str],
-    packages_in: list[Package],
-) -> tuple[list[str], list[str], list[list[str]], list[list[Package]], list[int]]:
-    """Agrupa filas con la misma dirección normalizada.
-
-    Devuelve:
-        unique_addresses, unique_primary_names, all_client_names,
-        all_packages, package_counts
-    """
-    groups: OrderedDict[str, dict] = OrderedDict()
-    for addr, pkg in zip(addresses, packages_in):
-        key = _normalize_for_dedup(addr)
-        if key not in groups:
-            groups[key] = {"address": addr, "packages": []}
-        groups[key]["packages"].append(pkg)
-
-    unique_addresses, unique_primary_names = [], []
-    all_client_names_out, all_packages_out, package_counts = [], [], []
-    for g in groups.values():
-        unique_addresses.append(g["address"])
-        pkgs: list[Package] = g["packages"]
-        primary = next((p.client_name for p in pkgs if p.client_name), "")
-        unique_primary_names.append(primary)
-        all_client_names_out.append([p.client_name for p in pkgs])
-        all_packages_out.append(pkgs)
-        package_counts.append(len(pkgs))
-
-    return unique_addresses, unique_primary_names, all_client_names_out, all_packages_out, package_counts
 
 
 # ── Resolución de coordenadas desde el request ────────────────────────────────
@@ -225,7 +190,7 @@ def optimize(req: OptimizeRequest):
         origin_coord, _ = geocode(origin_addr)
         if origin_coord is None:
             raise HTTPException(400, detail=f"No se pudo geocodificar el origen: {origin_addr}")
-        origin_hint, _ = _parse_address(origin_addr)
+        origin_hint, _ = parse_address(origin_addr)
     else:
         origin_coord = (DEPOT_LAT, DEPOT_LON)
         origin_hint = START_ADDRESS
@@ -245,7 +210,7 @@ def optimize(req: OptimizeRequest):
     routable_ok: list[tuple[str, tuple[float, float], int]] = []
     for addr, coord, orig_i in geocoded_ok:
         lat, lon = coord
-        street_hint, _ = _parse_address(addr)
+        street_hint, _ = parse_address(addr)
         snapped = snap_to_street(lat, lon, street_hint)
         if snapped is None:
             geocoded_fail.append((addr, orig_i))
@@ -323,7 +288,7 @@ def optimize(req: OptimizeRequest):
             total_stops=len(ok_addresses),
             total_packages=total_packages,
             total_distance_m=total_dist,
-            total_distance_display=_format_distance(total_dist),
+            total_distance_display=format_distance(total_dist),
             computing_time_ms=computing_ms,
         ),
         stops=stops,
@@ -359,6 +324,6 @@ def route_evaluate(req: RouteEvaluateRequest):
 
     return RouteEvaluateResponse(
         total_distance_m=total_dist,
-        total_distance_display=_format_distance(total_dist),
+        total_distance_display=format_distance(total_dist),
         total_stops=len(coords) - 1,
     )

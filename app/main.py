@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.config import BASE_DIR
 from app.routers import optimize, validation, system
-from osm_app.router import router as map_editor_router
+# from osm_app.router import router as map_editor_router  # módulo externo, no incluido en este repo
 
 logging.basicConfig(
     level=logging.INFO,
@@ -53,4 +53,4 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.include_router(system.router)
 app.include_router(optimize.router, prefix="/api")
 app.include_router(validation.router, prefix="/api")
-app.include_router(map_editor_router)
+# app.include_router(map_editor_router)  # módulo externo, no incluido en este repo

@@ -1,6 +1,18 @@
-"""Normalización de texto para deduplicación de direcciones."""
+"""Normalización de texto para direcciones."""
 
+import re
 import unicodedata
+
+
+def normalize_text(text: str) -> str:
+    """Normalización general: minúsculas, sin acentos, espacios simples.
+
+    Preserva comas y puntos — no los elimina. Usada para fuzzy matching,
+    cache keys y comparación de nombres de calle.
+    """
+    nfkd = unicodedata.normalize("NFKD", text.lower())
+    no_acc = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", no_acc).strip()
 
 
 def normalize_for_dedup(addr: str) -> str:

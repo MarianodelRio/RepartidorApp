@@ -133,14 +133,14 @@ class ApiService {
     required CsvData csvData,
   }) async {
     final rows = <Map<String, String>>[];
-    for (int i = 0; i < csvData.direcciones.length; i++) {
+    for (final row in csvData.rows) {
       rows.add({
-        'cliente': i < csvData.clientes.length ? csvData.clientes[i] : '',
-        'direccion': csvData.direcciones[i],
-        'ciudad': i < csvData.ciudades.length ? csvData.ciudades[i] : '',
-        'nota': i < csvData.notas.length ? csvData.notas[i] : '',
-        'agencia': i < csvData.agencias.length ? csvData.agencias[i] : '',
-        'alias': i < csvData.aliases.length ? csvData.aliases[i] : '',
+        'cliente': row.cliente,
+        'direccion': row.direccion,
+        'ciudad': row.ciudad,
+        'nota': row.nota,
+        'agencia': row.agencia,
+        'alias': row.alias,
       });
     }
 

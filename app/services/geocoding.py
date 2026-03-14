@@ -25,13 +25,11 @@ import json
 import math
 import re
 import time
-import unicodedata
 from pathlib import Path
 
 import requests
 
 from app.core.config import (
-    OVERPASS_USER_AGENT,
     POSADAS_CENTER,
     GOOGLE_API_KEY,
     GOOGLE_GEOCODING_URL,
@@ -39,6 +37,8 @@ from app.core.config import (
     GOOGLE_CACHE_TTL_DAYS,
     GEOCODE_TIMEOUT,
 )
+from app.adapters.overpass import fetch_streets_from_overpass
+from app.utils.normalization import normalize_text
 from app.utils.validation import in_work_bbox
 from app.core.logging import get_logger
 
@@ -82,11 +82,8 @@ _VIA_ABBREVS = (
 
 # ─── Normalización ─────────────────────────────────────────────────────────────
 
-def _normalize(text: str) -> str:
-    """Minúsculas, sin acentos, espacios simples."""
-    nfkd = unicodedata.normalize("NFKD", text.lower())
-    no_acc = "".join(c for c in nfkd if not unicodedata.combining(c))
-    return re.sub(r"\s+", " ", no_acc).strip()
+# Alias local — la implementación canónica vive en app/utils/normalization.py.
+_normalize = normalize_text
 
 
 def _parse_address(raw: str) -> tuple[str, str]:
@@ -164,6 +161,9 @@ def _parse_address(raw: str) -> tuple[str, str]:
 
     return s, ""
 
+# Alias público para uso desde routers (sin importar privados).
+parse_address = _parse_address
+
 
 def _portal_display(number: str) -> str:
     """
@@ -182,33 +182,6 @@ def _cache_key(street: str, number: str) -> str:
 
 
 # ─── Catálogo de calles (Overpass + Catastro + aprendidas) ─────────────────────
-
-_OVERPASS_URL = "https://overpass-api.de/api/interpreter"
-_BBOX = "37.78,-5.15,37.83,-5.06"
-
-
-def _fetch_streets_from_overpass() -> list[str]:
-    """Obtiene todos los nombres de vías de OSM en el área de trabajo."""
-    query = f"""
-    [out:json][timeout:30];
-    way["highway"]["name"]({_BBOX});
-    out tags;
-    """
-    r = requests.post(
-        _OVERPASS_URL,
-        data={"data": query},
-        headers={"User-Agent": OVERPASS_USER_AGENT},
-        timeout=40,
-    )
-    r.raise_for_status()
-    data = r.json()
-    names: set[str] = set()
-    for elem in data.get("elements", []):
-        name = elem.get("tags", {}).get("name", "").strip()
-        if name:
-            names.add(name)
-    return sorted(names)
-
 
 def _load_streets_from_disk() -> list[str] | None:
     if not _STREETS_FILE.exists():
@@ -262,7 +235,7 @@ def _get_street_catalog() -> list[str]:
     if osm_streets is None:
         logger.info("Descargando catálogo de calles desde Overpass...")
         try:
-            osm_streets = _fetch_streets_from_overpass()
+            osm_streets = fetch_streets_from_overpass()
             _save_streets_to_disk(osm_streets)
             logger.info("Catálogo Overpass listo: %d calles", len(osm_streets))
         except Exception as e:

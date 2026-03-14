@@ -1,27 +1,34 @@
-/// Modelo de datos de un CSV de paradas.
+/// Una fila del CSV: un paquete con todos sus campos.
+class CsvRow {
+  final String cliente;
+  final String direccion;
+  final String ciudad;
+  final String nota;
+  final String agencia;
+  final String alias;
+
+  const CsvRow({
+    required this.cliente,
+    required this.direccion,
+    required this.ciudad,
+    this.nota = '',
+    this.agencia = '',
+    this.alias = '',
+  });
+}
+
+/// Colección de filas parseadas de un CSV de paradas.
 ///
 /// Formato esperado: cliente,direccion,ciudad[,nota][,agencia][,alias]
 /// Cada fila = 1 paquete. Las agrupaciones se hacen después.
 class CsvData {
-  final List<String> clientes;
-  final List<String> direcciones;
-  final List<String> ciudades;
-  final List<String> notas;
-  final List<String> agencias; // empresa de reparto (opcional, solo informativo)
-  final List<String> aliases;  // nombre de negocio/lugar (opcional, activa Places)
+  final List<CsvRow> rows;
 
-  const CsvData({
-    required this.clientes,
-    required this.direcciones,
-    required this.ciudades,
-    this.notas = const [],
-    this.agencias = const [],
-    this.aliases = const [],
-  });
+  const CsvData({required this.rows});
 
   /// Nº total de filas (= nº de paquetes).
-  int get totalPackages => direcciones.length;
+  int get totalPackages => rows.length;
 
-  bool get isEmpty => direcciones.isEmpty;
-  bool get isNotEmpty => direcciones.isNotEmpty;
+  bool get isEmpty => rows.isEmpty;
+  bool get isNotEmpty => rows.isNotEmpty;
 }

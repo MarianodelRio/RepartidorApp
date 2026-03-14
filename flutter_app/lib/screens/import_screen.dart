@@ -7,12 +7,12 @@ import 'dart:typed_data';
 
 import '../config/api_config.dart';
 import '../config/app_theme.dart';
+import '../controllers/import_controller.dart';
 import '../models/csv_data.dart';
-import '../models/route_models.dart';
+import '../models/origin_mode.dart';
 import '../models/validation_models.dart';
 import '../services/api_service.dart';
 import '../services/csv_service.dart';
-import '../services/location_service.dart';
 import '../services/persistence_service.dart';
 import '../widgets/origin_selector.dart';
 import 'delivery_screen.dart';
@@ -36,36 +36,29 @@ class ImportScreen extends StatefulWidget {
 }
 
 class _ImportScreenState extends State<ImportScreen> {
-  // ── Datos importados ──
-  CsvData? _csvData;
-  String _fileName = '';
+  // ── Controller ──
+  late final ImportController _ctrl;
 
   // ── Estado general ──
-  bool _isCheckingServer = false;
   String? _error;
-  bool _serverOnline = false;
-  bool _hasActiveSession = false;
 
-  // ── Fase de revisión ──
-  ValidationResult? _reviewResult;
+  // ── Mapa de revisión (UI pura) ──
   final _mapController = MapController();
   final _mapSectionKey = GlobalKey();
-  OriginMode _originMode = OriginMode.defaultAddress;
-  String _manualAddress = '';
-  bool _isCalculating = false;
-  String? _reviewError;
 
   static const _defaultCenter = LatLng(37.805503, -5.099805);
 
   @override
   void initState() {
     super.initState();
-    _checkServer();
-    _checkActiveSession();
+    _ctrl = ImportController();
+    _ctrl.checkServer();
+    _ctrl.checkActiveSession();
   }
 
   @override
   void dispose() {
+    _ctrl.dispose();
     WakelockPlus.disable();
     super.dispose();
   }
@@ -74,34 +67,13 @@ class _ImportScreenState extends State<ImportScreen> {
   //  Servidor / Sesión
   // ═══════════════════════════════════════════
 
-  Future<void> _checkActiveSession() async {
-    final has = await PersistenceService.hasActiveSession();
-    if (mounted) setState(() => _hasActiveSession = has);
-  }
-
-  Future<void> _discardSession() async {
-    await PersistenceService.clearSession();
-    if (mounted) setState(() => _hasActiveSession = false);
-  }
-
   Future<void> _resumeDelivery() async {
     final session = await PersistenceService.loadSession();
     if (session == null || !mounted) return;
     Navigator.of(context)
         .push(
             MaterialPageRoute(builder: (_) => DeliveryScreen(session: session)))
-        .then((_) => _checkActiveSession());
-  }
-
-  Future<void> _checkServer() async {
-    setState(() => _isCheckingServer = true);
-    final online = await ApiService.healthCheck();
-    if (mounted) {
-      setState(() {
-        _serverOnline = online;
-        _isCheckingServer = false;
-      });
-    }
+        .then((_) => _ctrl.checkActiveSession());
   }
 
   void _showError(String msg) {
@@ -132,16 +104,13 @@ class _ImportScreenState extends State<ImportScreen> {
       }
 
       // Si hay reparto en curso, descartarlo al iniciar uno nuevo.
-      if (_hasActiveSession) {
-        await PersistenceService.clearSession();
+      if (_ctrl.hasActiveSession) {
+        await _ctrl.discardSession();
       }
 
-      setState(() {
-        _csvData = csvData;
-        _fileName = file.name;
-        _error = null;
-        _hasActiveSession = false;
-      });
+      if (!mounted) return;
+      _ctrl.loadCsvData(csvData, file.name);
+      setState(() => _error = null);
 
       await _validate();
     } on FormatException catch (e) {
@@ -152,15 +121,8 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   void _clearFile() {
-    setState(() {
-      _csvData = null;
-      _fileName = '';
-      _error = null;
-      _reviewResult = null;
-      _reviewError = null;
-      _originMode = OriginMode.defaultAddress;
-      _manualAddress = '';
-    });
+    _ctrl.clearCsvData(); // limpia CSV, validación, origen y error de ruta
+    setState(() => _error = null);
   }
 
   // ═══════════════════════════════════════════
@@ -168,12 +130,11 @@ class _ImportScreenState extends State<ImportScreen> {
   // ═══════════════════════════════════════════
 
   Future<void> _validate() async {
-    if (_csvData == null) return;
+    if (_ctrl.csvData == null) return;
 
-    if (!_serverOnline) {
-      final online = await ApiService.healthCheck();
-      if (mounted) setState(() => _serverOnline = online);
-      if (!online) {
+    if (!_ctrl.serverOnline) {
+      await _ctrl.checkServer();
+      if (!_ctrl.serverOnline) {
         _showError(
             'El servidor no está disponible. Verifica que el backend está activo en ${ApiConfig.baseUrl}');
         return;
@@ -191,11 +152,10 @@ class _ImportScreenState extends State<ImportScreen> {
     );
 
     try {
-      final result = await ApiService.validationStart(csvData: _csvData!);
+      await _ctrl.startValidation();
       if (!mounted) return;
       Navigator.of(context).pop();
 
-      setState(() => _reviewResult = result);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _fitMapToStops();
         final ctx = _mapSectionKey.currentContext;
@@ -223,7 +183,7 @@ class _ImportScreenState extends State<ImportScreen> {
   // ═══════════════════════════════════════════
 
   void _fitMapToStops() {
-    final geocoded = _reviewResult?.geocoded ?? [];
+    final geocoded = _ctrl.reviewResult?.geocoded ?? [];
     if (geocoded.isEmpty) return;
     final points = geocoded.map((s) => LatLng(s.lat, s.lon)).toList();
     if (points.length == 1) {
@@ -248,34 +208,8 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   void _applyPin(FailedStop stop, double lat, double lon) {
-    ApiService.postOverride(address: stop.address, lat: lat, lon: lon);
-
-    final newGeocoded = GeocodedStop(
-      address: stop.address,
-      alias: stop.alias,
-      clientName:
-          stop.clientNames.firstWhere((n) => n.isNotEmpty, orElse: () => ''),
-      allClientNames: stop.clientNames,
-      packages: stop.packages,
-      packageCount: stop.packageCount,
-      lat: lat,
-      lon: lon,
-      confidence: GeoConfidence.override,
-    );
-
-    setState(() {
-      _reviewResult = ValidationResult(
-        geocoded: [..._reviewResult!.geocoded, newGeocoded],
-        failed: _reviewResult!.failed
-            .where((f) => f.address != stop.address)
-            .toList(),
-        totalPackages: _reviewResult!.totalPackages,
-        uniqueAddresses: _reviewResult!.uniqueAddresses,
-      );
-    });
-
+    _ctrl.applyPin(stop, lat, lon);
     _mapController.move(LatLng(lat, lon), 16);
-
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -335,33 +269,8 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   void _applyRepinGeocoded(GeocodedStop stop, double lat, double lon) {
-    ApiService.postOverride(address: stop.address, lat: lat, lon: lon);
-
-    final updated = GeocodedStop(
-      address: stop.address,
-      alias: stop.alias,
-      clientName: stop.clientName,
-      allClientNames: stop.allClientNames,
-      packages: stop.packages,
-      packageCount: stop.packageCount,
-      lat: lat,
-      lon: lon,
-      confidence: GeoConfidence.override,
-    );
-
-    setState(() {
-      _reviewResult = ValidationResult(
-        geocoded: _reviewResult!.geocoded
-            .map((s) => s.address == stop.address ? updated : s)
-            .toList(),
-        failed: _reviewResult!.failed,
-        totalPackages: _reviewResult!.totalPackages,
-        uniqueAddresses: _reviewResult!.uniqueAddresses,
-      );
-    });
-
+    _ctrl.applyRepinGeocoded(stop, lat, lon);
     _mapController.move(LatLng(lat, lon), 16);
-
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -377,85 +286,27 @@ class _ImportScreenState extends State<ImportScreen> {
   // ═══════════════════════════════════════════
 
   Future<void> _calculateRoute() async {
-    setState(() {
-      _isCalculating = true;
-      _reviewError = null;
-    });
-
-    String? startAddress;
-    if (_originMode == OriginMode.manual && _manualAddress.isNotEmpty) {
-      startAddress = _manualAddress;
-    } else if (_originMode == OriginMode.gps) {
-      try {
-        final pos = await LocationService.getCurrentPosition();
-        startAddress = '${pos.latitude}, ${pos.longitude}';
-      } catch (e) {
-        if (mounted) {
-          setState(() {
-            _isCalculating = false;
-            _reviewError = 'Error GPS: $e';
-          });
-        }
-        return;
-      }
-    }
-
     WakelockPlus.enable();
     if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => _RouteProgressDialog(
-          totalAddresses: _reviewResult!.geocoded.length),
+          totalAddresses: _ctrl.reviewResult!.geocoded.length),
     );
 
     try {
-      final geocoded = _reviewResult!.geocoded;
-      if (geocoded.isEmpty) {
-        throw Exception('No hay paradas válidas para calcular la ruta');
-      }
-
-      final optimizeAddresses = <String>[];
-      final optimizeClientNames = <String>[];
-      final preResolvedCoords = <List<double>?>[];
-      final packageCounts = <int>[];
-      final packagesPerStop = <List<Package>>[];
-      final aliases = <String>[];
-
-      for (final st in geocoded) {
-        optimizeAddresses.add(st.address);
-        optimizeClientNames.add(st.clientName);
-        preResolvedCoords.add([st.lat, st.lon]);
-        packageCounts.add(st.packageCount);
-        packagesPerStop.add(st.packages);
-        aliases.add(st.alias);
-      }
-
-      final result = await ApiService.optimize(
-        addresses: optimizeAddresses,
-        clientNames: optimizeClientNames,
-        startAddress: startAddress,
-        coords: preResolvedCoords,
-        packageCounts: packageCounts,
-        packagesPerStop: packagesPerStop,
-        aliases: aliases,
-      );
+      final result = await _ctrl.calculateRoute();
       if (!mounted) return;
       Navigator.of(context).pop();
-      PersistenceService.clearValidationState();
-
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => ResultScreen(response: result)),
       );
-    } on ApiException catch (e) {
+    } catch (_) {
       if (mounted) Navigator.of(context).pop();
-      if (mounted) setState(() => _reviewError = e.message);
-    } catch (e) {
-      if (mounted) Navigator.of(context).pop();
-      if (mounted) setState(() => _reviewError = e.toString());
+      // _ctrl.routeError ya contiene el mensaje; ListenableBuilder rerenderiza.
     } finally {
       WakelockPlus.disable();
-      if (mounted) setState(() => _isCalculating = false);
     }
   }
 
@@ -471,10 +322,17 @@ class _ImportScreenState extends State<ImportScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final result = _reviewResult;
+    return ListenableBuilder(
+      listenable: _ctrl,
+      builder: (context, _) => _buildScaffold(context),
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context) {
+    final result = _ctrl.reviewResult;
     final hasFailed = result != null && result.failed.isNotEmpty;
     final canCalculate =
-        result != null && !_isCalculating && result.geocoded.isNotEmpty && !hasFailed;
+        result != null && !_ctrl.isCalculating && result.geocoded.isNotEmpty && !hasFailed;
 
     return Scaffold(
       backgroundColor: AppColors.scaffoldLight,
@@ -487,7 +345,7 @@ class _ImportScreenState extends State<ImportScreen> {
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
-            child: _isCheckingServer
+            child: _ctrl.isCheckingServer
                 ? const SizedBox(
                     width: 20,
                     height: 20,
@@ -495,17 +353,17 @@ class _ImportScreenState extends State<ImportScreen> {
                         strokeWidth: 2, color: Colors.white),
                   )
                 : GestureDetector(
-                    onTap: _checkServer,
+                    onTap: _ctrl.checkServer,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.circle,
                             size: 10,
-                            color: _serverOnline
+                            color: _ctrl.serverOnline
                                 ? AppColors.success
                                 : AppColors.error),
                         const SizedBox(width: 4),
-                        Text(_serverOnline ? 'Online' : 'Offline',
+                        Text(_ctrl.serverOnline ? 'Online' : 'Offline',
                             style: const TextStyle(fontSize: 12)),
                       ],
                     ),
@@ -521,7 +379,7 @@ class _ImportScreenState extends State<ImportScreen> {
             children: [
               _buildHeader(),
               const SizedBox(height: 20),
-              if (_hasActiveSession) ...[
+              if (_ctrl.hasActiveSession) ...[
                 _buildResumeCard(),
                 const SizedBox(height: 16),
               ],
@@ -567,7 +425,7 @@ class _ImportScreenState extends State<ImportScreen> {
                 const SizedBox(height: 16),
 
                 // Error de cálculo
-                if (_reviewError != null) ...[
+                if (_ctrl.routeError != null) ...[
                   _buildReviewErrorBanner(),
                   const SizedBox(height: 12),
                 ],
@@ -589,10 +447,10 @@ class _ImportScreenState extends State<ImportScreen> {
 
                 // Selector de origen
                 OriginSelector(
-                  mode: _originMode,
-                  manualAddress: _manualAddress,
-                  onModeChanged: (m) => setState(() => _originMode = m),
-                  onAddressChanged: (a) => setState(() => _manualAddress = a),
+                  mode: _ctrl.originMode,
+                  manualAddress: _ctrl.manualAddress,
+                  onModeChanged: _ctrl.setOriginMode,
+                  onAddressChanged: _ctrl.setManualAddress,
                 ),
 
                 const SizedBox(height: 16),
@@ -602,7 +460,7 @@ class _ImportScreenState extends State<ImportScreen> {
                   height: 52,
                   child: ElevatedButton.icon(
                     onPressed: canCalculate ? _calculateRoute : null,
-                    icon: _isCalculating
+                    icon: _ctrl.isCalculating
                         ? const SizedBox(
                             width: 20,
                             height: 20,
@@ -611,7 +469,7 @@ class _ImportScreenState extends State<ImportScreen> {
                           )
                         : const Icon(Icons.route, size: 22),
                     label: Text(
-                      _isCalculating ? 'Calculando...' : 'Calcular ruta óptima',
+                      _ctrl.isCalculating ? 'Calculando...' : 'Calcular ruta óptima',
                       style: const TextStyle(
                           fontSize: 16, fontWeight: FontWeight.w600),
                     ),
@@ -641,7 +499,7 @@ class _ImportScreenState extends State<ImportScreen> {
   // ═══════════════════════════════════════════
 
   Widget _buildReviewMap() {
-    final markers = _reviewResult!.geocoded.map((stop) {
+    final markers = _ctrl.reviewResult!.geocoded.map((stop) {
       final color = _markerColor(stop.confidence);
       return Marker(
         point: LatLng(stop.lat, stop.lon),
@@ -689,14 +547,14 @@ class _ImportScreenState extends State<ImportScreen> {
           Icon(Icons.warning_amber_rounded, color: AppColors.error),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(_reviewError!,
+            child: Text(_ctrl.routeError!,
                 style: TextStyle(
                     color: AppColors.error,
                     fontSize: 13,
                     fontWeight: FontWeight.w500)),
           ),
           GestureDetector(
-            onTap: () => setState(() => _reviewError = null),
+            onTap: _ctrl.clearRouteError,
             child: Icon(Icons.close, size: 18, color: AppColors.error),
           ),
         ],
@@ -705,9 +563,9 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   Widget _buildReviewSummary() {
-    final geocoded = _reviewResult!.geocoded.length;
-    final packages = _reviewResult!.totalPackages;
-    final failed = _reviewResult!.failed.length;
+    final geocoded = _ctrl.reviewResult!.geocoded.length;
+    final packages = _ctrl.reviewResult!.totalPackages;
+    final failed = _ctrl.reviewResult!.failed.length;
     return Center(
       child: Wrap(
         alignment: WrapAlignment.center,
@@ -933,7 +791,7 @@ class _ImportScreenState extends State<ImportScreen> {
             top: 6,
             right: 6,
             child: GestureDetector(
-              onTap: _discardSession,
+              onTap: _ctrl.discardSession,
               child: Container(
                 width: 22,
                 height: 22,
@@ -980,6 +838,7 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   Widget _buildUploadSection() {
+    final hasCsv = _ctrl.csvData != null;
     return GestureDetector(
       onTap: _pickFile,
       child: Container(
@@ -988,7 +847,7 @@ class _ImportScreenState extends State<ImportScreen> {
           color: AppColors.cardLight,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: _csvData != null ? AppColors.success : AppColors.border,
+            color: hasCsv ? AppColors.success : AppColors.border,
             width: 2,
             strokeAlign: BorderSide.strokeAlignInside,
           ),
@@ -1002,24 +861,20 @@ class _ImportScreenState extends State<ImportScreen> {
         child: Column(
           children: [
             Icon(
-              _csvData != null ? Icons.check_circle : Icons.upload_file,
+              hasCsv ? Icons.check_circle : Icons.upload_file,
               size: 36,
-              color: _csvData != null ? AppColors.success : AppColors.primary,
+              color: hasCsv ? AppColors.success : AppColors.primary,
             ),
             const SizedBox(height: 8),
             Text(
-              _csvData != null
-                  ? 'Archivo cargado'
-                  : 'Toca para importar CSV',
+              hasCsv ? 'Archivo cargado' : 'Toca para importar CSV',
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: _csvData != null
-                    ? AppColors.success
-                    : AppColors.textPrimary,
+                color: hasCsv ? AppColors.success : AppColors.textPrimary,
               ),
             ),
-            if (_csvData == null)
+            if (!hasCsv)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
@@ -1027,14 +882,14 @@ class _ImportScreenState extends State<ImportScreen> {
                     style: TextStyle(
                         fontSize: 12, color: AppColors.textTertiary)),
               ),
-            if (_csvData != null)
+            if (hasCsv)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Text(_fileName,
+                child: Text(_ctrl.fileName,
                     style: TextStyle(
                         fontSize: 13, color: AppColors.textSecondary)),
               ),
-            if (_csvData != null)
+            if (hasCsv)
               TextButton.icon(
                 onPressed: _clearFile,
                 icon: const Icon(Icons.refresh, size: 16),

@@ -7,22 +7,16 @@ void main() {
   // ══════════════════════════════════════════════════════════════════
 
   group('CsvData — isEmpty / isNotEmpty', () {
-    test('isEmpty es true cuando no hay direcciones', () {
-      const data = CsvData(
-        clientes: [],
-        direcciones: [],
-        ciudades: [],
-      );
+    test('isEmpty es true cuando no hay filas', () {
+      const data = CsvData(rows: []);
       expect(data.isEmpty, isTrue);
       expect(data.isNotEmpty, isFalse);
     });
 
-    test('isNotEmpty es true cuando hay al menos una dirección', () {
-      const data = CsvData(
-        clientes: ['Juan'],
-        direcciones: ['Calle A 1'],
-        ciudades: ['Posadas'],
-      );
+    test('isNotEmpty es true cuando hay al menos una fila', () {
+      const data = CsvData(rows: [
+        CsvRow(cliente: 'Juan', direccion: 'Calle A 1', ciudad: 'Posadas'),
+      ]);
       expect(data.isNotEmpty, isTrue);
       expect(data.isEmpty, isFalse);
     });
@@ -30,58 +24,52 @@ void main() {
 
   group('CsvData — totalPackages', () {
     test('totalPackages es 0 para lista vacía', () {
-      const data = CsvData(
-        clientes: [],
-        direcciones: [],
-        ciudades: [],
-      );
+      const data = CsvData(rows: []);
       expect(data.totalPackages, 0);
     });
 
     test('totalPackages refleja el número de filas', () {
-      const data = CsvData(
-        clientes: ['Juan', 'María', 'Pedro'],
-        direcciones: ['Calle A 1', 'Calle B 2', 'Calle C 3'],
-        ciudades: ['Posadas', 'Posadas', 'Posadas'],
-      );
+      const data = CsvData(rows: [
+        CsvRow(cliente: 'Juan', direccion: 'Calle A 1', ciudad: 'Posadas'),
+        CsvRow(cliente: 'María', direccion: 'Calle B 2', ciudad: 'Posadas'),
+        CsvRow(cliente: 'Pedro', direccion: 'Calle C 3', ciudad: 'Posadas'),
+      ]);
       expect(data.totalPackages, 3);
     });
 
-    test('totalPackages se basa en direcciones, no en clientes', () {
-      // Puede haber clientes vacíos pero las direcciones mandan
-      const data = CsvData(
-        clientes: ['', ''],
-        direcciones: ['Calle A 1', 'Calle B 2'],
-        ciudades: ['Posadas', 'Posadas'],
-      );
+    test('totalPackages cuenta filas aunque cliente esté vacío', () {
+      const data = CsvData(rows: [
+        CsvRow(cliente: '', direccion: 'Calle A 1', ciudad: 'Posadas'),
+        CsvRow(cliente: '', direccion: 'Calle B 2', ciudad: 'Posadas'),
+      ]);
       expect(data.totalPackages, 2);
     });
   });
 
-  group('CsvData — columnas opcionales', () {
-    test('notas, agencias y aliases tienen valor por defecto []', () {
-      const data = CsvData(
-        clientes: ['Juan'],
-        direcciones: ['Calle A 1'],
-        ciudades: ['Posadas'],
-      );
-      expect(data.notas, isEmpty);
-      expect(data.agencias, isEmpty);
-      expect(data.aliases, isEmpty);
+  group('CsvData — campos opcionales de CsvRow', () {
+    test('nota, agencia y alias tienen valor vacío por defecto', () {
+      const data = CsvData(rows: [
+        CsvRow(cliente: 'Juan', direccion: 'Calle A 1', ciudad: 'Posadas'),
+      ]);
+      expect(data.rows.first.nota, isEmpty);
+      expect(data.rows.first.agencia, isEmpty);
+      expect(data.rows.first.alias, isEmpty);
     });
 
-    test('acepta notas, agencias y aliases explícitos', () {
-      const data = CsvData(
-        clientes: ['Juan'],
-        direcciones: ['Calle A 1'],
-        ciudades: ['Posadas'],
-        notas: ['bajo'],
-        agencias: ['MRW'],
-        aliases: ['Bar El Gato'],
-      );
-      expect(data.notas, ['bajo']);
-      expect(data.agencias, ['MRW']);
-      expect(data.aliases, ['Bar El Gato']);
+    test('acepta nota, agencia y alias explícitos', () {
+      const data = CsvData(rows: [
+        CsvRow(
+          cliente: 'Juan',
+          direccion: 'Calle A 1',
+          ciudad: 'Posadas',
+          nota: 'bajo',
+          agencia: 'MRW',
+          alias: 'Bar El Gato',
+        ),
+      ]);
+      expect(data.rows.first.nota, 'bajo');
+      expect(data.rows.first.agencia, 'MRW');
+      expect(data.rows.first.alias, 'Bar El Gato');
     });
   });
 }

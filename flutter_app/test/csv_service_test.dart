@@ -19,9 +19,9 @@ void main() {
         'Juan García,Calle Gaitán 24,Posadas',
       ));
 
-      expect(data.clientes, ['Juan García']);
-      expect(data.direcciones, ['Calle Gaitán 24']);
-      expect(data.ciudades, ['Posadas']);
+      expect(data.rows[0].cliente, 'Juan García');
+      expect(data.rows[0].direccion, 'Calle Gaitán 24');
+      expect(data.rows[0].ciudad, 'Posadas');
       expect(data.totalPackages, 1);
     });
 
@@ -33,8 +33,9 @@ void main() {
       ));
 
       expect(data.totalPackages, 2);
-      expect(data.clientes, ['Juan', 'María']);
-      expect(data.direcciones, ['Calle Gaitán 24', 'Calle Mayor 5']);
+      expect(data.rows.map((r) => r.cliente).toList(), ['Juan', 'María']);
+      expect(data.rows.map((r) => r.direccion).toList(),
+          ['Calle Gaitán 24', 'Calle Mayor 5']);
     });
 
     test('CSV vacío devuelve CsvData vacío', () {
@@ -66,7 +67,7 @@ void main() {
         'María,Calle B 2,Posadas',
       ));
       expect(data.totalPackages, 1);
-      expect(data.direcciones, ['Calle B 2']);
+      expect(data.rows[0].direccion, 'Calle B 2');
     });
   });
 
@@ -80,7 +81,7 @@ void main() {
         'cliente,direccion,ciudad,nota\n'
         'Juan,Calle A 1,Posadas,2º izquierda',
       ));
-      expect(data.notas, ['2º izquierda']);
+      expect(data.rows.map((r) => r.nota).toList(), ['2º izquierda']);
     });
 
     test('nota vacía cuando no existe la columna', () {
@@ -88,7 +89,7 @@ void main() {
         'cliente,direccion,ciudad\n'
         'Juan,Calle A 1,Posadas',
       ));
-      expect(data.notas, ['']);
+      expect(data.rows.map((r) => r.nota).toList(), ['']);
     });
 
     test('parsea columna agencia', () {
@@ -96,7 +97,7 @@ void main() {
         'cliente,direccion,ciudad,agencia\n'
         'Juan,Calle A 1,Posadas,MRW',
       ));
-      expect(data.agencias, ['MRW']);
+      expect(data.rows.map((r) => r.agencia).toList(), ['MRW']);
     });
 
     test('agencia vacía cuando no existe la columna', () {
@@ -104,7 +105,7 @@ void main() {
         'cliente,direccion,ciudad\n'
         'Juan,Calle A 1,Posadas',
       ));
-      expect(data.agencias, ['']);
+      expect(data.rows.map((r) => r.agencia).toList(), ['']);
     });
 
     test('parsea columna alias', () {
@@ -112,7 +113,7 @@ void main() {
         'cliente,direccion,ciudad,alias\n'
         'Juan,Calle A 1,Posadas,Bar El Gato',
       ));
-      expect(data.aliases, ['Bar El Gato']);
+      expect(data.rows.map((r) => r.alias).toList(), ['Bar El Gato']);
     });
 
     test('alias vacío cuando no existe la columna', () {
@@ -120,7 +121,7 @@ void main() {
         'cliente,direccion,ciudad\n'
         'Juan,Calle A 1,Posadas',
       ));
-      expect(data.aliases, ['']);
+      expect(data.rows.map((r) => r.alias).toList(), ['']);
     });
 
     test('parsea todas las columnas a la vez', () {
@@ -128,10 +129,10 @@ void main() {
         'cliente,direccion,ciudad,nota,agencia,alias\n'
         'Juan,Calle A 1,Posadas,bajo,SEUR,Bar El Gato',
       ));
-      expect(data.clientes[0], 'Juan');
-      expect(data.notas[0], 'bajo');
-      expect(data.agencias[0], 'SEUR');
-      expect(data.aliases[0], 'Bar El Gato');
+      expect(data.rows[0].cliente, 'Juan');
+      expect(data.rows[0].nota, 'bajo');
+      expect(data.rows[0].agencia, 'SEUR');
+      expect(data.rows[0].alias, 'Bar El Gato');
     });
   });
 
@@ -145,7 +146,7 @@ void main() {
         'cliente,dirección,ciudad\n'
         'Juan,Calle A 1,Posadas',
       ));
-      expect(data.direcciones, ['Calle A 1']);
+      expect(data.rows[0].direccion, 'Calle A 1');
     });
 
     test('acepta "address" en inglés', () {
@@ -153,7 +154,7 @@ void main() {
         'name,address,city\n'
         'Juan,Calle A 1,Posadas',
       ));
-      expect(data.direcciones, ['Calle A 1']);
+      expect(data.rows[0].direccion, 'Calle A 1');
     });
 
     test('acepta "nombre" como columna de cliente', () {
@@ -161,7 +162,7 @@ void main() {
         'nombre,direccion,ciudad\n'
         'Juan,Calle A 1,Posadas',
       ));
-      expect(data.clientes, ['Juan']);
+      expect(data.rows[0].cliente, 'Juan');
     });
 
     test('acepta "domicilio" como columna de dirección', () {
@@ -169,7 +170,7 @@ void main() {
         'cliente,domicilio,ciudad\n'
         'Juan,Calle A 1,Posadas',
       ));
-      expect(data.direcciones, ['Calle A 1']);
+      expect(data.rows[0].direccion, 'Calle A 1');
     });
 
     test('acepta "localidad" como columna de ciudad', () {
@@ -177,7 +178,7 @@ void main() {
         'cliente,direccion,localidad\n'
         'Juan,Calle A 1,Posadas',
       ));
-      expect(data.ciudades, ['Posadas']);
+      expect(data.rows[0].ciudad, 'Posadas');
     });
 
     test('acepta "transportista" como columna de agencia', () {
@@ -185,7 +186,7 @@ void main() {
         'cliente,direccion,ciudad,transportista\n'
         'Juan,Calle A 1,Posadas,GLS',
       ));
-      expect(data.agencias, ['GLS']);
+      expect(data.rows[0].agencia, 'GLS');
     });
 
     test('acepta "empresa" como columna de agencia', () {
@@ -193,7 +194,7 @@ void main() {
         'cliente,direccion,ciudad,empresa\n'
         'Juan,Calle A 1,Posadas,Correos Express',
       ));
-      expect(data.agencias, ['Correos Express']);
+      expect(data.rows[0].agencia, 'Correos Express');
     });
 
     test('acepta cabeceras en mayúsculas', () {
@@ -201,7 +202,7 @@ void main() {
         'CLIENTE,DIRECCION,CIUDAD\n'
         'Juan,Calle A 1,Posadas',
       ));
-      expect(data.direcciones, ['Calle A 1']);
+      expect(data.rows[0].direccion, 'Calle A 1');
     });
 
     test('lanza FormatException si no hay columna de dirección', () {
@@ -222,8 +223,8 @@ void main() {
         'cliente,direccion,ciudad\n'
         '"García, Juan",Calle A 1,Posadas',
       ));
-      expect(data.clientes[0], 'García, Juan');
-      expect(data.direcciones[0], 'Calle A 1');
+      expect(data.rows[0].cliente, 'García, Juan');
+      expect(data.rows[0].direccion, 'Calle A 1');
     });
 
     test('dirección con coma entre comillas se parsea completa', () {
@@ -231,7 +232,7 @@ void main() {
         'cliente,direccion,ciudad\n'
         'Juan,"Calle A, 1",Posadas',
       ));
-      expect(data.direcciones[0], 'Calle A, 1');
+      expect(data.rows[0].direccion, 'Calle A, 1');
     });
 
     test('comillas dobles escapadas dentro de un campo', () {
@@ -239,7 +240,7 @@ void main() {
         'cliente,direccion,ciudad\n'
         '"García ""El Bueno""",Calle A 1,Posadas',
       ));
-      expect(data.clientes[0], 'García "El Bueno"');
+      expect(data.rows[0].cliente, 'García "El Bueno"');
     });
 
     test('campo completamente entre comillas se limpia de ellas', () {
@@ -247,9 +248,9 @@ void main() {
         'cliente,direccion,ciudad\n'
         '"Juan","Calle A 1","Posadas"',
       ));
-      expect(data.clientes[0], 'Juan');
-      expect(data.direcciones[0], 'Calle A 1');
-      expect(data.ciudades[0], 'Posadas');
+      expect(data.rows[0].cliente, 'Juan');
+      expect(data.rows[0].direccion, 'Calle A 1');
+      expect(data.rows[0].ciudad, 'Posadas');
     });
   });
 
@@ -263,8 +264,8 @@ void main() {
         'cliente,direccion,ciudad\n'
         'María Gómez,Avenida Andalucía 3,Córdoba',
       ));
-      expect(data.clientes[0], 'María Gómez');
-      expect(data.direcciones[0], 'Avenida Andalucía 3');
+      expect(data.rows[0].cliente, 'María Gómez');
+      expect(data.rows[0].direccion, 'Avenida Andalucía 3');
     });
   });
 }

@@ -93,7 +93,7 @@ def test_snap_encuentra_candidato_por_nombre():
         _candidate("Calle Mayor", 37.805, -5.099, 50),
         _candidate("Calle Gaitán", 37.806, -5.100, 80),
     ]
-    with patch("app.services.routing.requests.get", return_value=_mock_nearest(candidates)):
+    with patch("app.adapters.osrm.requests.get", return_value=_mock_nearest(candidates)):
         result = snap_to_street(37.806, -5.100, "Calle Gaitán")
     assert result == (37.806, -5.100)
 
@@ -103,7 +103,7 @@ def test_snap_fallback_al_mas_cercano_si_no_hay_coincidencia():
         _candidate("Calle Mayor", 37.805, -5.099, 30),
         _candidate("Avenida Sur", 37.806, -5.100, 60),
     ]
-    with patch("app.services.routing.requests.get", return_value=_mock_nearest(candidates)):
+    with patch("app.adapters.osrm.requests.get", return_value=_mock_nearest(candidates)):
         result = snap_to_street(37.805, -5.099, "Calle Inexistente")
     # Fallback: candidato más cercano (índice 0)
     assert result == (37.805, -5.099)
@@ -111,7 +111,7 @@ def test_snap_fallback_al_mas_cercano_si_no_hay_coincidencia():
 
 def test_snap_fuera_de_150m_devuelve_none():
     candidates = [_candidate("Calle Mayor", 37.805, -5.099, 200)]
-    with patch("app.services.routing.requests.get", return_value=_mock_nearest(candidates)):
+    with patch("app.adapters.osrm.requests.get", return_value=_mock_nearest(candidates)):
         result = snap_to_street(37.805, -5.099, "Calle Mayor")
     assert result is None
 
@@ -121,19 +121,19 @@ def test_snap_sin_hint_usa_mas_cercano():
         _candidate("Calle Mayor", 37.805, -5.099, 20),
         _candidate("Avenida Sur", 37.806, -5.100, 50),
     ]
-    with patch("app.services.routing.requests.get", return_value=_mock_nearest(candidates)):
+    with patch("app.adapters.osrm.requests.get", return_value=_mock_nearest(candidates)):
         result = snap_to_street(37.805, -5.099, "")
     assert result == (37.805, -5.099)
 
 
 def test_snap_osrm_caido_devuelve_none():
-    with patch("app.services.routing.requests.get", side_effect=Exception("timeout")):
+    with patch("app.adapters.osrm.requests.get", side_effect=Exception("timeout")):
         result = snap_to_street(37.805, -5.099, "Calle Mayor")
     assert result is None
 
 
 def test_snap_respuesta_code_error_devuelve_none():
-    with patch("app.services.routing.requests.get",
+    with patch("app.adapters.osrm.requests.get",
                return_value=_mock_nearest([], code="Error")):
         result = snap_to_street(37.805, -5.099, "Calle Mayor")
     assert result is None
@@ -143,7 +143,7 @@ def test_snap_cache_hit_no_llama_osrm():
     _clear_snap_cache()
     key = _snap_key(37.806, -5.100, "Calle Gaitán")
     routing_module._snap_cache[key] = [37.806, -5.100]
-    with patch("app.services.routing.requests.get") as mock_get:
+    with patch("app.adapters.osrm.requests.get") as mock_get:
         result = snap_to_street(37.806, -5.100, "Calle Gaitán")
     mock_get.assert_not_called()
     assert result == (37.806, -5.100)
@@ -152,8 +152,8 @@ def test_snap_cache_hit_no_llama_osrm():
 def test_snap_cache_miss_llama_osrm_y_guarda():
     _clear_snap_cache()
     candidates = [_candidate("Calle Gaitán", 37.806, -5.100, 30)]
-    with patch("app.services.routing.requests.get", return_value=_mock_nearest(candidates)), \
-         patch("app.services.routing._save_snap_cache"):  # no escribir disco en tests
+    with patch("app.adapters.osrm.requests.get", return_value=_mock_nearest(candidates)), \
+         patch("app.adapters.osrm._save_snap_cache"):  # no escribir disco en tests
         result = snap_to_street(37.806, -5.100, "Calle Gaitán")
     assert result == (37.806, -5.100)
     key = _snap_key(37.806, -5.100, "Calle Gaitán")
@@ -165,8 +165,8 @@ def test_snap_cache_none_no_se_guarda():
     """Los fallos de OSRM (None) no se cachean — se reintentará en el siguiente optimize."""
     _clear_snap_cache()
     candidates = [_candidate("Calle Mayor", 37.805, -5.099, 200)]  # > 150m → None
-    with patch("app.services.routing.requests.get", return_value=_mock_nearest(candidates)), \
-         patch("app.services.routing._save_snap_cache") as mock_save:
+    with patch("app.adapters.osrm.requests.get", return_value=_mock_nearest(candidates)), \
+         patch("app.adapters.osrm._save_snap_cache") as mock_save:
         result = snap_to_street(37.805, -5.099, "Calle Mayor")
     assert result is None
     mock_save.assert_not_called()
@@ -192,7 +192,7 @@ def test_osrm_matrix_menos_de_2_coords_devuelve_none():
 def test_osrm_matrix_devuelve_matrices_NxN():
     dur  = [[0, 24], [18, 0]]
     dist = [[0, 107], [107, 0]]
-    with patch("app.services.routing.requests.get",
+    with patch("app.adapters.osrm.requests.get",
                return_value=_mock_osrm_table(dur, dist)):
         result = get_osrm_matrix(COORDS_2)
     assert result is not None
@@ -204,7 +204,7 @@ def test_osrm_matrix_devuelve_matrices_NxN():
 def test_osrm_matrix_redondea_floats_a_enteros():
     dur  = [[0.0, 24.6], [18.1, 0.0]]
     dist = [[0.0, 107.9], [107.9, 0.0]]
-    with patch("app.services.routing.requests.get",
+    with patch("app.adapters.osrm.requests.get",
                return_value=_mock_osrm_table(dur, dist)):
         dur_out, dist_out = get_osrm_matrix(COORDS_2)
     assert dur_out[0][1]  == 25   # round(24.6)
@@ -215,12 +215,12 @@ def test_osrm_matrix_error_code_devuelve_none():
     m = Mock()
     m.raise_for_status.return_value = None
     m.json.return_value = {"code": "Error", "message": "unreachable"}
-    with patch("app.services.routing.requests.get", return_value=m):
+    with patch("app.adapters.osrm.requests.get", return_value=m):
         assert get_osrm_matrix(COORDS_2) is None
 
 
 def test_osrm_matrix_osrm_caido_devuelve_none():
-    with patch("app.services.routing.requests.get", side_effect=Exception("timeout")):
+    with patch("app.adapters.osrm.requests.get", side_effect=Exception("timeout")):
         assert get_osrm_matrix(COORDS_2) is None
 
 

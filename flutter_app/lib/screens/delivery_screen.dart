@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -6,11 +5,10 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_theme.dart';
+import '../controllers/delivery_controller.dart';
 import 'map_picker_screen.dart';
 import '../models/delivery_state.dart';
 import '../models/route_models.dart';
-import '../services/api_service.dart';
-import '../services/persistence_service.dart';
 import '../widgets/route_map.dart';
 import '../widgets/stop_packages_section.dart';
 
@@ -30,10 +28,7 @@ class DeliveryScreen extends StatefulWidget {
 class _DeliveryScreenState extends State<DeliveryScreen>
     with WidgetsBindingObserver {
   final GlobalKey<RouteMapState> _mapKey = GlobalKey<RouteMapState>();
-  late DeliverySession _session;
-
-  /// Geometría del segmento parada anterior → siguiente parada.
-  Map<String, dynamic>? _segmentGeometry;
+  late final DeliveryController _ctrl;
 
   /// Índice de la parada seleccionada al tocar un marcador (null = panel oculto).
   int? _selectedStopIndex;
@@ -42,12 +37,11 @@ class _DeliveryScreenState extends State<DeliveryScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _session = widget.session;
+    _ctrl = DeliveryController(widget.session);
 
-    // Cargar segmento parada anterior → parada actual
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_session.currentStop != null) {
-        _fetchSegmentFromGps();
+      if (_ctrl.session.currentStop != null) {
+        _ctrl.fetchSegment();
         Future.delayed(const Duration(milliseconds: 1500), () {
           if (mounted) _mapKey.currentState?.fitGpsAndNextStop();
         });
@@ -58,6 +52,7 @@ class _DeliveryScreenState extends State<DeliveryScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _ctrl.dispose();
     super.dispose();
   }
 
@@ -66,64 +61,11 @@ class _DeliveryScreenState extends State<DeliveryScreen>
   // ═══════════════════════════════════════════
 
   /// Guarda la sesión cuando el SO lleva la app a segundo plano o la va a matar.
-  /// Cubre el caso en que el proceso muere sin que el usuario pulse "atrás".
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
-      PersistenceService.saveSession(_session);
-    }
-  }
-
-  // ═══════════════════════════════════════════
-  //  Segmento parada anterior → siguiente parada
-  // ═══════════════════════════════════════════
-
-  /// Solicita al backend el camino OSRM desde la parada anterior
-  /// hasta la siguiente parada pendiente.
-  Future<void> _fetchSegmentFromGps() async {
-    final currentStop = _session.currentStop;
-    if (currentStop == null) {
-      setState(() => _segmentGeometry = null);
-      return;
-    }
-
-    final destLat = currentStop.lat;
-    final destLon = currentStop.lon;
-    if (destLat == null || destLon == null) {
-      setState(() => _segmentGeometry = null);
-      return;
-    }
-
-    // Origen: parada anterior ya completada (o primera parada/depósito si es la primera)
-    final prevIdx = _session.currentStopIndex - 1;
-    final prevStop = (prevIdx >= 0 && prevIdx < _session.stops.length)
-        ? _session.stops[prevIdx]
-        : null;
-
-    double? originLat;
-    double? originLon;
-    if (prevStop != null && prevStop.lat != null && prevStop.lon != null) {
-      originLat = prevStop.lat!;
-      originLon = prevStop.lon!;
-    } else if (_session.stops.isNotEmpty &&
-        _session.stops[0].lat != null &&
-        _session.stops[0].lon != null) {
-      originLat = _session.stops[0].lat!;
-      originLon = _session.stops[0].lon!;
-    } else {
-      return;
-    }
-
-    final geo = await ApiService.getRouteSegment(
-      originLat: originLat,
-      originLon: originLon,
-      destLat: destLat,
-      destLon: destLon,
-    );
-
-    if (mounted) {
-      setState(() => _segmentGeometry = geo);
+      _ctrl.save();
     }
   }
 
@@ -133,71 +75,50 @@ class _DeliveryScreenState extends State<DeliveryScreen>
 
   /// Abre el panel de información al tocar un marcador en el mapa.
   void _onMarkerTapped(int index) {
-    final stop = _session.stops[index];
+    final stop = _ctrl.session.stops[index];
     if (stop.isOrigin) return;
     setState(() => _selectedStopIndex = index);
     _mapKey.currentState?.flyToStop(index);
   }
 
-  /// Marca cualquier parada por índice (no solo la actual).
-  ///
-  /// Si el índice coincide con [currentStopIndex], delega en [_markStop]
-  /// para que avance el puntero y recargue el segmento GPS.
-  Future<void> _markStopByIndex(
-    int sessionIndex,
-    StopStatus status, {
-    String? note,
-  }) async {
-    if (sessionIndex >= _session.stops.length) return;
-    setState(() => _selectedStopIndex = null);
-
-    if (sessionIndex == _session.currentStopIndex) {
-      await _markStop(status, note: note);
-      return;
-    }
-
-    await PersistenceService.updateStopStatus(_session, sessionIndex, status,
-        note: note);
-    setState(() {});
-
-    if (_session.isFinished) {
-      setState(() => _segmentGeometry = null);
-      if (mounted) _showFinishedDialog();
-    }
-  }
-
-  /// Marca la parada actual con un estado (un solo toque).
-  Future<void> _markStop(StopStatus status, {String? note}) async {
-    final stopIndex = _session.currentStopIndex;
-    if (stopIndex >= _session.stops.length) return;
-
-    await PersistenceService.updateStopStatus(
-      _session,
-      stopIndex,
-      status,
-      note: note,
-    );
-
-    setState(() {});
-
-    if (_session.isFinished) {
-      // Borrar segmento al terminar
-      setState(() => _segmentGeometry = null);
-      if (mounted) _showFinishedDialog();
+  /// Marca la parada actual con un estado.
+  /// Muestra el diálogo final si el reparto termina, o anima el mapa si no.
+  Future<void> _onMarkCurrentStop(StopStatus status, {String? note}) async {
+    await _ctrl.markCurrentStop(status, note: note);
+    if (!mounted) return;
+    if (_ctrl.session.isFinished) {
+      _showFinishedDialog();
     } else {
-      // Limpiar polígono viejo inmediatamente para evitar artefactos visuales,
-      // pedir nuevo segmento y volar suavemente a la nueva parada.
-      setState(() => _segmentGeometry = null);
-      _fetchSegmentFromGps();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _mapKey.currentState?.fitGpsAndNextStop();
       });
     }
   }
 
+  /// Marca cualquier parada por índice (no solo la actual).
+  Future<void> _onMarkStopByIndex(
+    int sessionIndex,
+    StopStatus status, {
+    String? note,
+  }) async {
+    if (sessionIndex >= _ctrl.session.stops.length) return;
+    setState(() => _selectedStopIndex = null);
+
+    if (sessionIndex == _ctrl.session.currentStopIndex) {
+      await _onMarkCurrentStop(status, note: note);
+      return;
+    }
+
+    await _ctrl.markStopByIndex(sessionIndex, status, note: note);
+    if (!mounted) return;
+    if (_ctrl.session.isFinished) {
+      _showFinishedDialog();
+    }
+  }
+
   /// Diálogo final cuando se completó todo el reparto.
   void _showFinishedDialog() {
-    final elapsed = DateTime.now().difference(_session.createdAt);
+    final elapsed = DateTime.now().difference(_ctrl.session.createdAt);
     final elapsedText = elapsed.inMinutes < 60
         ? '${elapsed.inMinutes} min'
         : '${elapsed.inHours} h ${elapsed.inMinutes % 60} min';
@@ -215,15 +136,16 @@ class _DeliveryScreenState extends State<DeliveryScreen>
           children: [
             const Icon(Icons.check_circle, color: AppColors.success, size: 64),
             const SizedBox(height: 16),
-            _summaryRow('✅ Entregados', '${_session.deliveredCount}'),
-            _summaryRow('🚫 Ausentes', '${_session.absentCount}'),
+            _summaryRow('✅ Entregados', '${_ctrl.session.deliveredCount}'),
+            _summaryRow('🚫 Ausentes', '${_ctrl.session.absentCount}'),
             const Divider(height: 24),
             _summaryRow(
-                '📦 Total', '${_session.completedCount}/${_session.totalStops}'),
-            if (_session.totalPackages > _session.totalStops)
-              _summaryRow('📦 Paquetes', '${_session.totalPackages}'),
+                '📦 Total',
+                '${_ctrl.session.completedCount}/${_ctrl.session.totalStops}'),
+            if (_ctrl.session.totalPackages > _ctrl.session.totalStops)
+              _summaryRow('📦 Paquetes', '${_ctrl.session.totalPackages}'),
             _summaryRow('⏱️ Duración', elapsedText),
-            _summaryRow('📏 Distancia', _session.totalDistanceDisplay),
+            _summaryRow('📏 Distancia', _ctrl.session.totalDistanceDisplay),
           ],
         ),
         actions: [
@@ -232,7 +154,7 @@ class _DeliveryScreenState extends State<DeliveryScreen>
             child: FilledButton.icon(
               onPressed: () async {
                 final nav = Navigator.of(context);
-                await PersistenceService.clearSession();
+                await _ctrl.clearSession();
                 if (!ctx.mounted) return;
                 Navigator.pop(ctx);
                 nav.popUntil((route) => route.isFirst);
@@ -317,56 +239,23 @@ class _DeliveryScreenState extends State<DeliveryScreen>
     );
     if (result == null || !mounted) return;
 
-    ApiService.postOverride(
-      address: stop.address,
-      lat: result.latitude,
-      lon: result.longitude,
+    await _ctrl.applyRepin(sessionIndex, result.latitude, result.longitude);
+    if (!mounted) return;
+
+    onStopUpdated?.call(_ctrl.session.stops[sessionIndex]);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Ubicación corregida'),
+        backgroundColor: AppColors.success,
+      ),
     );
-
-    final newStop = DeliveryStop(
-      order: stop.order,
-      address: stop.address,
-      alias: stop.alias,
-      label: stop.label,
-      clientName: stop.clientName,
-      clientNames: stop.clientNames,
-      packages: stop.packages,
-      type: stop.type,
-      lat: result.latitude,
-      lon: result.longitude,
-      distanceMeters: stop.distanceMeters,
-      packageCount: stop.packageCount,
-      status: stop.status,
-      note: stop.note,
-      completedAt: stop.completedAt,
-    );
-
-    _session.stops[sessionIndex] = newStop;
-    await PersistenceService.saveSession(_session);
-
-    onStopUpdated?.call(newStop);
-    setState(() {});
-
-    if (sessionIndex == _session.currentStopIndex) {
-      setState(() => _segmentGeometry = null);
-      _fetchSegmentFromGps();
-    }
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Ubicación corregida'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-    }
   }
 
   // ═══════════════════════════════════════════
   //  Navegación externa (Google Maps)
   // ═══════════════════════════════════════════
 
-  /// Abre Google Maps para navegar a las coordenadas de una parada.
   Future<void> _openNavigationToStop(DeliveryStop stop) async {
     if (stop.lat == null || stop.lon == null) return;
     final uri = Uri.parse('google.navigation:q=${stop.lat},${stop.lon}&mode=d');
@@ -387,7 +276,7 @@ class _DeliveryScreenState extends State<DeliveryScreen>
   }
 
   Future<void> _openExternalNavigation() async {
-    final stop = _session.currentStop;
+    final stop = _ctrl.session.currentStop;
     if (stop == null) return;
     await _openNavigationToStop(stop);
   }
@@ -397,7 +286,7 @@ class _DeliveryScreenState extends State<DeliveryScreen>
   // ═══════════════════════════════════════════
 
   Future<bool> _onWillPop() async {
-    if (_session.isFinished) return true;
+    if (_ctrl.session.isFinished) return true;
 
     final result = await showDialog<bool>(
       context: context,
@@ -422,8 +311,7 @@ class _DeliveryScreenState extends State<DeliveryScreen>
     );
 
     if (result == true) {
-      // Forzar guardado antes de salir para no perder cambios en vuelo.
-      await PersistenceService.saveSession(_session);
+      await _ctrl.save();
     }
     return result ?? false;
   }
@@ -433,11 +321,9 @@ class _DeliveryScreenState extends State<DeliveryScreen>
   // ═══════════════════════════════════════════
 
   void _showReorderSheet() {
-    // Paradas reordenables: todo lo que no está entregado ni es el origen.
-    // Incluye pendientes, ausentes e incidencias (pueden reintentarse).
     final pendingEntries = <_ReorderEntry>[];
-    for (int i = 0; i < _session.stops.length; i++) {
-      final s = _session.stops[i];
+    for (int i = 0; i < _ctrl.session.stops.length; i++) {
+      final s = _ctrl.session.stops[i];
       if (!s.isOrigin && s.status != StopStatus.delivered) {
         pendingEntries.add(_ReorderEntry(index: i, stop: s));
       }
@@ -472,10 +358,12 @@ class _DeliveryScreenState extends State<DeliveryScreen>
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
                     child: Row(
                       children: [
-                        const Icon(Icons.swap_vert, color: AppColors.primary),
+                        const Icon(Icons.swap_vert,
+                            color: AppColors.primary),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Column(
@@ -484,12 +372,14 @@ class _DeliveryScreenState extends State<DeliveryScreen>
                               const Text(
                                 'Reordenar Paradas',
                                 style: TextStyle(
-                                    fontSize: 17, fontWeight: FontWeight.w700),
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w700),
                               ),
                               Text(
                                 'Mantén pulsado y arrastra para cambiar el orden.',
                                 style: TextStyle(
-                                    fontSize: 11, color: AppColors.textTertiary),
+                                    fontSize: 11,
+                                    color: AppColors.textTertiary),
                               ),
                             ],
                           ),
@@ -526,8 +416,7 @@ class _DeliveryScreenState extends State<DeliveryScreen>
                           decoration: BoxDecoration(
                             color: AppColors.cardLight,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                                color: AppColors.border),
+                            border: Border.all(color: AppColors.border),
                           ),
                           child: ListTile(
                             dense: true,
@@ -561,7 +450,8 @@ class _DeliveryScreenState extends State<DeliveryScreen>
                                   TextSpan(text: entry.stop.address),
                                   if (entry.stop.alias.isNotEmpty)
                                     TextSpan(
-                                      text: '  —  ${entry.stop.alias}',
+                                      text:
+                                          '  —  ${entry.stop.alias}',
                                       style: const TextStyle(
                                           fontStyle: FontStyle.italic,
                                           fontWeight: FontWeight.w400,
@@ -571,7 +461,8 @@ class _DeliveryScreenState extends State<DeliveryScreen>
                               ),
                             ),
                             subtitle: StopPackagesSection(
-                                packages: entry.stop.packages, fontSize: 11),
+                                packages: entry.stop.packages,
+                                fontSize: 11),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -594,12 +485,17 @@ class _DeliveryScreenState extends State<DeliveryScreen>
                                         capturedEntry.index,
                                         onStopUpdated: (newStop) {
                                           setSheetState(() {
-                                            final idx = pendingEntries.indexWhere(
-                                                (e) => e.index == capturedEntry.index);
+                                            final idx = pendingEntries
+                                                .indexWhere((e) =>
+                                                    e.index ==
+                                                    capturedEntry
+                                                        .index);
                                             if (idx != -1) {
-                                              pendingEntries[idx] = _ReorderEntry(
-                                                  index: capturedEntry.index,
-                                                  stop: newStop);
+                                              pendingEntries[idx] =
+                                                  _ReorderEntry(
+                                                      index: capturedEntry
+                                                          .index,
+                                                      stop: newStop);
                                             }
                                           });
                                         },
@@ -621,13 +517,11 @@ class _DeliveryScreenState extends State<DeliveryScreen>
                                       size: 22,
                                     ),
                                     onPressed: () async {
-                                      // Persistir primero, luego actualizar UI
-                                      entry.stop.status = StopStatus.delivered;
-                                      entry.stop.completedAt = DateTime.now();
-                                      await PersistenceService.saveSession(
-                                          _session);
-                                      setSheetState(
-                                          () => pendingEntries.removeAt(i));
+                                      await _ctrl.markStopByIndex(
+                                          entry.index,
+                                          StopStatus.delivered);
+                                      setSheetState(() =>
+                                          pendingEntries.removeAt(i));
                                     },
                                   ),
                                 ),
@@ -646,7 +540,8 @@ class _DeliveryScreenState extends State<DeliveryScreen>
                       height: 48,
                       child: FilledButton.icon(
                         onPressed: () async {
-                          await _applyReorder(pendingEntries);
+                          await _ctrl.applyReorder(
+                              pendingEntries.map((e) => e.stop).toList());
                           if (ctx.mounted) Navigator.pop(ctx);
                         },
                         icon: const Icon(Icons.check, size: 20),
@@ -672,59 +567,13 @@ class _DeliveryScreenState extends State<DeliveryScreen>
     );
   }
 
-  /// Aplica el nuevo orden de paradas pendientes a la sesión.
-  Future<void> _applyReorder(List<_ReorderEntry> newOrder) async {
-    // Reconstruir la lista de stops:
-    // 1. Mantener completadas y origen en su posición relativa
-    // 2. Insertar pendientes en el nuevo orden después de la última completada
-
-    final origin = _session.stops.where((s) => s.isOrigin).toList();
-    // Solo las entregadas quedan fijas al principio; ausentes e incidencias
-    // van en la lista reordenable para que puedan reintentarse.
-    final delivered = _session.stops
-        .where((s) => !s.isOrigin && s.status == StopStatus.delivered)
-        .toList();
-    final reorderedRemaining = newOrder.map((e) => e.stop).toList();
-
-    final newStops = <DeliveryStop>[
-      ...origin,
-      ...delivered,
-      ...reorderedRemaining,
-    ];
-
-    _session.stops
-      ..clear()
-      ..addAll(newStops);
-
-    // Actualizar currentStopIndex a la primera parada no entregada (puede ser
-    // pendiente, ausente o incidencia — todas son reintentables).
-    for (int i = 0; i < _session.stops.length; i++) {
-      final s = _session.stops[i];
-      if (!s.isOrigin && s.status != StopStatus.delivered) {
-        _session.currentStopIndex = i;
-        break;
-      }
-    }
-
-    await PersistenceService.saveSession(_session);
-    setState(() {});
-
-    // Centrar mapa en la nueva parada actual
-    if (_session.currentStop != null) {
-      setState(() => _segmentGeometry = null);
-      _fetchSegmentFromGps();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _mapKey.currentState?.fitGpsAndNextStop();
-      });
-    }
-  }
-
   // ═══════════════════════════════════════════
   //  Lista de paradas completadas
   // ═══════════════════════════════════════════
 
   void _showCompletedStops() {
-    final completed = _session.stops.where((s) => s.isCompleted).toList();
+    final completed =
+        _ctrl.session.stops.where((s) => s.isCompleted).toList();
 
     showModalBottomSheet(
       context: context,
@@ -750,7 +599,8 @@ class _DeliveryScreenState extends State<DeliveryScreen>
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
                   const Icon(Icons.checklist, color: AppColors.primary),
@@ -768,12 +618,14 @@ class _DeliveryScreenState extends State<DeliveryScreen>
               child: completed.isEmpty
                   ? const Center(
                       child: Text('Ninguna parada completada aún',
-                          style: TextStyle(color: AppColors.textTertiary)),
+                          style: TextStyle(
+                              color: AppColors.textTertiary)),
                     )
                   : ListView.builder(
                       controller: scrollController,
                       itemCount: completed.length,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 8),
                       itemBuilder: (ctx, i) =>
                           _CompletedTile(stop: completed[i]),
                     ),
@@ -790,11 +642,16 @@ class _DeliveryScreenState extends State<DeliveryScreen>
 
   @override
   Widget build(BuildContext context) {
-    final currentStop = _session.currentStop;
-    final isFinished = _session.isFinished;
+    return ListenableBuilder(
+      listenable: _ctrl,
+      builder: (context, _) => _buildScaffold(context),
+    );
+  }
 
-    // Convertir DeliveryStops a StopInfo para el mapa
-    final mapStops = _session.stops;
+  Widget _buildScaffold(BuildContext context) {
+    final currentStop = _ctrl.session.currentStop;
+    final isFinished = _ctrl.session.isFinished;
+    final mapStops = _ctrl.session.stops;
 
     return PopScope(
       canPop: false,
@@ -825,8 +682,8 @@ class _DeliveryScreenState extends State<DeliveryScreen>
             IconButton(
               onPressed: _showCompletedStops,
               icon: Badge(
-                label: Text('${_session.completedCount}'),
-                isLabelVisible: _session.completedCount > 0,
+                label: Text('${_ctrl.session.completedCount}'),
+                isLabelVisible: _ctrl.session.completedCount > 0,
                 child: const Icon(Icons.checklist),
               ),
               tooltip: 'Paradas completadas',
@@ -837,7 +694,7 @@ class _DeliveryScreenState extends State<DeliveryScreen>
           child: Column(
             children: [
               // ── Barra de progreso ──
-              _ProgressHeader(session: _session),
+              _ProgressHeader(session: _ctrl.session),
 
               // ── Mapa con callout flotante al tocar un marcador ──
               Expanded(
@@ -847,34 +704,34 @@ class _DeliveryScreenState extends State<DeliveryScreen>
                       key: _mapKey,
                       stops: _deliveryToStopInfo(mapStops),
                       highlightedStopIndex:
-                          isFinished ? null : _session.currentStopIndex,
+                          isFinished ? null : _ctrl.session.currentStopIndex,
                       completedIndices: _completedIndices(),
                       deliveryMode: true,
-                      segmentGeometry: _segmentGeometry,
+                      segmentGeometry: _ctrl.segmentGeometry,
                       nextStopIndex:
-                          isFinished ? null : _session.currentStopIndex,
+                          isFinished ? null : _ctrl.session.currentStopIndex,
                       onMarkerTapped: _onMarkerTapped,
                     ),
                     if (_selectedStopIndex != null &&
-                        _selectedStopIndex! < _session.stops.length)
+                        _selectedStopIndex! < _ctrl.session.stops.length)
                       Positioned(
                         top: 8,
                         left: 12,
                         right: 12,
                         child: _StopCallout(
-                          stop: _session.stops[_selectedStopIndex!],
+                          stop: _ctrl.session.stops[_selectedStopIndex!],
                           onClose: () =>
                               setState(() => _selectedStopIndex = null),
                           onMarkStatus: (status) =>
-                              _markStopByIndex(_selectedStopIndex!, status),
+                              _onMarkStopByIndex(_selectedStopIndex!, status),
                           onRepin: () {
                             final idx = _selectedStopIndex!;
-                            final stop = _session.stops[idx];
+                            final stop = _ctrl.session.stops[idx];
                             setState(() => _selectedStopIndex = null);
                             _repinStop(stop, idx);
                           },
                           onNavigate: () => _openNavigationToStop(
-                              _session.stops[_selectedStopIndex!]),
+                              _ctrl.session.stops[_selectedStopIndex!]),
                         ),
                       ),
                   ],
@@ -885,11 +742,13 @@ class _DeliveryScreenState extends State<DeliveryScreen>
               if (!isFinished && currentStop != null)
                 _NextStopCard(
                   stop: currentStop,
-                  pendingCount: _session.pendingCount,
-                  onDelivered: () => _markStop(StopStatus.delivered),
-                  onAbsent: () => _markStop(StopStatus.absent),
+                  pendingCount: _ctrl.session.pendingCount,
+                  onDelivered: () =>
+                      _onMarkCurrentStop(StopStatus.delivered),
+                  onAbsent: () => _onMarkCurrentStop(StopStatus.absent),
                   onNavigate: _openExternalNavigation,
-                  onRepin: () => _repinStop(currentStop, _session.currentStopIndex),
+                  onRepin: () => _repinStop(
+                      currentStop, _ctrl.session.currentStopIndex),
                 ),
 
               if (isFinished) _buildFinishedBanner(),
@@ -923,8 +782,8 @@ class _DeliveryScreenState extends State<DeliveryScreen>
   /// Índices de paradas completadas para visualizarlas diferente en el mapa.
   Set<int> _completedIndices() {
     final indices = <int>{};
-    for (int i = 0; i < _session.stops.length; i++) {
-      if (_session.stops[i].isCompleted) indices.add(i);
+    for (int i = 0; i < _ctrl.session.stops.length; i++) {
+      if (_ctrl.session.stops[i].isCompleted) indices.add(i);
     }
     return indices;
   }
@@ -946,13 +805,13 @@ class _DeliveryScreenState extends State<DeliveryScreen>
           ),
           const SizedBox(height: 4),
           Text(
-            '✅ ${_session.deliveredCount}  ·  🚫 ${_session.absentCount}',
+            '✅ ${_ctrl.session.deliveredCount}  ·  🚫 ${_ctrl.session.absentCount}',
             style: const TextStyle(fontSize: 13, color: AppColors.success),
           ),
           const SizedBox(height: 12),
           FilledButton.icon(
             onPressed: () async {
-              await PersistenceService.clearSession();
+              await _ctrl.clearSession();
               if (mounted) {
                 Navigator.of(context).popUntil((route) => route.isFirst);
               }
@@ -1003,8 +862,8 @@ class _ProgressHeader extends StatelessWidget {
                   _miniChip('✅', '${session.deliveredCount}',
                       AppColors.delivered),
                   const SizedBox(width: 6),
-                  _miniChip('🚫', '${session.absentCount}',
-                      AppColors.absent),
+                  _miniChip(
+                      '🚫', '${session.absentCount}', AppColors.absent),
                 ],
               ),
             ],
@@ -1210,10 +1069,13 @@ class _NextStopCard extends StatelessWidget {
                       height: 54,
                       child: FilledButton.icon(
                         onPressed: onDelivered,
-                        icon: const Icon(Icons.check_circle, size: 24, color: Colors.white),
+                        icon: const Icon(Icons.check_circle,
+                            size: 24, color: Colors.white),
                         label: const Text('Entregado',
                             style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white)),
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.success,
                           shape: RoundedRectangleBorder(
@@ -1232,9 +1094,11 @@ class _NextStopCard extends StatelessWidget {
                       height: 54,
                       child: FilledButton.icon(
                         onPressed: onAbsent,
-                        icon: const Icon(Icons.person_off, size: 20, color: Colors.white),
+                        icon: const Icon(Icons.person_off,
+                            size: 20, color: Colors.white),
                         label: const Text('Ausente',
-                            style: TextStyle(fontSize: 14, color: Colors.white)),
+                            style:
+                                TextStyle(fontSize: 14, color: Colors.white)),
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.warning,
                           shape: RoundedRectangleBorder(

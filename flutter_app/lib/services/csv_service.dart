@@ -16,7 +16,7 @@ class CsvService {
     final lines = const LineSplitter().convert(text);
 
     if (lines.isEmpty) {
-      return const CsvData(clientes: [], direcciones: [], ciudades: [], notas: []);
+      return const CsvData(rows: []);
     }
 
     // Detectar columnas desde la cabecera
@@ -31,12 +31,7 @@ class CsvService {
       );
     }
 
-    final clientes = <String>[];
-    final direcciones = <String>[];
-    final ciudades = <String>[];
-    final notas = <String>[];
-    final agencias = <String>[];
-    final aliases = <String>[];
+    final rows = <CsvRow>[];
 
     for (int i = 1; i < lines.length; i++) {
       final line = lines[i].trim();
@@ -46,22 +41,17 @@ class CsvService {
       final dir = _safeGet(fields, colMap['direccion']!).trim();
       if (dir.isEmpty) continue;
 
-      clientes.add(_safeGet(fields, colMap['cliente']!).trim());
-      direcciones.add(dir);
-      ciudades.add(_safeGet(fields, colMap['ciudad']!).trim());
-      notas.add(_safeGet(fields, colMap['nota']!).trim());
-      agencias.add(_safeGet(fields, colMap['agencia']!).trim());
-      aliases.add(_safeGet(fields, colMap['alias']!).trim());
+      rows.add(CsvRow(
+        cliente: _safeGet(fields, colMap['cliente']!).trim(),
+        direccion: dir,
+        ciudad: _safeGet(fields, colMap['ciudad']!).trim(),
+        nota: _safeGet(fields, colMap['nota']!).trim(),
+        agencia: _safeGet(fields, colMap['agencia']!).trim(),
+        alias: _safeGet(fields, colMap['alias']!).trim(),
+      ));
     }
 
-    return CsvData(
-      clientes: clientes,
-      direcciones: direcciones,
-      ciudades: ciudades,
-      notas: notas,
-      agencias: agencias,
-      aliases: aliases,
-    );
+    return CsvData(rows: rows);
   }
 
   /// Detecta las columnas cliente, direccion, ciudad, nota, agencia, alias por nombre.

@@ -24,6 +24,9 @@ GOOGLE_CACHE_TTL_DAYS = 30      # días antes de expirar entradas de Google/Plac
 
 # ── Overpass API (catálogo de calles OSM) ─────────────────────
 OVERPASS_USER_AGENT = "posadas-route-planner/1.4.0 (local)"
+# Bbox del casco urbano de Posadas (más pequeño que BBOX_LAT/LON del área de reparto).
+# Limita la descarga a las calles del pueblo; evita calles de municipios cercanos.
+OVERPASS_BBOX = "37.78,-5.15,37.83,-5.06"
 
 # ── Zona de trabajo: Posadas, Córdoba ─────────────────────────
 # Depósito/taller de salida: Avenida de Andalucía, Posadas
