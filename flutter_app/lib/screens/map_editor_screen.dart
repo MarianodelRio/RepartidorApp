@@ -8,6 +8,15 @@ import '../config/app_theme.dart';
 import '../models/map_edit_models.dart';
 import '../services/map_editor_service.dart';
 
+// ── Tipo interno: información de un segmento ──────────────────────────────────
+typedef _SegInfo = ({
+  int wayId,
+  String startRef,
+  String endRef,
+  int startIdx,
+  int endIdx,
+});
+
 // ── Utilidades de geometría ───────────────────────────────────────────────────
 
 /// Ángulo en radianes desde el norte (sentido horario) entre dos coordenadas.
@@ -21,57 +30,22 @@ double _computeBearing(LatLng from, LatLng to) {
   return math.atan2(y, x);
 }
 
-/// Distancia cuadrática aproximada (grados²). Válida para búsqueda del nodo más cercano.
-double _distSq(LatLng a, LatLng b) {
-  final dlat = a.latitude - b.latitude;
-  final dlon = a.longitude - b.longitude;
-  return dlat * dlat + dlon * dlon;
-}
 
-/// Índice del nodo de [points] más cercano a [tap].
-int _closestNodeIndex(List<LatLng> points, LatLng tap) {
-  var minDist = double.infinity;
-  var minIdx = 0;
-  for (int i = 0; i < points.length; i++) {
-    final d = _distSq(points[i], tap);
-    if (d < minDist) {
-      minDist = d;
-      minIdx = i;
-    }
-  }
-  return minIdx;
-}
-
-/// Devuelve el segmento (entre nodos de intersección) que contiene [nodeIdx].
-/// Devuelve null si la vía no tiene intersecciones (no tiene tramos editables por separado).
-SegmentRef? _segmentContaining(OsmWay way, int nodeIdx) {
-  // El backend siempre incluye [0, last] en junctionIndices.
-  // Solo hay tramos editables cuando existen nodos intermedios (length > 2).
-  if (way.junctionIndices.length <= 2) return null;
-
-  // junctionIndices ya contiene 0 y last: usarlo directamente como boundaries
-  for (int i = 0; i < way.junctionIndices.length - 1; i++) {
-    final start = way.junctionIndices[i];
-    final end = way.junctionIndices[i + 1];
-    if (nodeIdx >= start && nodeIdx <= end) {
-      return (
-        startRef: way.nodeRefs[start],
-        endRef: way.nodeRefs[end],
-      );
-    }
-  }
-  return null;
-}
 
 // ═══════════════════════════════════════════════════════════════
 //  MapEditorScreen — editor nativo de red viaria
 //
-//  Flujo:
+//  Flujo (equivalente a osm_app):
 //    1. Carga vías del backend (GET /api/editor/geojson)
-//    2. Renderiza polylines coloreadas por tipo de vía
-//    3. Usuario toca una vía → bottom sheet con controles de edición
-//    4. Cambios se acumulan localmente (Map<int, PendingWayChange>)
-//    5. "Guardar cambios" → POST /api/editor/save → recarga mapa
+//    2. Toca una vía → se selecciona; aparecen dots en los nodos interiores
+//         · Gris  : nodo disponible para añadir punto de corte (toca para añadir)
+//         · Naranja: punto de corte de usuario (toca para eliminar)
+//         · Azul  : nodo de intersección con otra vía (toca para gestionar giros)
+//         · Rojo  : nodo de intersección con restricción de giro activa
+//    3. Al añadir puntos de corte, la vía se divide en segmentos coloreados
+//    4. Toca un segmento → panel de edición de ese segmento
+//    5. Barra inferior: "Editar toda la vía" cuando hay segmentos
+//    6. Guardar → POST /api/editor/save → rebuild automático → recarga mapa
 // ═══════════════════════════════════════════════════════════════
 
 class MapEditorScreen extends StatefulWidget {
@@ -81,7 +55,6 @@ class MapEditorScreen extends StatefulWidget {
   State<MapEditorScreen> createState() => _MapEditorScreenState();
 }
 
-// Estado posible del rebuild
 enum _RebuildState { idle, running, ok, error }
 
 class _MapEditorScreenState extends State<MapEditorScreen> {
@@ -90,9 +63,25 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
   bool _loading = true;
   String? _loadError;
 
-  // ── Estado de edición ──
+  // ── Estado de selección ──
   OsmWay? _selectedWay;
-  final Map<int, PendingWayChange> _pending = {};
+  _SegInfo? _selectedSegment;
+
+  // ── Puntos de corte definidos por usuario: wayId → Set<nodeIdx> ──
+  // Equivalente a userSplitIndices en osm_app.
+  final Map<int, Set<int>> _userSplits = {};
+
+  // ── Cambios pendientes de vías/segmentos ──
+  // Clave: "$wayId" para cambios de vía completa,
+  //        "${wayId}_${startRef}_${endRef}" para cambios de segmento.
+  final Map<String, PendingWayChange> _pending = {};
+
+  // ── Cambios pendientes de restricciones de giro ──
+  // Clave: "${fromWayId}_${viaNodeRef}_${toWayId}"
+  final Map<String, PendingRestrictionChange> _restrictionChanges = {};
+
+  // ── Índice nodeRef → vías que contienen ese nodo (para panel de restricciones) ──
+  Map<String, List<OsmWay>> _nodeToWays = {};
 
   // ── Estado de guardado ──
   bool _saving = false;
@@ -100,16 +89,16 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
   // ── Estado de rebuild ──
   _RebuildState _rebuildState = _RebuildState.idle;
   String _rebuildMessage = '';
-  // Indica que hay cambios guardados pendientes de rebuild
   bool _savedButNotRebuilt = false;
 
   // ── Mapa ──
   final _mapController = MapController();
-  // LayerHitNotifier<T>: el valor se actualiza cuando el puntero toca una
-  // polyline con hitValue. Lo leemos en onTap del GestureDetector externo.
   final LayerHitNotifier<OsmWay> _hitNotifier = LayerHitNotifier(null);
+  final LayerHitNotifier<_SegInfo> _segHitNotifier = LayerHitNotifier(null);
 
-  // Centro inicial — Posadas, Córdoba
+  /// Flag para evitar que un tap en un dot dispare también _onMapTap.
+  bool _consumeNextMapTap = false;
+
   static const _center = LatLng(37.805503, -5.099805);
 
   // ─────────────────────────────────────────────────
@@ -143,6 +132,7 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
       setState(() {
         _ways = ways;
         _loading = false;
+        _nodeToWays = _buildNodeToWays(ways);
       });
     } catch (e) {
       if (!mounted) return;
@@ -154,28 +144,153 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
   }
 
   // ─────────────────────────────────────────────────
+  //  Índice nodeRef → vías (para restricciones de giro)
+  // ─────────────────────────────────────────────────
+
+  static Map<String, List<OsmWay>> _buildNodeToWays(List<OsmWay> ways) {
+    final map = <String, List<OsmWay>>{};
+    for (final way in ways) {
+      for (final ref in way.nodeRefs) {
+        map.putIfAbsent(ref, () => []).add(way);
+      }
+    }
+    return map;
+  }
+
+  // ─────────────────────────────────────────────────
+  //  Lógica de segmentos (equivalente a computeSegments en osm_app)
+  // ─────────────────────────────────────────────────
+
+  /// Combina junction_indices automáticos con los puntos de corte del usuario
+  /// para calcular los segmentos de una vía. Devuelve lista vacía si no hay
+  /// divisiones internas (solo los dos extremos).
+  List<_SegInfo> _computeSegments(OsmWay way) {
+    final combined = {
+      ...way.junctionIndices,
+      ...(_userSplits[way.id] ?? <int>{}),
+    }.toList()
+      ..sort();
+
+    if (combined.length <= 2) return [];
+
+    final result = <_SegInfo>[];
+    for (int i = 0; i < combined.length - 1; i++) {
+      final si = combined[i];
+      final ei = combined[i + 1];
+      result.add((
+        wayId: way.id,
+        startRef: way.nodeRefs[si],
+        endRef: way.nodeRefs[ei],
+        startIdx: si,
+        endIdx: ei,
+      ));
+    }
+    return result;
+  }
+
+  /// Añade o elimina el nodo [nodeIdx] como punto de corte de usuario en [way].
+  void _toggleUserSplit(OsmWay way, int nodeIdx) {
+    _consumeNextMapTap = true; // el GestureDetector del dot también dispara onTap del mapa
+    setState(() {
+      final splits = _userSplits.putIfAbsent(way.id, () => {});
+      if (splits.contains(nodeIdx)) {
+        splits.remove(nodeIdx);
+        if (splits.isEmpty) _userSplits.remove(way.id);
+      } else {
+        splits.add(nodeIdx);
+      }
+      // Si el segmento activo ya no existe, deseleccionarlo
+      if (_selectedSegment != null) {
+        final segs = _computeSegments(way);
+        if (!segs.any((s) =>
+            s.startRef == _selectedSegment!.startRef &&
+            s.endRef == _selectedSegment!.endRef)) {
+          _selectedSegment = null;
+        }
+      }
+    });
+  }
+
+  // ─────────────────────────────────────────────────
+  //  Helpers de clave para _pending
+  // ─────────────────────────────────────────────────
+
+  static String _pendingKey(int wayId, [SegmentRef? seg]) =>
+      seg != null ? '${wayId}_${seg.startRef}_${seg.endRef}' : '$wayId';
+
+  bool _wayHasPending(int wayId) {
+    final prefix = '$wayId';
+    return _pending.containsKey(prefix) ||
+        _pending.keys.any((k) => k.startsWith('${prefix}_'));
+  }
+
+  // ─────────────────────────────────────────────────
   //  Interacción con el mapa
   // ─────────────────────────────────────────────────
 
   void _onMapTap(LatLng tapCoord) {
-    final hit = _hitNotifier.value;
-    if (hit == null || hit.hitValues.isEmpty) {
-      // Toque en zona sin vía → deseleccionar
-      if (_selectedWay != null) setState(() => _selectedWay = null);
+    if (_consumeNextMapTap) {
+      _consumeNextMapTap = false;
       return;
     }
 
-    // La vía más cercana al toque está primera en hitValues
+    // 1. ¿Se tocó un segmento de la vía seleccionada?
+    final segHit = _segHitNotifier.value;
+    if (segHit != null && segHit.hitValues.isNotEmpty) {
+      final seg = segHit.hitValues.first;
+      setState(() => _selectedSegment = seg);
+      _showEditSheet(_selectedWay!, seg: seg);
+      return;
+    }
+
+    // 2. ¿Se tocó una vía?
+    final hit = _hitNotifier.value;
+    if (hit == null || hit.hitValues.isEmpty) {
+      if (_selectedWay != null) {
+        setState(() {
+          _selectedWay = null;
+          _selectedSegment = null;
+        });
+      }
+      return;
+    }
+
     final tapped = hit.hitValues.first;
-    setState(() => _selectedWay = tapped);
-    _showEditSheet(tapped, tapCoord);
+
+    // Misma vía sin segmentos → abrir panel de vía completa
+    if (_selectedWay?.id == tapped.id) {
+      if (_computeSegments(tapped).isEmpty) {
+        _showEditSheet(tapped);
+      }
+      return;
+    }
+
+    // Nueva vía → seleccionar
+    setState(() {
+      _selectedWay = tapped;
+      _selectedSegment = null;
+    });
+    // Sin segmentos → abrir panel directamente (comportamiento original)
+    if (_computeSegments(tapped).isEmpty) {
+      _showEditSheet(tapped);
+    }
   }
 
   // ─────────────────────────────────────────────────
-  //  Bottom sheet de edición
+  //  Panel de edición
   // ─────────────────────────────────────────────────
 
-  void _showEditSheet(OsmWay way, LatLng tapCoord) {
+  void _showEditSheet(OsmWay way, {_SegInfo? seg}) {
+    final segRef = seg != null
+        ? (startRef: seg.startRef, endRef: seg.endRef)
+        : null;
+    final key = _pendingKey(way.id, segRef);
+    final segs = _computeSegments(way);
+    final segIdx = seg != null
+        ? segs.indexWhere(
+            (s) => s.startRef == seg.startRef && s.endRef == seg.endRef)
+        : -1;
+
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -185,19 +300,62 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
       ),
       builder: (_) => _WayEditSheet(
         way: way,
-        pendingChange: _pending[way.id],
-        tappedSegment: _segmentContaining(way, _closestNodeIndex(way.points, tapCoord)),
+        pendingChange: _pending[key],
+        initialSegment: segRef,
+        segIdx: segIdx,
+        segTotal: segs.length,
         onApply: (change) {
           setState(() {
-            _pending[way.id] = change;
-            _selectedWay = null;
+            final changeKey = _pendingKey(change.wayId, change.segment);
+            _pending[changeKey] = change;
+            _selectedSegment = null;
           });
           Navigator.pop(context);
         },
         onRevert: () {
           setState(() {
-            _pending.remove(way.id);
-            _selectedWay = null;
+            // Eliminar todos los cambios de esta vía
+            _pending.removeWhere(
+              (k, _) =>
+                  k == '${way.id}' || k.startsWith('${way.id}_'),
+            );
+            _selectedSegment = null;
+          });
+          Navigator.pop(context);
+        },
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────
+  //  Panel de restricciones de giro
+  // ─────────────────────────────────────────────────
+
+  void _showRestrictionSheet(
+    OsmWay way,
+    int nodeIdx,
+    String nodeRef,
+    List<OsmWay> connectedWays,
+  ) {
+    final existingRestrictions = way.restrictionsFrom[nodeRef]?.toSet() ?? {};
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _RestrictionSheet(
+        way: way,
+        nodeRef: nodeRef,
+        connectedWays: connectedWays,
+        existingRestrictions: existingRestrictions,
+        pendingChanges: Map.of(_restrictionChanges),
+        onApply: (changes) {
+          setState(() {
+            for (final change in changes) {
+              _restrictionChanges[change.key] = change;
+            }
           });
           Navigator.pop(context);
         },
@@ -210,25 +368,26 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
   // ─────────────────────────────────────────────────
 
   Future<void> _saveChanges() async {
-    if (_pending.isEmpty || _saving) return;
+    if ((_pending.isEmpty && _restrictionChanges.isEmpty) || _saving) return;
     setState(() => _saving = true);
     try {
-      await MapEditorService.saveChanges(_pending.values.toList());
+      await MapEditorService.saveChanges(
+        _pending.values.toList(),
+        restrictionChanges: _restrictionChanges.values.toList(),
+      );
       if (!mounted) return;
       setState(() {
         _pending.clear();
+        _restrictionChanges.clear();
         _selectedWay = null;
+        _selectedSegment = null;
+        _userSplits.clear();
         _saving = false;
-        _savedButNotRebuilt = true;
+        _savedButNotRebuilt = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Cambios guardados. Lanza el rebuild para aplicarlos al routing.'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-      // Recarga la red viaria para reflejar los cambios en el mapa
       await _loadWays();
+      if (!mounted) return;
+      await _startRebuild();
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -313,7 +472,6 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
       return;
     }
 
-    // Polling hasta que el rebuild termine
     while (mounted) {
       await Future<void>.delayed(const Duration(seconds: 4));
       if (!mounted) break;
@@ -321,9 +479,7 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
         final status = await MapEditorService.getRebuildStatus();
         final serverStatus = status['status'] as String? ?? 'running';
         final msg = status['message'] as String? ?? '';
-
         setState(() => _rebuildMessage = msg);
-
         if (serverStatus == 'ok') {
           setState(() {
             _rebuildState = _RebuildState.ok;
@@ -334,10 +490,7 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
           setState(() => _rebuildState = _RebuildState.error);
           break;
         }
-        // Si sigue 'running', continuar polling
-      } catch (_) {
-        // Error de red puntual — seguir intentando
-      }
+      } catch (_) {}
     }
   }
 
@@ -346,9 +499,19 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
   // ─────────────────────────────────────────────────
 
   Color _wayColor(OsmWay way) {
-    if (_selectedWay?.id == way.id) return const Color(0xFFFFC107); // ámbar
-    if (_pending.containsKey(way.id)) return const Color(0xFFFF6F00); // naranja
+    if (_selectedWay?.id == way.id) return const Color(0xFFFFC107);
+    if (_wayHasPending(way.id)) return const Color(0xFFFF6F00);
     return _highwayBaseColor(way.highway);
+  }
+
+  Color _segmentColor(_SegInfo seg) {
+    final isSelected = _selectedSegment?.startRef == seg.startRef &&
+        _selectedSegment?.endRef == seg.endRef;
+    if (isSelected) return const Color(0xFFFFC107); // ámbar
+    final key = _pendingKey(
+        seg.wayId, (startRef: seg.startRef, endRef: seg.endRef));
+    if (_pending.containsKey(key)) return const Color(0xFF22C55E); // verde
+    return const Color(0xFF93C5FD); // azul claro
   }
 
   double _wayWidth(OsmWay way) {
@@ -366,23 +529,17 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
 
   static Color _highwayBaseColor(String highway) => switch (highway) {
         'motorway' || 'motorway_link' || 'trunk' || 'trunk_link' =>
-          const Color(0xFFE53935),  // rojo
-        'primary' || 'primary_link' =>
-          const Color(0xFFFF7043),  // naranja oscuro
-        'secondary' || 'secondary_link' =>
-          const Color(0xFFFFB300),  // ámbar
-        'tertiary' || 'tertiary_link' =>
-          const Color(0xFFAFB42B),  // oliva
+          const Color(0xFFE53935),
+        'primary' || 'primary_link' => const Color(0xFFFF7043),
+        'secondary' || 'secondary_link' => const Color(0xFFFFB300),
+        'tertiary' || 'tertiary_link' => const Color(0xFFAFB42B),
         'residential' || 'living_street' || 'unclassified' || 'road' =>
-          const Color(0xFF78909C),  // azul grisáceo
-        'service' =>
-          const Color(0xFFB0BEC5),  // azul grisáceo claro
+          const Color(0xFF78909C),
+        'service' => const Color(0xFFB0BEC5),
         'footway' || 'pedestrian' || 'path' || 'steps' =>
-          const Color(0xFF43A047),  // verde
-        'cycleway' =>
-          const Color(0xFF1E88E5),  // azul
-        _ =>
-          const Color(0xFF9E9E9E),  // gris
+          const Color(0xFF43A047),
+        'cycleway' => const Color(0xFF1E88E5),
+        _ => const Color(0xFF9E9E9E),
       };
 
   // ─────────────────────────────────────────────────
@@ -420,7 +577,6 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
       ),
       body: Column(
         children: [
-          // Banner de estado rebuild (visible cuando corresponde)
           if (_rebuildState != _RebuildState.idle || _savedButNotRebuilt)
             _buildRebuildBanner(),
           Expanded(child: _buildBody()),
@@ -473,69 +629,202 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
   }
 
   Widget _buildMap() {
-    // Una polyline por vía con hitValue adjunto
-    final polylines = _ways
-        .map(
-          (way) => Polyline<OsmWay>(
-            points: way.points,
-            color: _wayColor(way),
-            strokeWidth: _wayWidth(way),
-            hitValue: way,
-          ),
-        )
-        .toList();
+    final mainPolylines = <Polyline<OsmWay>>[];
+    final segPolylines = <Polyline<_SegInfo>>[];
+    final splitDotMarkers = <Marker>[];
+    final onewayMarkers = <Marker>[];
 
-    // Marcadores de sentido único: múltiples flechas rotadas por vía
-    final onewayMarkers = _ways
-        .where((w) => w.oneway != null)
-        .expand(_buildOnewayMarkers)
-        .toList();
+    for (final way in _ways) {
+      final isSelected = _selectedWay?.id == way.id;
+
+      if (isSelected) {
+        final segs = _computeSegments(way);
+        if (segs.isNotEmpty) {
+          // Segmentos individuales reemplazan la polyline principal
+          for (final seg in segs) {
+            segPolylines.add(Polyline<_SegInfo>(
+              points: way.points.sublist(seg.startIdx, seg.endIdx + 1),
+              color: _segmentColor(seg),
+              strokeWidth: _selectedSegment?.startRef == seg.startRef &&
+                      _selectedSegment?.endRef == seg.endRef
+                  ? 7
+                  : 4,
+              hitValue: seg,
+            ));
+          }
+        } else {
+          // Sin segmentos: vía completa resaltada
+          mainPolylines.add(Polyline<OsmWay>(
+            points: way.points,
+            color: const Color(0xFFFFC107),
+            strokeWidth: 7,
+            hitValue: way,
+          ));
+        }
+        // Dots de nodos para la vía seleccionada
+        splitDotMarkers.addAll(_buildSplitDots(way));
+      } else {
+        mainPolylines.add(Polyline<OsmWay>(
+          points: way.points,
+          color: _wayColor(way),
+          strokeWidth: _wayWidth(way),
+          hitValue: way,
+        ));
+      }
+
+      if (way.oneway != null) {
+        onewayMarkers.addAll(_buildOnewayMarkers(way));
+      }
+    }
 
     return FlutterMap(
-        mapController: _mapController,
-        options: MapOptions(
-          initialCenter: _center,
-          initialZoom: 14,
-          minZoom: 11,
-          maxZoom: 19,
-          // onTap garantiza que _hitNotifier ya está actualizado cuando se dispara
-          onTap: (_, latLng) => _onMapTap(latLng),
+      mapController: _mapController,
+      options: MapOptions(
+        initialCenter: _center,
+        initialZoom: 14,
+        minZoom: 11,
+        maxZoom: 19,
+        onTap: (_, latLng) => _onMapTap(latLng),
+      ),
+      children: [
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.posadas.repartir_app',
         ),
-        children: [
-          TileLayer(
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.posadas.repartir_app',
+        PolylineLayer<OsmWay>(
+          polylines: mainPolylines,
+          hitNotifier: _hitNotifier,
+        ),
+        if (segPolylines.isNotEmpty)
+          PolylineLayer<_SegInfo>(
+            polylines: segPolylines,
+            hitNotifier: _segHitNotifier,
           ),
-          PolylineLayer<OsmWay>(
-            polylines: polylines,
-            hitNotifier: _hitNotifier,
-          ),
-          if (onewayMarkers.isNotEmpty)
-            MarkerLayer(markers: onewayMarkers),
-          // Leyenda fija en esquina inferior izquierda
-          const _MapLegendOverlay(),
-        ],
+        if (splitDotMarkers.isNotEmpty) MarkerLayer(markers: splitDotMarkers),
+        if (onewayMarkers.isNotEmpty) MarkerLayer(markers: onewayMarkers),
+        const _MapLegendOverlay(),
+      ],
     );
   }
 
-  /// Genera una o varias flechas a lo largo de [way] con la orientación geográfica real.
+  /// Construye los marcadores de nodos para la vía seleccionada.
   ///
-  /// Coloca hasta 4 flechas distribuidas uniformemente. Cada flecha se rota según
-  /// el bearing del segmento en que aparece. Para sentido '-1' (contrario al orden
-  /// de nodos) se invierte el bearing 180°.
+  /// · Rojo   — nodo de intersección con restricción de giro activa
+  /// · Azul   — nodo de intersección interior (toca para gestionar restricciones)
+  /// · Naranja — punto de corte de usuario (toca para eliminar)
+  /// · Gris   — nodo interior disponible (toca para añadir como punto de corte)
+  List<Marker> _buildSplitDots(OsmWay way) {
+    final markers = <Marker>[];
+    final jSet = way.junctionIndices.toSet();
+    final uSet = _userSplits[way.id] ?? const <int>{};
+    final last = way.points.length - 1;
+
+    for (int i = 0; i < way.points.length; i++) {
+      final isEndpoint = i == 0 || i == last;
+      final isJunction = jSet.contains(i);
+      final isUserSplit = uSet.contains(i);
+
+      if (isJunction && !isEndpoint) {
+        final nodeRef = way.nodeRefs[i];
+        final connectedWays = (_nodeToWays[nodeRef] ?? [])
+            .where((w) => w.id != way.id)
+            .toList();
+        if (connectedWays.isEmpty) continue; // nodo sin conexiones reales
+
+        // Determinar si hay restricciones activas en este nodo
+        final existingRestrictions =
+            way.restrictionsFrom[nodeRef]?.toSet() ?? {};
+        final pendingAdds = _restrictionChanges.values
+            .where((r) =>
+                r.fromWayId == way.id &&
+                r.viaNodeRef == nodeRef &&
+                r.restrict)
+            .map((r) => '${r.toWayId}')
+            .toSet();
+        final pendingRemoves = _restrictionChanges.values
+            .where((r) =>
+                r.fromWayId == way.id &&
+                r.viaNodeRef == nodeRef &&
+                !r.restrict)
+            .map((r) => '${r.toWayId}')
+            .toSet();
+        final effectiveRestrictions = {
+          ...existingRestrictions,
+          ...pendingAdds,
+        }..removeAll(pendingRemoves);
+
+        final hasRestriction = effectiveRestrictions.isNotEmpty;
+
+        markers.add(Marker(
+          point: way.points[i],
+          width: 14,
+          height: 14,
+          child: GestureDetector(
+            onTap: () {
+              _consumeNextMapTap = true;
+              _showRestrictionSheet(way, i, nodeRef, connectedWays);
+            },
+            child: Container(
+              decoration: BoxDecoration(
+                color: hasRestriction ? Colors.red.shade600 : Colors.blue.shade600,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+            ),
+          ),
+        ));
+      } else if (!isEndpoint && !isJunction) {
+        if (isUserSplit) {
+          // Punto de corte de usuario — naranja (toca para eliminar)
+          markers.add(Marker(
+            point: way.points[i],
+            width: 14,
+            height: 14,
+            child: GestureDetector(
+              onTap: () => _toggleUserSplit(way, i),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.orange,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+              ),
+            ),
+          ));
+        } else {
+          // Nodo disponible — gris pequeño (toca para añadir)
+          markers.add(Marker(
+            point: way.points[i],
+            width: 10,
+            height: 10,
+            child: GestureDetector(
+              onTap: () => _toggleUserSplit(way, i),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade400,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
+              ),
+            ),
+          ));
+        }
+      }
+    }
+    return markers;
+  }
+
+  /// Genera flechas de sentido único distribuidas a lo largo de [way].
   List<Marker> _buildOnewayMarkers(OsmWay way) {
     final pts = way.points;
     if (pts.length < 2) return [];
 
     final isReverse = way.oneway == '-1';
     final n = pts.length;
-
-    // Entre 1 y 4 flechas según longitud de la vía
     final numArrows = math.max(1, math.min(4, n ~/ 4));
     final step = math.max(1, (n - 1) ~/ numArrows);
 
     final markers = <Marker>[];
-    // Empezamos en la mitad del primer intervalo para centrar visualmente
     for (int i = step ~/ 2; i < n - 1; i += step) {
       final from = isReverse ? pts[i + 1] : pts[i];
       final to = isReverse ? pts[i] : pts[i + 1];
@@ -569,7 +858,8 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
   // ─────────────────────────────────────────────────
 
   Widget _buildRebuildBanner() {
-    final (Color bg, Color fg, IconData icon, String title) = switch (_rebuildState) {
+    final (Color bg, Color fg, IconData icon, String title) =
+        switch (_rebuildState) {
       _RebuildState.running => (
           const Color(0xFFFFF8E1),
           const Color(0xFFE65100),
@@ -588,7 +878,7 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
           Icons.error_outline_rounded,
           'Error en el rebuild',
         ),
-      _ => (  // idle + savedButNotRebuilt
+      _ => (
           const Color(0xFFFFF3E0),
           const Color(0xFFFF6F00),
           Icons.construction_rounded,
@@ -606,8 +896,8 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
               ? SizedBox(
                   width: 18,
                   height: 18,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: fg),
+                  child:
+                      CircularProgressIndicator(strokeWidth: 2, color: fg),
                 )
               : Icon(icon, color: fg, size: 18),
           const SizedBox(width: 10),
@@ -622,12 +912,11 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
                         color: fg)),
                 if (_rebuildMessage.isNotEmpty)
                   Text(_rebuildMessage,
-                      style: TextStyle(
-                          fontSize: 11, color: fg.withAlpha(200))),
+                      style:
+                          TextStyle(fontSize: 11, color: fg.withAlpha(200))),
               ],
             ),
           ),
-          // Botón "Reconstruir" solo cuando es relevante
           if (_rebuildState == _RebuildState.idle && _savedButNotRebuilt)
             TextButton(
               onPressed: _confirmAndRebuild,
@@ -655,19 +944,75 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
   }
 
   // ─────────────────────────────────────────────────
-  //  Bottom navigation — cambios pendientes o rebuild
+  //  Bottom navigation
   // ─────────────────────────────────────────────────
 
   Widget? _buildBottomNav() {
-    // Hay cambios por guardar: mostrar barra de guardado
     if (_pending.isNotEmpty) return _buildBottomBar();
-
-    // No hay cambios, pero sí hay rebuild pendiente: botón rebuild
     if (_savedButNotRebuilt && _rebuildState == _RebuildState.idle) {
       return _buildRebuildBar();
     }
-
+    // Vía seleccionada con segmentos → barra de selección
+    if (_selectedWay != null &&
+        _computeSegments(_selectedWay!).isNotEmpty) {
+      return _buildSelectionBar();
+    }
     return null;
+  }
+
+  /// Barra inferior cuando hay una vía seleccionada con segmentos.
+  /// Permite editar la vía completa o ver el conteo de segmentos.
+  Widget _buildSelectionBar() {
+    final segs = _computeSegments(_selectedWay!);
+    final wayName = _selectedWay!.name ?? 'ID ${_selectedWay!.id}';
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: AppColors.border)),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withAlpha(18),
+              blurRadius: 8,
+              offset: const Offset(0, -2)),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(wayName,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600),
+                    overflow: TextOverflow.ellipsis),
+                Text(
+                  '${segs.length} tramo${segs.length > 1 ? 's' : ''} — toca uno para editar',
+                  style: const TextStyle(
+                      fontSize: 11, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            height: 38,
+            child: OutlinedButton.icon(
+              onPressed: () => _showEditSheet(_selectedWay!),
+              icon: const Icon(Icons.edit_road, size: 16),
+              label: const Text('Toda la vía',
+                  style: TextStyle(fontSize: 13)),
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildRebuildBar() {
@@ -701,18 +1046,12 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
     );
   }
 
-  // ─────────────────────────────────────────────────
-  //  Bottom bar: resumen de cambios pendientes
-  // ─────────────────────────────────────────────────
-
   Widget _buildBottomBar() {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(
-          top: BorderSide(color: AppColors.border),
-        ),
+        border: Border(top: BorderSide(color: AppColors.border)),
         boxShadow: [
           BoxShadow(
               color: Colors.black.withAlpha(18),
@@ -728,7 +1067,8 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
             decoration: BoxDecoration(
               color: const Color(0xFFFFF3E0),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFFF6F00).withAlpha(80)),
+              border: Border.all(
+                  color: const Color(0xFFFF6F00).withAlpha(80)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -776,21 +1116,26 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  _WayEditSheet — panel de edición de una vía
+//  _WayEditSheet — panel de edición de una vía o segmento
 // ═══════════════════════════════════════════════════════════════
 
 class _WayEditSheet extends StatefulWidget {
   final OsmWay way;
   final PendingWayChange? pendingChange;
-  /// Tramo de la vía donde el usuario tocó. Null si la vía no tiene intersecciones.
-  final SegmentRef? tappedSegment;
+  /// Segmento pre-seleccionado (de haber tocado un segmento específico).
+  final SegmentRef? initialSegment;
+  /// Índice del segmento dentro del total (-1 si no aplica).
+  final int segIdx;
+  final int segTotal;
   final ValueChanged<PendingWayChange> onApply;
   final VoidCallback onRevert;
 
   const _WayEditSheet({
     required this.way,
     required this.pendingChange,
-    required this.tappedSegment,
+    required this.initialSegment,
+    required this.segIdx,
+    required this.segTotal,
     required this.onApply,
     required this.onRevert,
   });
@@ -803,10 +1148,8 @@ class _WayEditSheetState extends State<_WayEditSheet> {
   late String _highway;
   late String? _oneway;
   late TextEditingController _nameCtrl;
-  // null = toda la vía; non-null = solo el tramo tocado
   late SegmentRef? _segment;
 
-  // Tipos de vía editables (los más frecuentes en contexto urbano)
   static const _highwayOptions = [
     ('residential', 'Residencial'),
     ('service', 'Servicio / acceso'),
@@ -826,14 +1169,11 @@ class _WayEditSheetState extends State<_WayEditSheet> {
     super.initState();
     final p = widget.pendingChange;
     _highway = p?.highway ?? widget.way.highway;
-    _oneway  = p?.oneway  ?? widget.way.oneway;
-
-    final currentName = (p != null && p.nameChanged) ? p.name : widget.way.name;
+    _oneway = p?.oneway ?? widget.way.oneway;
+    final currentName =
+        (p != null && p.nameChanged) ? p.name : widget.way.name;
     _nameCtrl = TextEditingController(text: currentName ?? '');
-
-    // Si ya había una edición guardada, respetamos su alcance;
-    // si no, pre-seleccionamos el tramo tocado cuando la vía tiene intersecciones.
-    _segment = p?.segment ?? widget.tappedSegment;
+    _segment = p?.segment ?? widget.initialSegment;
   }
 
   @override
@@ -850,7 +1190,7 @@ class _WayEditSheetState extends State<_WayEditSheet> {
       originalName: widget.way.name,
     );
     change.highway = _highway;
-    change.oneway  = _oneway;
+    change.oneway = _oneway;
     change.segment = _segment;
 
     final newName = _nameCtrl.text.trim();
@@ -865,6 +1205,7 @@ class _WayEditSheetState extends State<_WayEditSheet> {
   Widget build(BuildContext context) {
     final hasEdit = widget.pendingChange != null;
     final displayName = widget.way.name ?? '(sin nombre)';
+    final isSegment = widget.segIdx >= 0;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -893,31 +1234,45 @@ class _WayEditSheetState extends State<_WayEditSheet> {
           // ── Encabezado ───────────────────────────────
           Row(
             children: [
-              const Icon(Icons.edit_road, color: AppColors.primary, size: 20),
+              Icon(
+                isSegment ? Icons.content_cut_rounded : Icons.edit_road,
+                color: AppColors.primary,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  displayName,
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w700),
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (isSegment)
+                      Text(
+                        'Tramo ${widget.segIdx + 1} de ${widget.segTotal}',
+                        style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textTertiary),
+                      ),
+                  ],
                 ),
               ),
               if (hasEdit)
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFFF3E0),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: const Text(
-                    'editado',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFFFF6F00),
-                        fontWeight: FontWeight.w600),
-                  ),
+                  child: const Text('editado',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFFFF6F00),
+                          fontWeight: FontWeight.w600)),
                 ),
             ],
           ),
@@ -944,26 +1299,22 @@ class _WayEditSheetState extends State<_WayEditSheet> {
           const SizedBox(height: 16),
 
           // ── Tipo de vía ──────────────────────────────
-          const Text(
-            'Tipo de vía',
-            style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary),
-          ),
+          const Text('Tipo de vía',
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary)),
           const SizedBox(height: 6),
           DropdownButtonFormField<String>(
             initialValue: _highwayOptions.any((t) => t.$1 == _highway)
                 ? _highway
                 : 'residential',
             items: _highwayOptions
-                .map(
-                  (t) => DropdownMenuItem(
-                    value: t.$1,
-                    child: Text(t.$2,
-                        style: const TextStyle(fontSize: 14)),
-                  ),
-                )
+                .map((t) => DropdownMenuItem(
+                      value: t.$1,
+                      child: Text(t.$2,
+                          style: const TextStyle(fontSize: 14)),
+                    ))
                 .toList(),
             onChanged: (v) => setState(() => _highway = v!),
             decoration: const InputDecoration(
@@ -976,13 +1327,11 @@ class _WayEditSheetState extends State<_WayEditSheet> {
           const SizedBox(height: 16),
 
           // ── Sentido ──────────────────────────────────
-          const Text(
-            'Sentido de circulación',
-            style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary),
-          ),
+          const Text('Sentido de circulación',
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary)),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -1008,17 +1357,16 @@ class _WayEditSheetState extends State<_WayEditSheet> {
               ),
             ],
           ),
-          // ── Alcance ──────────────────────────────────
-          // Solo visible cuando la vía tiene intersecciones y hay tramo identificado
-          if (widget.tappedSegment != null) ...[
+
+          // ── Alcance del cambio ───────────────────────
+          // Solo visible cuando se editó desde un segmento concreto
+          if (widget.initialSegment != null) ...[
             const SizedBox(height: 16),
-            const Text(
-              'Alcance del cambio',
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary),
-            ),
+            const Text('Alcance del cambio',
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary)),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -1034,7 +1382,7 @@ class _WayEditSheetState extends State<_WayEditSheet> {
                   value: 'segment',
                   selected: _segment != null,
                   onTap: () =>
-                      setState(() => _segment = widget.tappedSegment),
+                      setState(() => _segment = widget.initialSegment),
                 ),
               ],
             ),
@@ -1073,8 +1421,181 @@ class _WayEditSheetState extends State<_WayEditSheet> {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  _RestrictionSheet — panel de restricciones de giro en un nodo
+// ═══════════════════════════════════════════════════════════════
+
+class _RestrictionSheet extends StatefulWidget {
+  final OsmWay way;
+  final String nodeRef;
+  final List<OsmWay> connectedWays;
+  final Set<String> existingRestrictions; // toWayId como String
+  final Map<String, PendingRestrictionChange> pendingChanges;
+  final ValueChanged<List<PendingRestrictionChange>> onApply;
+
+  const _RestrictionSheet({
+    required this.way,
+    required this.nodeRef,
+    required this.connectedWays,
+    required this.existingRestrictions,
+    required this.pendingChanges,
+    required this.onApply,
+  });
+
+  @override
+  State<_RestrictionSheet> createState() => _RestrictionSheetState();
+}
+
+class _RestrictionSheetState extends State<_RestrictionSheet> {
+  /// restricted[wayId] = true → no se puede girar hacia esa vía
+  late Map<int, bool> _restricted;
+
+  @override
+  void initState() {
+    super.initState();
+    _restricted = {};
+    for (final w in widget.connectedWays) {
+      final key =
+          PendingRestrictionChange(
+            fromWayId: widget.way.id,
+            viaNodeRef: widget.nodeRef,
+            toWayId: w.id,
+            restrict: true,
+          ).key;
+      // Estado efectivo: existente + cambios pendientes
+      final existingRestricted =
+          widget.existingRestrictions.contains('${w.id}');
+      final pending = widget.pendingChanges[key];
+      if (pending != null) {
+        _restricted[w.id] = pending.restrict;
+      } else {
+        _restricted[w.id] = existingRestricted;
+      }
+    }
+  }
+
+  void _apply() {
+    final changes = <PendingRestrictionChange>[];
+    for (final w in widget.connectedWays) {
+      final isRestricted = _restricted[w.id] ?? false;
+      final wasRestricted =
+          widget.existingRestrictions.contains('${w.id}');
+      // Solo generar cambio si difiere del estado base Y del pendiente previo
+      final pendingKey = PendingRestrictionChange(
+        fromWayId: widget.way.id,
+        viaNodeRef: widget.nodeRef,
+        toWayId: w.id,
+        restrict: isRestricted,
+      ).key;
+      final prevPending = widget.pendingChanges[pendingKey];
+      final effectiveBase = prevPending?.restrict ?? wasRestricted;
+      if (isRestricted != effectiveBase) {
+        changes.add(PendingRestrictionChange(
+          fromWayId: widget.way.id,
+          viaNodeRef: widget.nodeRef,
+          toWayId: w.id,
+          restrict: isRestricted,
+        ));
+      }
+    }
+    widget.onApply(changes);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Encabezado
+          const Row(
+            children: [
+              Icon(Icons.do_not_disturb_on_rounded,
+                  color: AppColors.error, size: 20),
+              SizedBox(width: 8),
+              Text(
+                'Restricciones de giro',
+                style:
+                    TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Desde ${widget.way.name ?? 'ID ${widget.way.id}'} en nodo ${widget.nodeRef}',
+            style: const TextStyle(
+                fontSize: 11, color: AppColors.textTertiary),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Activa las vías hacia las que NO se puede girar.',
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 16),
+
+          // Lista de vías conectadas
+          ...widget.connectedWays.map((w) {
+            final isRestricted = _restricted[w.id] ?? false;
+            final label = w.name ?? 'ID ${w.id}  (${w.highway})';
+            return CheckboxListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text(label,
+                  style: const TextStyle(fontSize: 13)),
+              subtitle: Text(w.highway,
+                  style: const TextStyle(
+                      fontSize: 11, color: AppColors.textTertiary)),
+              value: isRestricted,
+              activeColor: AppColors.error,
+              onChanged: (v) =>
+                  setState(() => _restricted[w.id] = v ?? false),
+            );
+          }),
+          const SizedBox(height: 16),
+
+          // Botones
+          Row(
+            children: [
+              OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              const Spacer(),
+              ElevatedButton.icon(
+                onPressed: _apply,
+                icon: const Icon(Icons.check_rounded, size: 18),
+                label: const Text('Aplicar'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────
-//  _OnewayChip — selector de sentido
+//  _OnewayChip — selector genérico de opción
 // ─────────────────────────────────────────────────
 
 class _OnewayChip extends StatelessWidget {
@@ -1099,14 +1620,10 @@ class _OnewayChip extends StatelessWidget {
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(vertical: 9),
           decoration: BoxDecoration(
-            color: selected
-                ? AppColors.primary
-                : AppColors.scaffoldLight,
+            color: selected ? AppColors.primary : AppColors.scaffoldLight,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: selected
-                  ? AppColors.primary
-                  : AppColors.border,
+              color: selected ? AppColors.primary : AppColors.border,
             ),
           ),
           child: Text(
@@ -1116,9 +1633,8 @@ class _OnewayChip extends StatelessWidget {
               fontSize: 11,
               fontWeight:
                   selected ? FontWeight.w700 : FontWeight.w400,
-              color: selected
-                  ? Colors.white
-                  : AppColors.textSecondary,
+              color:
+                  selected ? Colors.white : AppColors.textSecondary,
             ),
           ),
         ),
@@ -1141,7 +1657,8 @@ class _MapLegendOverlay extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.only(left: 8, bottom: 8),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
             color: Colors.white.withAlpha(230),
             borderRadius: BorderRadius.circular(10),
@@ -1163,6 +1680,7 @@ class _MapLegendOverlay extends StatelessWidget {
               _LegendRow(color: Color(0xFF43A047), label: 'Peatonal'),
               _LegendRow(color: Color(0xFFFFC107), label: 'Seleccionada'),
               _LegendRow(color: Color(0xFFFF6F00), label: 'Con cambios'),
+              _LegendRow(color: Color(0xFF93C5FD), label: 'Tramo disponible'),
             ],
           ),
         ),

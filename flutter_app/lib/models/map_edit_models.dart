@@ -33,7 +33,8 @@ class OsmWay {
   final List<LatLng> points;
   final List<String> nodeRefs;
   final List<int> junctionIndices;
-  final Map<String, String> nodeBarriers; // nodeRef → tipo de barrera
+  final Map<String, String> nodeBarriers;           // nodeRef → tipo de barrera
+  final Map<String, List<String>> restrictionsFrom; // nodeRef → [toWayId, ...]
 
   const OsmWay({
     required this.id,
@@ -44,6 +45,7 @@ class OsmWay {
     required this.nodeRefs,
     required this.junctionIndices,
     required this.nodeBarriers,
+    required this.restrictionsFrom,
   });
 
   factory OsmWay.fromGeoJson(Map<String, dynamic> feature) {
@@ -59,6 +61,10 @@ class OsmWay {
     (props['node_barriers'] as Map<String, dynamic>? ?? {})
         .forEach((k, v) => barriers[k] = v as String);
 
+    final restrictions = <String, List<String>>{};
+    (props['restrictions_from'] as Map<String, dynamic>? ?? {})
+        .forEach((k, v) => restrictions[k] = (v as List).cast<String>());
+
     final rawName = props['name'] as String?;
 
     return OsmWay(
@@ -70,6 +76,7 @@ class OsmWay {
       nodeRefs: (props['node_refs'] as List).cast<String>(),
       junctionIndices: (props['junction_indices'] as List).cast<int>(),
       nodeBarriers: barriers,
+      restrictionsFrom: restrictions,
     );
   }
 
@@ -119,5 +126,32 @@ class PendingWayChange {
             'start_node_ref': segment!.startRef,
             'end_node_ref': segment!.endRef,
           },
+      };
+}
+
+// ─────────────────────────────────────────────────────────────
+//  PendingRestrictionChange — restricción de giro pendiente
+// ─────────────────────────────────────────────────────────────
+
+class PendingRestrictionChange {
+  final int fromWayId;
+  final String viaNodeRef;
+  final int toWayId;
+  final bool restrict; // true = añadir restricción, false = eliminarla
+
+  const PendingRestrictionChange({
+    required this.fromWayId,
+    required this.viaNodeRef,
+    required this.toWayId,
+    required this.restrict,
+  });
+
+  String get key => '${fromWayId}_${viaNodeRef}_$toWayId';
+
+  Map<String, dynamic> toJson() => {
+        'from_way_id': fromWayId,
+        'via_node_ref': viaNodeRef,
+        'to_way_id': toWayId,
+        'restrict': restrict,
       };
 }

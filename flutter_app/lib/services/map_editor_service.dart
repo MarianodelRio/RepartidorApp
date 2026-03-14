@@ -39,8 +39,9 @@ abstract final class MapEditorService {
 
   /// Envía los cambios pendientes al backend y los persiste en el PBF.
   static Future<void> saveChanges(
-    List<PendingWayChange> changes,
-  ) async {
+    List<PendingWayChange> changes, {
+    List<PendingRestrictionChange> restrictionChanges = const [],
+  }) async {
     final uri = Uri.parse(
       '${ApiConfig.baseUrl}${ApiConfig.editorSaveEndpoint}',
     );
@@ -48,7 +49,8 @@ abstract final class MapEditorService {
     final body = jsonEncode({
       'changes': changes.map((c) => c.toJson()).toList(),
       'node_changes': <dynamic>[],
-      'restriction_changes': <dynamic>[],
+      'restriction_changes':
+          restrictionChanges.map((r) => r.toJson()).toList(),
     });
 
     final response = await http

@@ -104,9 +104,9 @@ class _HomeScreenState extends State<HomeScreen>
 
     if (!mounted) return;
     setState(() {
-      _serverOnline     = results[0] as bool;
+      _serverOnline     = results[0];
       _isCheckingServer = false;
-      _hasActiveSession = results[1] as bool;
+      _hasActiveSession = results[1];
     });
   }
 

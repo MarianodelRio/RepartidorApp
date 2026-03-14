@@ -46,5 +46,3 @@ node_modules/
 # files for test 
 data_input/
 
-# OSM app
-osm_app/
