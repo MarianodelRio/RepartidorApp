@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
-import 'import_screen.dart';
+import 'home_screen.dart';
 
 /// Pantalla de portada estilo Wolt — gradiente elegante con logo.
 /// Se muestra durante 2 segundos y transiciona suavemente a ImportScreen.
@@ -56,7 +56,7 @@ class _SplashScreenState extends State<SplashScreen>
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
             pageBuilder: (context, animation, secondaryAnimation) =>
-                const ImportScreen(),
+                const HomeScreen(),
             transitionDuration: const Duration(milliseconds: 600),
             transitionsBuilder: (context, animation, secondaryAnimation, child) {
               return FadeTransition(opacity: animation, child: child);

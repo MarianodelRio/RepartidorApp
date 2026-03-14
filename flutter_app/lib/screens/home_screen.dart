@@ -1,0 +1,528 @@
+import 'package:flutter/material.dart';
+
+import '../config/app_theme.dart';
+import '../services/api_service.dart';
+import '../services/persistence_service.dart';
+import 'delivery_screen.dart';
+import 'import_screen.dart';
+import 'map_editor_screen.dart';
+
+/// Pantalla de inicio: punto de entrada tras el splash.
+/// Muestra las dos acciones principales de la app (ruta y editor de mapa)
+/// más una tarjeta condicional para reanudar un reparto activo.
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen>
+    with SingleTickerProviderStateMixin {
+  // ── Animaciones de entrada ────────────────────────────────────────────────
+
+  late AnimationController _animController;
+
+  // Tarjeta 1 y 2 con stagger de 200 ms
+  late Animation<double> _fade1;
+  late Animation<double> _slide1;
+  late Animation<double> _fade2;
+  late Animation<double> _slide2;
+
+  // ── Estado ────────────────────────────────────────────────────────────────
+
+  bool _serverOnline      = false;
+  bool _isCheckingServer  = true;
+  bool _hasActiveSession  = false;
+
+  // Gradiente idéntico al splash para continuidad visual en la transición.
+  static const _kGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end:   Alignment.bottomRight,
+    colors: [Color(0xFF001A4D), AppColors.primary, Color(0xFF1A56DB)],
+    stops:  [0.0, 0.5, 1.0],
+  );
+
+  // ── Ciclo de vida ─────────────────────────────────────────────────────────
+
+  @override
+  void initState() {
+    super.initState();
+
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+
+    // Tarjeta 1: 0 % → 55 %
+    _fade1 = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animController,
+        curve: const Interval(0.0, 0.55, curve: Curves.easeOut),
+      ),
+    );
+    _slide1 = Tween<double>(begin: 28.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _animController,
+        curve: const Interval(0.0, 0.55, curve: Curves.easeOutCubic),
+      ),
+    );
+
+    // Tarjeta 2: 20 % → 75 %  (desfasada 160 ms respecto a la 1)
+    _fade2 = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animController,
+        curve: const Interval(0.2, 0.75, curve: Curves.easeOut),
+      ),
+    );
+    _slide2 = Tween<double>(begin: 28.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _animController,
+        curve: const Interval(0.2, 0.75, curve: Curves.easeOutCubic),
+      ),
+    );
+
+    _animController.forward();
+    _checkStatus();
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  // ── Lógica ────────────────────────────────────────────────────────────────
+
+  Future<void> _checkStatus() async {
+    setState(() => _isCheckingServer = true);
+
+    final results = await Future.wait([
+      ApiService.healthCheck(),
+      PersistenceService.hasActiveSession(),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _serverOnline     = results[0] as bool;
+      _isCheckingServer = false;
+      _hasActiveSession = results[1] as bool;
+    });
+  }
+
+  Future<void> _resumeDelivery() async {
+    final session = await PersistenceService.loadSession();
+    if (!mounted || session == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => DeliveryScreen(session: session)),
+    );
+    if (mounted) _checkStatus();
+  }
+
+  Future<void> _discardSession() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          '¿Descartar reparto?',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        ),
+        content: const Text(
+          'Se perderá el progreso del reparto en curso.',
+          style: TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Descartar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await PersistenceService.clearSession();
+    if (mounted) setState(() => _hasActiveSession = false);
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        width:  double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(gradient: _kGradient),
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildTopBar(),
+              Expanded(
+                child: AnimatedBuilder(
+                  animation: _animController,
+                  builder: (context, _) => _buildCards(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Top bar: logo compacto + nombre + chip de servidor ────────────────────
+
+  Widget _buildTopBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.asset(
+              'assets/icon.png',
+              width:  42,
+              height: 42,
+              fit: BoxFit.cover,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Repartidor',
+                  style: TextStyle(
+                    fontSize:    18,
+                    fontWeight:  FontWeight.w800,
+                    color:       Colors.white,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                Text(
+                  'Posadas, Córdoba',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color:    Colors.white.withAlpha(150),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _buildServerChip(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildServerChip() {
+    if (_isCheckingServer) {
+      return SizedBox(
+        width:  18,
+        height: 18,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: Colors.white.withAlpha(180),
+        ),
+      );
+    }
+    return GestureDetector(
+      onTap: _checkStatus,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color:        Colors.white.withAlpha(20),
+          borderRadius: BorderRadius.circular(20),
+          border:       Border.all(color: Colors.white.withAlpha(40)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.circle,
+              size:  8,
+              color: _serverOnline ? AppColors.successLight : AppColors.errorLight,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              _serverOnline ? 'Online' : 'Offline',
+              style: const TextStyle(
+                fontSize:   11,
+                fontWeight: FontWeight.w600,
+                color:      Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Tarjetas de acción con animación stagger ──────────────────────────────
+
+  Widget _buildCards() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Spacer(flex: 2),
+
+          // Tarjeta 1: Iniciar ruta
+          Transform.translate(
+            offset: Offset(0, _slide1.value),
+            child: Opacity(
+              opacity: _fade1.value,
+              child: _ActionCard(
+                icon:      Icons.local_shipping_rounded,
+                iconColor: AppColors.primaryLight,
+                title:    'Iniciar ruta',
+                subtitle: 'Carga tu CSV y calcula la ruta óptima de reparto',
+                onTap: () => Navigator.of(context)
+                    .push(MaterialPageRoute(builder: (_) => const ImportScreen()))
+                    .then((_) { if (mounted) _checkStatus(); }),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 14),
+
+          // Tarjeta 2: Editar mapa
+          Transform.translate(
+            offset: Offset(0, _slide2.value),
+            child: Opacity(
+              opacity: _fade2.value,
+              child: _ActionCard(
+                icon:      Icons.edit_road_rounded,
+                iconColor: const Color(0xFF2E4A7A),
+                title:    'Editar mapa',
+                subtitle: 'Modifica calles y accesos de Posadas',
+                onTap: () => Navigator.of(context)
+                    .push(MaterialPageRoute(builder: (_) => const MapEditorScreen())),
+              ),
+            ),
+          ),
+
+          // Tarjeta 3: Continuar reparto (aparece/desaparece con fade+slide)
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 350),
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.15),
+                  end:   Offset.zero,
+                ).animate(CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOut,
+                )),
+                child: child,
+              ),
+            ),
+            child: _hasActiveSession
+                ? Padding(
+                    key: const ValueKey('resume'),
+                    padding: const EdgeInsets.only(top: 14),
+                    child: _ResumeCard(
+                      onResume:  _resumeDelivery,
+                      onDiscard: _discardSession,
+                    ),
+                  )
+                : const SizedBox.shrink(key: ValueKey('empty')),
+          ),
+
+          const Spacer(flex: 3),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════
+//  Tarjeta de acción genérica (frosted glass)
+// ═══════════════════════════════════════════
+
+class _ActionCard extends StatelessWidget {
+  final IconData  icon;
+  final Color     iconColor;
+  final String    title;
+  final String    subtitle;
+  final VoidCallback onTap;
+
+  const _ActionCard({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Ink(
+      decoration: BoxDecoration(
+        color:        Colors.white.withAlpha(20),
+        borderRadius: BorderRadius.circular(20),
+        border:       Border.all(color: Colors.white.withAlpha(45)),
+      ),
+      child: InkWell(
+        onTap:          onTap,
+        borderRadius:   BorderRadius.circular(20),
+        splashColor:    Colors.white.withAlpha(30),
+        highlightColor: Colors.white.withAlpha(15),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            children: [
+              // Contenedor del icono
+              Container(
+                width:  52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color:        iconColor,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: Colors.white, size: 26),
+              ),
+              const SizedBox(width: 16),
+              // Texto
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize:    16,
+                        fontWeight:  FontWeight.w700,
+                        color:       Colors.white,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize:   12,
+                        color:      Colors.white.withAlpha(175),
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: Colors.white.withAlpha(120),
+                size:  15,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════
+//  Tarjeta de reanudación de reparto
+// ═══════════════════════════════════════════
+
+class _ResumeCard extends StatelessWidget {
+  final VoidCallback onResume;
+  final VoidCallback onDiscard;
+
+  const _ResumeCard({required this.onResume, required this.onDiscard});
+
+  @override
+  Widget build(BuildContext context) {
+    return Ink(
+      decoration: BoxDecoration(
+        color:        AppColors.warning.withAlpha(30),
+        borderRadius: BorderRadius.circular(20),
+        border:       Border.all(color: AppColors.warning.withAlpha(100)),
+      ),
+      child: InkWell(
+        onTap:          onResume,
+        borderRadius:   BorderRadius.circular(20),
+        splashColor:    AppColors.warning.withAlpha(40),
+        highlightColor: AppColors.warning.withAlpha(20),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            children: [
+              // Icono de reproducción
+              Container(
+                width:  52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color:        AppColors.warning,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.play_arrow_rounded,
+                  color: Colors.white,
+                  size:  28,
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Texto
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Continuar reparto',
+                      style: TextStyle(
+                        fontSize:    16,
+                        fontWeight:  FontWeight.w700,
+                        color:       Colors.white,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Tienes un reparto en curso',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color:    Colors.white.withAlpha(175),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Botón de descartar (X en círculo)
+              GestureDetector(
+                onTap: onDiscard,
+                child: Container(
+                  width:  28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withAlpha(30),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.close,
+                    color: Colors.white.withAlpha(200),
+                    size:  15,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

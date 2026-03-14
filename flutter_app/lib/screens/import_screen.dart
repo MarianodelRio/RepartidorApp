@@ -11,10 +11,7 @@ import '../controllers/import_controller.dart';
 import '../models/validation_models.dart';
 import '../services/api_service.dart';
 import '../services/csv_service.dart';
-import '../services/persistence_service.dart';
 import '../widgets/origin_selector.dart';
-import 'delivery_screen.dart';
-import 'map_editor_screen.dart';
 import 'map_picker_screen.dart';
 import 'result_screen.dart';
 
@@ -63,17 +60,8 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   // ═══════════════════════════════════════════
-  //  Servidor / Sesión
+  //  Servidor
   // ═══════════════════════════════════════════
-
-  Future<void> _resumeDelivery() async {
-    final session = await PersistenceService.loadSession();
-    if (session == null || !mounted) return;
-    Navigator.of(context)
-        .push(
-            MaterialPageRoute(builder: (_) => DeliveryScreen(session: session)))
-        .then((_) => _ctrl.checkActiveSession());
-  }
 
   void _showError(String msg) {
     if (mounted) setState(() => _error = msg);
@@ -336,21 +324,12 @@ class _ImportScreenState extends State<ImportScreen> {
     return Scaffold(
       backgroundColor: AppColors.scaffoldLight,
       appBar: AppBar(
-        title: const Text('Repartidor'),
+        title: const Text('Nueva ruta'),
         centerTitle: true,
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_road_rounded),
-            tooltip: 'Editar mapa',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => const MapEditorScreen()),
-            ),
-          ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: _ctrl.isCheckingServer
@@ -380,17 +359,17 @@ class _ImportScreenState extends State<ImportScreen> {
         ],
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildHeader(),
-              const SizedBox(height: 20),
-              if (_ctrl.hasActiveSession) ...[
-                _buildResumeCard(),
-                const SizedBox(height: 16),
-              ],
+        child: Column(
+          children: [
+            // ── Indicador de progreso (siempre visible bajo el AppBar) ──
+            _StepBar(currentStep: _currentStep),
+            // ── Contenido principal desplazable ──
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
               if (_error != null) _buildErrorBanner(),
               _buildUploadSection(),
 
@@ -495,11 +474,24 @@ class _ImportScreenState extends State<ImportScreen> {
 
                 const SizedBox(height: 16),
               ],
-            ],
-          ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
+  }
+
+  // ═══════════════════════════════════════════
+  //  Paso actual del flujo (para el step bar)
+  // ═══════════════════════════════════════════
+
+  int get _currentStep {
+    if (_ctrl.reviewResult == null) return 0;
+    if (_ctrl.reviewResult!.failed.isNotEmpty) return 1;
+    return 2;
   }
 
   // ═══════════════════════════════════════════
@@ -709,113 +701,6 @@ class _ImportScreenState extends State<ImportScreen> {
   //  Widgets fase de carga (upload)
   // ═══════════════════════════════════════════
 
-  Widget _buildHeader() {
-    return Column(
-      children: [
-        const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Image.asset('assets/icon.png',
-              width: 100, height: 100, fit: BoxFit.cover),
-        ),
-        const SizedBox(height: 14),
-        const Text('Repartidor',
-            style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textPrimary,
-                letterSpacing: -0.5)),
-        const SizedBox(height: 4),
-        const Text('Optimización de rutas de reparto',
-            style: TextStyle(
-                fontSize: 14,
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w400)),
-      ],
-    );
-  }
-
-  Widget _buildResumeCard() {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [AppColors.success, AppColors.success.withAlpha(200)],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-              color: AppColors.success.withAlpha(60),
-              blurRadius: 12,
-              offset: const Offset(0, 4)),
-        ],
-      ),
-      child: Stack(
-        children: [
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(16),
-              onTap: _resumeDelivery,
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(40),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.play_arrow,
-                          color: Colors.white, size: 28),
-                    ),
-                    const SizedBox(width: 14),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Continuar Ruta',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w700)),
-                          SizedBox(height: 2),
-                          Text(
-                              'Tienes un reparto en curso. Toca para retomarlo.',
-                              style: TextStyle(
-                                  color: Colors.white70, fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                    const Icon(Icons.arrow_forward_ios,
-                        color: Colors.white70, size: 18),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 6,
-            right: 6,
-            child: GestureDetector(
-              onTap: _ctrl.discardSession,
-              child: Container(
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  color: Colors.black.withAlpha(50),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.close, color: Colors.white, size: 14),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildErrorBanner() {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -906,6 +791,122 @@ class _ImportScreenState extends State<ImportScreen> {
                     foregroundColor: AppColors.textSecondary),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════
+//  Indicador de progreso de flujo (step bar)
+// ═══════════════════════════════════════════
+
+/// Barra horizontal de tres pasos, siempre visible bajo el AppBar.
+/// [currentStep]: 0 = Cargar, 1 = Revisar, 2 = Calcular.
+class _StepBar extends StatelessWidget {
+  final int currentStep;
+
+  const _StepBar({required this.currentStep});
+
+  static const _labels = ['Cargar', 'Revisar', 'Calcular'];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.cardLight,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+      child: Row(
+        children: [
+          for (int i = 0; i < _labels.length; i++) ...[
+            _StepDot(index: i, label: _labels[i], currentStep: currentStep),
+            if (i < _labels.length - 1)
+              _StepConnector(complete: currentStep > i),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _StepDot extends StatelessWidget {
+  final int    index;
+  final String label;
+  final int    currentStep;
+
+  const _StepDot({
+    required this.index,
+    required this.label,
+    required this.currentStep,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isCompleted = index < currentStep;
+    final isActive    = index == currentStep;
+
+    final circleColor  = isCompleted ? AppColors.success
+        : isActive    ? AppColors.primary
+        : Colors.transparent;
+    final borderColor  = isCompleted ? AppColors.success
+        : isActive    ? AppColors.primary
+        : AppColors.border;
+    final labelColor   = isCompleted ? AppColors.success
+        : isActive    ? AppColors.primary
+        : AppColors.textTertiary;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width:  26,
+          height: 26,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color:  circleColor,
+            border: Border.all(color: borderColor, width: 1.5),
+          ),
+          child: Center(
+            child: isCompleted
+                ? const Icon(Icons.check, size: 13, color: Colors.white)
+                : Text(
+                    '${index + 1}',
+                    style: TextStyle(
+                      fontSize:   12,
+                      fontWeight: FontWeight.w700,
+                      color: isActive ? Colors.white : AppColors.textTertiary,
+                    ),
+                  ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize:   10,
+            fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+            color:      labelColor,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StepConnector extends StatelessWidget {
+  final bool complete;
+
+  const _StepConnector({required this.complete});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Padding(
+        // El padding inferior alinea la línea con el centro del círculo
+        // (13 px del círculo + 4 px gap + ~10 px texto = ~14 px offset).
+        padding: const EdgeInsets.only(bottom: 18, left: 4, right: 4),
+        child: Container(
+          height: 1.5,
+          color: complete ? AppColors.success : AppColors.border,
         ),
       ),
     );
