@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.config import BASE_DIR
 from app.routers import optimize, validation, system, map_editor
+from osm_app.router import router as osm_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -53,3 +54,4 @@ app.include_router(system.router)
 app.include_router(optimize.router,    prefix="/api")
 app.include_router(validation.router,  prefix="/api")
 app.include_router(map_editor.router,  prefix="/api")
+app.include_router(osm_router)
