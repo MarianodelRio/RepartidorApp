@@ -23,7 +23,7 @@ class LoadingOrderScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Ordenar Paquetes'),
         centerTitle: true,
-        backgroundColor: AppColors.warning,
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 0,
       ),
@@ -33,9 +33,9 @@ class LoadingOrderScreen extends StatelessWidget {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [AppColors.warning, AppColors.warningLight],
+                colors: [AppColors.primary, AppColors.primaryLight],
               ),
             ),
             child: Column(

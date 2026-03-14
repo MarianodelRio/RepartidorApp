@@ -312,7 +312,7 @@ class _HomeScreenState extends State<HomeScreen>
               opacity: _fade1.value,
               child: _ActionCard(
                 icon:      Icons.local_shipping_rounded,
-                iconColor: const Color(0xFF1B8A4C),
+                iconColor: AppColors.success,
                 title:    'Iniciar ruta',
                 subtitle: 'Carga tu CSV y calcula la ruta óptima de reparto',
                 primary:  true,
@@ -332,7 +332,7 @@ class _HomeScreenState extends State<HomeScreen>
               opacity: _fade2.value,
               child: _ActionCard(
                 icon:      Icons.edit_road_rounded,
-                iconColor: const Color(0xFF2E4A7A),
+                iconColor: AppColors.primary,
                 title:    'Editar mapa',
                 subtitle: 'Modifica calles y accesos de Posadas',
                 primary:  false,
@@ -551,17 +551,17 @@ class _ResumeCard extends StatelessWidget {
         filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: Container(
           decoration: BoxDecoration(
-            color:        AppColors.warning.withAlpha(48),
+            color:        AppColors.active.withAlpha(48),
             borderRadius: BorderRadius.circular(20),
-            border:       Border.all(color: AppColors.warning.withAlpha(130)),
+            border:       Border.all(color: AppColors.active.withAlpha(130)),
           ),
           child: Material(
             color: Colors.transparent,
             child: InkWell(
               onTap:          onResume,
               borderRadius:   BorderRadius.circular(20),
-              splashColor:    AppColors.warning.withAlpha(50),
-              highlightColor: AppColors.warning.withAlpha(25),
+              splashColor:    AppColors.active.withAlpha(50),
+              highlightColor: AppColors.active.withAlpha(25),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Row(
@@ -570,11 +570,11 @@ class _ResumeCard extends StatelessWidget {
                       width:  52,
                       height: 52,
                       decoration: BoxDecoration(
-                        color:        AppColors.warning,
+                        color:        AppColors.active,
                         borderRadius: BorderRadius.circular(13),
                         boxShadow: [
                           BoxShadow(
-                            color:      AppColors.warning.withAlpha(110),
+                            color:      AppColors.active.withAlpha(110),
                             blurRadius: 12,
                             offset:     const Offset(0, 4),
                           ),

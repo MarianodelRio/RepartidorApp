@@ -299,8 +299,8 @@ class _ImportScreenState extends State<ImportScreen> {
 
   Color _markerColor(GeoConfidence confidence) {
     return confidence == GeoConfidence.override
-        ? const Color(0xFF7B1FA2) // morado = ubicación manual
-        : AppColors.success;     // verde  = geocodificación automática
+        ? AppColors.manualPin // ámbar = ubicación manual
+        : AppColors.success;  // verde = geocodificación automática
   }
 
   // ═══════════════════════════════════════════
@@ -361,8 +361,6 @@ class _ImportScreenState extends State<ImportScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // ── Indicador de progreso (siempre visible bajo el AppBar) ──
-            _StepBar(currentStep: _currentStep),
             // ── Contenido principal desplazable ──
             Expanded(
               child: SingleChildScrollView(
@@ -382,7 +380,7 @@ class _ImportScreenState extends State<ImportScreen> {
                   key: _mapSectionKey,
                   borderRadius: BorderRadius.circular(16),
                   child: SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.38,
+                    height: MediaQuery.of(context).size.height * 0.45,
                     child: Stack(
                       children: [
                         _buildReviewMap(),
@@ -397,7 +395,7 @@ class _ImportScreenState extends State<ImportScreen> {
                               onTap: _fitMapToStops,
                               borderRadius: BorderRadius.circular(8),
                               child: const Padding(
-                                padding: EdgeInsets.all(8),
+                                padding: EdgeInsets.all(12),
                                 child: Icon(Icons.fit_screen,
                                     size: 20, color: AppColors.primary),
                               ),
@@ -482,16 +480,6 @@ class _ImportScreenState extends State<ImportScreen> {
         ),
       ),
     );
-  }
-
-  // ═══════════════════════════════════════════
-  //  Paso actual del flujo (para el step bar)
-  // ═══════════════════════════════════════════
-
-  int get _currentStep {
-    if (_ctrl.reviewResult == null) return 0;
-    if (_ctrl.reviewResult!.failed.isNotEmpty) return 1;
-    return 2;
   }
 
   // ═══════════════════════════════════════════
@@ -598,8 +586,8 @@ class _ImportScreenState extends State<ImportScreen> {
       spacing: 16,
       runSpacing: 4,
       children: [
-        _LegendItem(color: AppColors.success, label: 'Automático'),
-        _LegendItem(color: Color(0xFF7B1FA2), label: 'Manual'),
+        _LegendItem(color: AppColors.success,    label: 'Automático'),
+        _LegendItem(color: AppColors.manualPin,  label: 'Manual'),
       ],
     );
   }
@@ -791,122 +779,6 @@ class _ImportScreenState extends State<ImportScreen> {
                     foregroundColor: AppColors.textSecondary),
               ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════
-//  Indicador de progreso de flujo (step bar)
-// ═══════════════════════════════════════════
-
-/// Barra horizontal de tres pasos, siempre visible bajo el AppBar.
-/// [currentStep]: 0 = Cargar, 1 = Revisar, 2 = Calcular.
-class _StepBar extends StatelessWidget {
-  final int currentStep;
-
-  const _StepBar({required this.currentStep});
-
-  static const _labels = ['Cargar', 'Revisar', 'Calcular'];
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.cardLight,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-      child: Row(
-        children: [
-          for (int i = 0; i < _labels.length; i++) ...[
-            _StepDot(index: i, label: _labels[i], currentStep: currentStep),
-            if (i < _labels.length - 1)
-              _StepConnector(complete: currentStep > i),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _StepDot extends StatelessWidget {
-  final int    index;
-  final String label;
-  final int    currentStep;
-
-  const _StepDot({
-    required this.index,
-    required this.label,
-    required this.currentStep,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isCompleted = index < currentStep;
-    final isActive    = index == currentStep;
-
-    final circleColor  = isCompleted ? AppColors.success
-        : isActive    ? AppColors.primary
-        : Colors.transparent;
-    final borderColor  = isCompleted ? AppColors.success
-        : isActive    ? AppColors.primary
-        : AppColors.border;
-    final labelColor   = isCompleted ? AppColors.success
-        : isActive    ? AppColors.primary
-        : AppColors.textTertiary;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width:  26,
-          height: 26,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color:  circleColor,
-            border: Border.all(color: borderColor, width: 1.5),
-          ),
-          child: Center(
-            child: isCompleted
-                ? const Icon(Icons.check, size: 13, color: Colors.white)
-                : Text(
-                    '${index + 1}',
-                    style: TextStyle(
-                      fontSize:   12,
-                      fontWeight: FontWeight.w700,
-                      color: isActive ? Colors.white : AppColors.textTertiary,
-                    ),
-                  ),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize:   10,
-            fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-            color:      labelColor,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _StepConnector extends StatelessWidget {
-  final bool complete;
-
-  const _StepConnector({required this.complete});
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Padding(
-        // El padding inferior alinea la línea con el centro del círculo
-        // (13 px del círculo + 4 px gap + ~10 px texto = ~14 px offset).
-        padding: const EdgeInsets.only(bottom: 18, left: 4, right: 4),
-        child: Container(
-          height: 1.5,
-          color: complete ? AppColors.success : AppColors.border,
         ),
       ),
     );

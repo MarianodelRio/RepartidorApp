@@ -111,22 +111,22 @@ class _ResultScreenState extends State<ResultScreen> {
             // ── Tiempo de cálculo ──
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              color: AppColors.successSurface,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+              color: AppColors.primaryLight,
               child: Text(
                 '⚡ Calculado en ${response.summary.computingTimeMs.toStringAsFixed(0)} ms',
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  color: AppColors.success,
+                  color: Colors.white,
                 ),
               ),
             ),
 
             // ── Mapa con callout al tocar marcador ──
             SizedBox(
-              height: MediaQuery.of(context).size.height * 0.35,
+              height: MediaQuery.of(context).size.height * 0.42,
               child: Stack(
                 children: [
                   RouteMap(
@@ -183,7 +183,7 @@ class _ResultScreenState extends State<ResultScreen> {
               onPressed: () => _startDelivery(context),
               icon: const Icon(Icons.play_arrow, size: 24),
               label: const Text(
-                '🚀  Iniciar Reparto',
+                'Iniciar Reparto',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
               style: FilledButton.styleFrom(

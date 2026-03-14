@@ -83,6 +83,10 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
   // ── Índice nodeRef → vías que contienen ese nodo (para panel de restricciones) ──
   Map<String, List<OsmWay>> _nodeToWays = {};
 
+  // ── Preview de sentido único (mientras el sheet está abierto) ──
+  int?    _previewWayId;
+  String? _previewOneway; // 'yes' | '-1' | null (doble sentido en preview)
+
   // ── Estado de guardado ──
   bool _saving = false;
 
@@ -291,6 +295,13 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
             (s) => s.startRef == seg.startRef && s.endRef == seg.endRef)
         : -1;
 
+    // Activar preview con el valor actual (pending si existe, si no el del way)
+    final currentOneway = _pending[key]?.oneway ?? way.oneway;
+    setState(() {
+      _previewWayId  = way.id;
+      _previewOneway = currentOneway;
+    });
+
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -304,6 +315,9 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
         initialSegment: segRef,
         segIdx: segIdx,
         segTotal: segs.length,
+        onPreview: (oneway) {
+          if (mounted) setState(() => _previewOneway = oneway);
+        },
         onApply: (change) {
           setState(() {
             final changeKey = _pendingKey(change.wayId, change.segment);
@@ -324,7 +338,10 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
           Navigator.pop(context);
         },
       ),
-    );
+    ).whenComplete(() {
+      // Limpiar preview al cerrar el sheet (por cualquier vía)
+      if (mounted) setState(() { _previewWayId = null; _previewOneway = null; });
+    });
   }
 
   // ─────────────────────────────────────────────────
@@ -672,8 +689,11 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
         ));
       }
 
-      if (way.oneway != null) {
-        onewayMarkers.addAll(_buildOnewayMarkers(way));
+      final isPreviewWay = _previewWayId == way.id;
+      final displayOneway = isPreviewWay ? _previewOneway : way.oneway;
+      if (displayOneway != null) {
+        onewayMarkers.addAll(_buildOnewayMarkers(way,
+            overrideOneway: displayOneway, isPreview: isPreviewWay));
       }
     }
 
@@ -815,14 +835,23 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
   }
 
   /// Genera flechas de sentido único distribuidas a lo largo de [way].
-  List<Marker> _buildOnewayMarkers(OsmWay way) {
+  /// [overrideOneway] reemplaza el valor real (usado para preview).
+  /// [isPreview] usa color amber y tamaño mayor para indicar previsualización.
+  List<Marker> _buildOnewayMarkers(OsmWay way,
+      {required String overrideOneway, bool isPreview = false}) {
     final pts = way.points;
     if (pts.length < 2) return [];
 
-    final isReverse = way.oneway == '-1';
+    final isReverse = overrideOneway == '-1';
     final n = pts.length;
     final numArrows = math.max(1, math.min(4, n ~/ 4));
     final step = math.max(1, (n - 1) ~/ numArrows);
+
+    final bgColor = isPreview
+        ? AppColors.warning.withAlpha(220)
+        : Colors.black.withAlpha(172);
+    final size = isPreview ? 26.0 : 22.0;
+    final iconSize = isPreview ? 17.0 : 14.0;
 
     final markers = <Marker>[];
     for (int i = step ~/ 2; i < n - 1; i += step) {
@@ -832,18 +861,18 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
 
       markers.add(Marker(
         point: pts[i],
-        width: 22,
-        height: 22,
+        width: size,
+        height: size,
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.black.withAlpha(172),
+            color: bgColor,
             shape: BoxShape.circle,
           ),
           child: Transform.rotate(
             angle: bearing,
-            child: const Icon(
+            child: Icon(
               Icons.arrow_upward_rounded,
-              size: 14,
+              size: iconSize,
               color: Colors.white,
             ),
           ),
@@ -1127,6 +1156,7 @@ class _WayEditSheet extends StatefulWidget {
   /// Índice del segmento dentro del total (-1 si no aplica).
   final int segIdx;
   final int segTotal;
+  final void Function(String?)? onPreview;
   final ValueChanged<PendingWayChange> onApply;
   final VoidCallback onRevert;
 
@@ -1136,6 +1166,7 @@ class _WayEditSheet extends StatefulWidget {
     required this.initialSegment,
     required this.segIdx,
     required this.segTotal,
+    this.onPreview,
     required this.onApply,
     required this.onRevert,
   });
@@ -1339,21 +1370,30 @@ class _WayEditSheetState extends State<_WayEditSheet> {
                 label: '↔  Doble sentido',
                 value: null,
                 selected: _oneway == null,
-                onTap: () => setState(() => _oneway = null),
+                onTap: () {
+                  setState(() => _oneway = null);
+                  widget.onPreview?.call(null);
+                },
               ),
               const SizedBox(width: 6),
               _OnewayChip(
-                label: '→  Avance',
+                label: '→  Normal',
                 value: 'yes',
                 selected: _oneway == 'yes',
-                onTap: () => setState(() => _oneway = 'yes'),
+                onTap: () {
+                  setState(() => _oneway = 'yes');
+                  widget.onPreview?.call('yes');
+                },
               ),
               const SizedBox(width: 6),
               _OnewayChip(
-                label: '←  Retroceso',
+                label: '←  Invertido',
                 value: '-1',
                 selected: _oneway == '-1',
-                onTap: () => setState(() => _oneway = '-1'),
+                onTap: () {
+                  setState(() => _oneway = '-1');
+                  widget.onPreview?.call('-1');
+                },
               ),
             ],
           ),

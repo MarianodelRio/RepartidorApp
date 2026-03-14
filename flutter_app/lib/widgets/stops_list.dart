@@ -58,7 +58,7 @@ class _StopTile extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
         decoration: BoxDecoration(
           color: isHighlighted ? AppColors.primarySurface : AppColors.cardLight,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppRadius.button),
           border: isHighlighted
               ? Border.all(color: AppColors.primary, width: 2)
               : isOrigin
@@ -198,7 +198,7 @@ class _InfoChip extends StatelessWidget {
           Text(
             text,
             style: TextStyle(
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: FontWeight.w600,
               color: color,
             ),

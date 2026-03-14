@@ -617,9 +617,16 @@ class _DeliveryScreenState extends State<DeliveryScreen>
             Expanded(
               child: completed.isEmpty
                   ? const Center(
-                      child: Text('Ninguna parada completada aún',
-                          style: TextStyle(
-                              color: AppColors.textTertiary)),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.check_circle_outline,
+                              size: 40, color: AppColors.textTertiary),
+                          SizedBox(height: 12),
+                          Text('Ninguna parada completada aún',
+                              style: TextStyle(color: AppColors.textTertiary)),
+                        ],
+                      ),
                     )
                   : ListView.builder(
                       controller: scrollController,
@@ -689,13 +696,15 @@ class _DeliveryScreenState extends State<DeliveryScreen>
               tooltip: 'Paradas completadas',
             ),
           ],
+          // ── Barra de progreso integrada bajo el AppBar ──
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(44),
+            child: _ProgressHeader(session: _ctrl.session),
+          ),
         ),
         body: SafeArea(
           child: Column(
             children: [
-              // ── Barra de progreso ──
-              _ProgressHeader(session: _ctrl.session),
-
               // ── Mapa con callout flotante al tocar un marcador ──
               Expanded(
                 child: Stack(
@@ -832,7 +841,7 @@ class _DeliveryScreenState extends State<DeliveryScreen>
 //  Sub-widgets
 // ═══════════════════════════════════════════
 
-/// Barra de progreso del reparto.
+/// Barra de progreso del reparto — integrada como AppBar.bottom.
 class _ProgressHeader extends StatelessWidget {
   final DeliverySession session;
 
@@ -841,42 +850,41 @@ class _ProgressHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+      color: AppColors.primary,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 '${session.completedCount} de ${session.totalStops} entregas'
-                '${session.totalPackages > session.totalStops ? ' (${session.totalPackages} 📦)' : ''}',
+                '${session.totalPackages > session.totalStops ? ' · ${session.totalPackages} 📦' : ''}',
                 style: const TextStyle(
-                  fontSize: 13,
+                  fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF334155),
+                  color: Colors.white,
                 ),
               ),
               Row(
                 children: [
-                  _miniChip('✅', '${session.deliveredCount}',
-                      AppColors.delivered),
+                  _miniChip('✅', '${session.deliveredCount}'),
                   const SizedBox(width: 6),
-                  _miniChip(
-                      '🚫', '${session.absentCount}', AppColors.absent),
+                  _miniChip('🚫', '${session.absentCount}'),
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 5),
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: session.progress,
-              minHeight: 6,
-              backgroundColor: AppColors.border,
+              minHeight: 5,
+              backgroundColor: Colors.white.withAlpha(50),
               valueColor:
-                  const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                  const AlwaysStoppedAnimation<Color>(AppColors.successLight),
             ),
           ),
         ],
@@ -884,19 +892,19 @@ class _ProgressHeader extends StatelessWidget {
     );
   }
 
-  Widget _miniChip(String emoji, String count, Color color) {
+  Widget _miniChip(String emoji, String count) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withAlpha(20),
+        color: Colors.white.withAlpha(40),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         '$emoji $count',
-        style: TextStyle(
+        style: const TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
-          color: color,
+          color: Colors.white,
         ),
       ),
     );
@@ -926,16 +934,10 @@ class _NextStopCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: AppColors.cardLight,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x1A000000),
-            blurRadius: 16,
-            offset: Offset(0, -4),
-          ),
-        ],
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        boxShadow: AppShadows.sheet,
       ),
       child: SafeArea(
         top: false,
@@ -1145,7 +1147,7 @@ class _CompletedTile extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadius.button),
         border: Border.all(color: statusColor.withAlpha(60)),
       ),
       child: ListTile(
@@ -1195,7 +1197,7 @@ class _CompletedTile extends StatelessWidget {
               Text(
                 '📝 ${stop.note}',
                 style: const TextStyle(
-                    fontSize: 11, color: Color(0xFF64748B)),
+                    fontSize: 11, color: AppColors.textSecondary),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -1206,7 +1208,7 @@ class _CompletedTile extends StatelessWidget {
                 '${stop.completedAt!.hour.toString().padLeft(2, '0')}:'
                 '${stop.completedAt!.minute.toString().padLeft(2, '0')}',
                 style: const TextStyle(
-                    fontSize: 11, color: Color(0xFF94A3B8)),
+                    fontSize: 11, color: AppColors.textTertiary),
               )
             : null,
       ),

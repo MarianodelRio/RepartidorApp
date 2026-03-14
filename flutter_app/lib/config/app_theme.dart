@@ -49,9 +49,49 @@ abstract final class AppColors {
   // ── GPS Marker ──
   static const Color gps = Color(0xFF2979FF);                  // Azul eléctrico
 
+  // ── Pin manual (re-pin de usuario) ──
+  static const Color manualPin = warning;  // ámbar intenso — mismo valor, nombre semántico
+
+  // ── Activo / En curso (sesión de reparto abierta) ──
+  static const Color active        = Color(0xFF00897B); // Teal
+  static const Color activeSurface = Color(0xFFE0F2F1); // Teal muy claro
+
   // ── Entregado / Ausente (iconos de estado) ──
   static const Color delivered = success;
   static const Color absent = warning;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Sistema de radios — usar siempre estos valores para coherencia
+// ═══════════════════════════════════════════════════════════════
+
+abstract final class AppRadius {
+  static const double card    = 16; // cards, sheets, mapa
+  static const double button  = 12; // botones, chips acción
+  static const double chip    =  8; // chips informativos
+  static const double dialog  = 20; // diálogos modales
+  static const double badge   = 10; // badges / números
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Sistema de sombras — 3 niveles de elevación
+// ═══════════════════════════════════════════════════════════════
+
+abstract final class AppShadows {
+  /// Nivel 1 — cards y contenedores sobre scaffold
+  static const List<BoxShadow> card = [
+    BoxShadow(color: Color(0x14000000), blurRadius: 8,  offset: Offset(0, 2)),
+  ];
+
+  /// Nivel 2 — bottom sheets y paneles flotantes
+  static const List<BoxShadow> sheet = [
+    BoxShadow(color: Color(0x1A000000), blurRadius: 16, offset: Offset(0, -4)),
+  ];
+
+  /// Nivel 3 — FABs y elementos sobre el mapa
+  static const List<BoxShadow> fab = [
+    BoxShadow(color: Color(0x33000000), blurRadius: 12, offset: Offset(0, 4)),
+  ];
 }
 
 // ═══════════════════════════════════════════════════════════════
