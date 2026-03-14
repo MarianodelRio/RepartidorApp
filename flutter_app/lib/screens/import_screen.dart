@@ -14,6 +14,7 @@ import '../services/csv_service.dart';
 import '../services/persistence_service.dart';
 import '../widgets/origin_selector.dart';
 import 'delivery_screen.dart';
+import 'map_editor_screen.dart';
 import 'map_picker_screen.dart';
 import 'result_screen.dart';
 
@@ -341,6 +342,15 @@ class _ImportScreenState extends State<ImportScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_road_rounded),
+            tooltip: 'Editar mapa',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const MapEditorScreen()),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: _ctrl.isCheckingServer

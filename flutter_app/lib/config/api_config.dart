@@ -18,6 +18,12 @@ class ApiConfig {
   // ── Validación ──
   static const String validationStartEndpoint = '/api/validation/start';
 
+  // ── Editor de mapa ──
+  static const String editorGeoJsonEndpoint       = '/api/editor/geojson';
+  static const String editorSaveEndpoint          = '/api/editor/save';
+  static const String editorRebuildEndpoint       = '/api/editor/rebuild';
+  static const String editorRebuildStatusEndpoint = '/api/editor/rebuild/status';
+
   /// Timeout generoso para /api/optimize.
   /// El geocoding de 70-100 direcciones puede tardar 3-5 minutos.
   static const Duration timeout = Duration(minutes: 10);

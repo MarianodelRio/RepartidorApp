@@ -1,11 +1,11 @@
 """
-Posadas Route Planner — Backend FastAPI v2.2.0
+Posadas Route Planner — Backend FastAPI v2.3.0
 ==============================================
 Arquitectura:
   core/config.py    → Configuración centralizada
   core/logging.py   → Logger compartido
   models/           → Modelos Pydantic (request/response)
-  services/         → Lógica de negocio (geocoding, routing, catalog)
+  services/         → Lógica de negocio (geocoding, routing, catalog, map_editor)
   routers/          → Endpoints de la API
   utils/            → Helpers compartidos (normalización)
 
@@ -21,8 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import BASE_DIR
-from app.routers import optimize, validation, system
-# from osm_app.router import router as map_editor_router  # módulo externo, no incluido en este repo
+from app.routers import optimize, validation, system, map_editor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,7 +32,7 @@ logging.basicConfig(
 app = FastAPI(
     title="Posadas Route Planner",
     description="API de optimización de rutas de reparto para Posadas (Córdoba)",
-    version="2.2.0",
+    version="2.3.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -51,6 +50,6 @@ STATIC_DIR.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 app.include_router(system.router)
-app.include_router(optimize.router, prefix="/api")
-app.include_router(validation.router, prefix="/api")
-# app.include_router(map_editor_router)  # módulo externo, no incluido en este repo
+app.include_router(optimize.router,    prefix="/api")
+app.include_router(validation.router,  prefix="/api")
+app.include_router(map_editor.router,  prefix="/api")

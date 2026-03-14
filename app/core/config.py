@@ -13,6 +13,10 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent          # app/
 PROJECT_DIR = BASE_DIR.parent                               # app_repartir/
 
+# ── Mapa OSM (PBF editado, leído directamente por OSRM) ──────
+OSRM_DIR = PROJECT_DIR / "osrm"
+PBF_PATH  = OSRM_DIR / "posadas_editado.osm.pbf"
+
 # ── Servicios externos (Docker locales) ───────────────────────
 OSRM_BASE_URL = "http://localhost:5000"
 
