@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
@@ -23,19 +25,23 @@ class _HomeScreenState extends State<HomeScreen>
 
   late AnimationController _animController;
 
-  // Tarjeta 1 y 2 con stagger de 200 ms
+  // Hero: 0 % → 45 %
+  late Animation<double> _fade0;
+  late Animation<double> _slide0;
+  // Tarjeta 1: 15 % → 62 %
   late Animation<double> _fade1;
   late Animation<double> _slide1;
+  // Tarjeta 2: 30 % → 82 %
   late Animation<double> _fade2;
   late Animation<double> _slide2;
 
   // ── Estado ────────────────────────────────────────────────────────────────
 
-  bool _serverOnline      = false;
-  bool _isCheckingServer  = true;
-  bool _hasActiveSession  = false;
+  bool _serverOnline     = false;
+  bool _isCheckingServer = true;
+  bool _hasActiveSession = false;
 
-  // Gradiente idéntico al splash para continuidad visual en la transición.
+  // Gradiente idéntico al splash para continuidad visual.
   static const _kGradient = LinearGradient(
     begin: Alignment.topLeft,
     end:   Alignment.bottomRight,
@@ -51,34 +57,45 @@ class _HomeScreenState extends State<HomeScreen>
 
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 950),
     );
 
-    // Tarjeta 1: 0 % → 55 %
+    _fade0 = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animController,
+        curve: const Interval(0.0, 0.45, curve: Curves.easeOut),
+      ),
+    );
+    _slide0 = Tween<double>(begin: 22.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _animController,
+        curve: const Interval(0.0, 0.45, curve: Curves.easeOutCubic),
+      ),
+    );
+
     _fade1 = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _animController,
-        curve: const Interval(0.0, 0.55, curve: Curves.easeOut),
+        curve: const Interval(0.15, 0.62, curve: Curves.easeOut),
       ),
     );
     _slide1 = Tween<double>(begin: 28.0, end: 0.0).animate(
       CurvedAnimation(
         parent: _animController,
-        curve: const Interval(0.0, 0.55, curve: Curves.easeOutCubic),
+        curve: const Interval(0.15, 0.62, curve: Curves.easeOutCubic),
       ),
     );
 
-    // Tarjeta 2: 20 % → 75 %  (desfasada 160 ms respecto a la 1)
     _fade2 = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _animController,
-        curve: const Interval(0.2, 0.75, curve: Curves.easeOut),
+        curve: const Interval(0.30, 0.82, curve: Curves.easeOut),
       ),
     );
     _slide2 = Tween<double>(begin: 28.0, end: 0.0).animate(
       CurvedAnimation(
         parent: _animController,
-        curve: const Interval(0.2, 0.75, curve: Curves.easeOutCubic),
+        curve: const Interval(0.30, 0.82, curve: Curves.easeOutCubic),
       ),
     );
 
@@ -169,7 +186,7 @@ class _HomeScreenState extends State<HomeScreen>
               Expanded(
                 child: AnimatedBuilder(
                   animation: _animController,
-                  builder: (context, _) => _buildCards(),
+                  builder: (context, _) => _buildContent(),
                 ),
               ),
             ],
@@ -179,7 +196,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ── Top bar: logo compacto + nombre + chip de servidor ────────────────────
+  // ── Top bar: logo + nombre + chip servidor ────────────────────────────────
 
   Widget _buildTopBar() {
     return Padding(
@@ -268,26 +285,37 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ── Tarjetas de acción con animación stagger ──────────────────────────────
+  // ── Contenido principal con stagger ──────────────────────────────────────
 
-  Widget _buildCards() {
+  Widget _buildContent() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Spacer(flex: 2),
+          const Spacer(),
 
-          // Tarjeta 1: Iniciar ruta
+          // Hero
+          Transform.translate(
+            offset: Offset(0, _slide0.value),
+            child: Opacity(
+              opacity: _fade0.value,
+              child: _buildHeroSection(),
+            ),
+          ),
+
+          const SizedBox(height: 32),
+
+          // Tarjeta 1: Iniciar ruta (acción principal)
           Transform.translate(
             offset: Offset(0, _slide1.value),
             child: Opacity(
               opacity: _fade1.value,
               child: _ActionCard(
                 icon:      Icons.local_shipping_rounded,
-                iconColor: AppColors.primaryLight,
+                iconColor: const Color(0xFF1B8A4C),
                 title:    'Iniciar ruta',
                 subtitle: 'Carga tu CSV y calcula la ruta óptima de reparto',
+                primary:  true,
                 onTap: () => Navigator.of(context)
                     .push(MaterialPageRoute(builder: (_) => const ImportScreen()))
                     .then((_) { if (mounted) _checkStatus(); }),
@@ -295,9 +323,9 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ),
 
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
 
-          // Tarjeta 2: Editar mapa
+          // Tarjeta 2: Editar mapa (acción secundaria)
           Transform.translate(
             offset: Offset(0, _slide2.value),
             child: Opacity(
@@ -307,13 +335,14 @@ class _HomeScreenState extends State<HomeScreen>
                 iconColor: const Color(0xFF2E4A7A),
                 title:    'Editar mapa',
                 subtitle: 'Modifica calles y accesos de Posadas',
+                primary:  false,
                 onTap: () => Navigator.of(context)
                     .push(MaterialPageRoute(builder: (_) => const MapEditorScreen())),
               ),
             ),
           ),
 
-          // Tarjeta 3: Continuar reparto (aparece/desaparece con fade+slide)
+          // Tarjeta 3: Continuar reparto (condicional)
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 350),
             transitionBuilder: (child, animation) => FadeTransition(
@@ -332,7 +361,7 @@ class _HomeScreenState extends State<HomeScreen>
             child: _hasActiveSession
                 ? Padding(
                     key: const ValueKey('resume'),
-                    padding: const EdgeInsets.only(top: 14),
+                    padding: const EdgeInsets.only(top: 12),
                     child: _ResumeCard(
                       onResume:  _resumeDelivery,
                       onDiscard: _discardSession,
@@ -341,22 +370,62 @@ class _HomeScreenState extends State<HomeScreen>
                 : const SizedBox.shrink(key: ValueKey('empty')),
           ),
 
-          const Spacer(flex: 3),
+          const Spacer(flex: 2),
         ],
       ),
+    );
+  }
+
+  Widget _buildHeroSection() {
+    return Column(
+      children: [
+        Container(
+          width:  68,
+          height: 68,
+          decoration: BoxDecoration(
+            color:  Colors.white.withAlpha(22),
+            shape:  BoxShape.circle,
+            border: Border.all(color: Colors.white.withAlpha(55)),
+          ),
+          child: const Icon(
+            Icons.local_shipping_rounded,
+            size:  34,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 14),
+        const Text(
+          '¿Qué hacemos hoy?',
+          style: TextStyle(
+            fontSize:    22,
+            fontWeight:  FontWeight.w800,
+            color:       Colors.white,
+            letterSpacing: -0.5,
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          'Selecciona una opción para empezar',
+          style: TextStyle(
+            fontSize: 13,
+            color:    Colors.white.withAlpha(150),
+          ),
+        ),
+      ],
     );
   }
 }
 
 // ═══════════════════════════════════════════
-//  Tarjeta de acción genérica (frosted glass)
+//  Tarjeta de acción (glassmorphism real)
 // ═══════════════════════════════════════════
 
 class _ActionCard extends StatelessWidget {
-  final IconData  icon;
-  final Color     iconColor;
-  final String    title;
-  final String    subtitle;
+  final IconData     icon;
+  final Color        iconColor;
+  final String       title;
+  final String       subtitle;
+  final bool         primary;
   final VoidCallback onTap;
 
   const _ActionCard({
@@ -364,70 +433,99 @@ class _ActionCard extends StatelessWidget {
     required this.iconColor,
     required this.title,
     required this.subtitle,
+    required this.primary,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Ink(
-      decoration: BoxDecoration(
-        color:        Colors.white.withAlpha(20),
-        borderRadius: BorderRadius.circular(20),
-        border:       Border.all(color: Colors.white.withAlpha(45)),
-      ),
-      child: InkWell(
-        onTap:          onTap,
-        borderRadius:   BorderRadius.circular(20),
-        splashColor:    Colors.white.withAlpha(30),
-        highlightColor: Colors.white.withAlpha(15),
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Row(
-            children: [
-              // Contenedor del icono
-              Container(
-                width:  52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color:        iconColor,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(icon, color: Colors.white, size: 26),
-              ),
-              const SizedBox(width: 16),
-              // Texto
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    final iconBoxSize  = primary ? 60.0 : 50.0;
+    final iconSize     = primary ? 28.0 : 23.0;
+    final iconRadius   = primary ? 16.0 : 13.0;
+    final titleSize    = primary ? 17.0 : 15.0;
+    final subtitleSize = primary ? 12.0 : 11.0;
+    final padding      = primary ? 20.0 : 16.0;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          decoration: BoxDecoration(
+            color:        Colors.white.withAlpha(primary ? 42 : 26),
+            borderRadius: BorderRadius.circular(20),
+            border:       Border.all(
+              color: Colors.white.withAlpha(primary ? 80 : 50),
+            ),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap:          onTap,
+              borderRadius:   BorderRadius.circular(20),
+              splashColor:    Colors.white.withAlpha(30),
+              highlightColor: Colors.white.withAlpha(15),
+              child: Padding(
+                padding: EdgeInsets.all(padding),
+                child: Row(
                   children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize:    16,
-                        fontWeight:  FontWeight.w700,
-                        color:       Colors.white,
-                        letterSpacing: -0.2,
+                    // Contenedor del icono
+                    Container(
+                      width:  iconBoxSize,
+                      height: iconBoxSize,
+                      decoration: BoxDecoration(
+                        color:        iconColor,
+                        borderRadius: BorderRadius.circular(iconRadius),
+                        boxShadow: primary
+                            ? [
+                                BoxShadow(
+                                  color:      iconColor.withAlpha(120),
+                                  blurRadius: 14,
+                                  offset:     const Offset(0, 4),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Icon(icon, color: Colors.white, size: iconSize),
+                    ),
+                    const SizedBox(width: 16),
+                    // Texto
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: TextStyle(
+                              fontSize:    titleSize,
+                              fontWeight:  FontWeight.w700,
+                              color:       Colors.white,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            subtitle,
+                            style: TextStyle(
+                              fontSize:   subtitleSize,
+                              color:      Colors.white.withAlpha(
+                                  primary ? 185 : 155),
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize:   12,
-                        color:      Colors.white.withAlpha(175),
-                        fontWeight: FontWeight.w400,
-                      ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      color: Colors.white.withAlpha(primary ? 140 : 110),
+                      size:  primary ? 15 : 13,
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Icon(
-                Icons.arrow_forward_ios_rounded,
-                color: Colors.white.withAlpha(120),
-                size:  15,
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -447,79 +545,92 @@ class _ResumeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Ink(
-      decoration: BoxDecoration(
-        color:        AppColors.warning.withAlpha(30),
-        borderRadius: BorderRadius.circular(20),
-        border:       Border.all(color: AppColors.warning.withAlpha(100)),
-      ),
-      child: InkWell(
-        onTap:          onResume,
-        borderRadius:   BorderRadius.circular(20),
-        splashColor:    AppColors.warning.withAlpha(40),
-        highlightColor: AppColors.warning.withAlpha(20),
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Row(
-            children: [
-              // Icono de reproducción
-              Container(
-                width:  52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color:        AppColors.warning,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(
-                  Icons.play_arrow_rounded,
-                  color: Colors.white,
-                  size:  28,
-                ),
-              ),
-              const SizedBox(width: 16),
-              // Texto
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          decoration: BoxDecoration(
+            color:        AppColors.warning.withAlpha(48),
+            borderRadius: BorderRadius.circular(20),
+            border:       Border.all(color: AppColors.warning.withAlpha(130)),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap:          onResume,
+              borderRadius:   BorderRadius.circular(20),
+              splashColor:    AppColors.warning.withAlpha(50),
+              highlightColor: AppColors.warning.withAlpha(25),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
                   children: [
-                    const Text(
-                      'Continuar reparto',
-                      style: TextStyle(
-                        fontSize:    16,
-                        fontWeight:  FontWeight.w700,
-                        color:       Colors.white,
-                        letterSpacing: -0.2,
+                    Container(
+                      width:  52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color:        AppColors.warning,
+                        borderRadius: BorderRadius.circular(13),
+                        boxShadow: [
+                          BoxShadow(
+                            color:      AppColors.warning.withAlpha(110),
+                            blurRadius: 12,
+                            offset:     const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size:  28,
                       ),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Tienes un reparto en curso',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color:    Colors.white.withAlpha(175),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Continuar reparto',
+                            style: TextStyle(
+                              fontSize:    16,
+                              fontWeight:  FontWeight.w700,
+                              color:       Colors.white,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Tienes un reparto en curso',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color:    Colors.white.withAlpha(175),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: onDiscard,
+                      child: Container(
+                        width:  28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withAlpha(30),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.close,
+                          color: Colors.white.withAlpha(200),
+                          size:  15,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-              // Botón de descartar (X en círculo)
-              GestureDetector(
-                onTap: onDiscard,
-                child: Container(
-                  width:  28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withAlpha(30),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.close,
-                    color: Colors.white.withAlpha(200),
-                    size:  15,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
