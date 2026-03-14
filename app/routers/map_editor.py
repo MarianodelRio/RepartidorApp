@@ -21,6 +21,7 @@ from app.models.map_editor import (
     SaveRequest,
     SaveResponse,
 )
+from app.adapters.osrm import clear_snap_cache
 from app.services.map_editor import apply_and_save, get_geojson
 
 logger = get_logger(__name__)
@@ -55,6 +56,7 @@ async def _run_rebuild_bg() -> None:
         output = stdout.decode(errors="replace") if stdout else ""
 
         if proc.returncode == 0:
+            clear_snap_cache()
             _rebuild.update(
                 status="ok",
                 message="Rebuild completado. OSRM activo con el nuevo mapa.",

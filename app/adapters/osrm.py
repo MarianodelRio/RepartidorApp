@@ -72,6 +72,22 @@ def _save_snap_cache() -> None:
         logger.error("Error guardando snap_cache: %s", e)
 
 
+def clear_snap_cache() -> None:
+    """Limpia el caché de snap en memoria y en disco.
+
+    Llamar tras rebuild-map: el nuevo mapa OSRM puede reubicar nodos,
+    así que las coordenadas snapeadas anteriores quedan obsoletas.
+    """
+    global _snap_cache
+    _snap_cache = {}
+    try:
+        if _SNAP_CACHE_FILE.exists():
+            _SNAP_CACHE_FILE.unlink()
+            logger.info("Snap cache eliminado tras rebuild")
+    except Exception as e:
+        logger.error("Error eliminando snap_cache: %s", e)
+
+
 def snap_to_street(
     lat: float,
     lon: float,

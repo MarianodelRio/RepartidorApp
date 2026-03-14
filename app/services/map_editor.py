@@ -335,7 +335,7 @@ def _update_relations_after_split(
             ]
             via_ref = via_nodes[0] if via_nodes else ""
             for tm in targets:
-                tm.set("ref", ref_to_new_id.get(via_ref) or new_ways[0].get("id", original_id))
+                tm.set("ref", ref_to_new_id.get(via_ref) or new_ways[0].get("id") or original_id)
         else:
             for tm in targets:
                 idx = list(relation).index(tm)

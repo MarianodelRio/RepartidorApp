@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -5,6 +7,61 @@ import 'package:latlong2/latlong.dart';
 import '../config/app_theme.dart';
 import '../models/map_edit_models.dart';
 import '../services/map_editor_service.dart';
+
+// ── Utilidades de geometría ───────────────────────────────────────────────────
+
+/// Ángulo en radianes desde el norte (sentido horario) entre dos coordenadas.
+double _computeBearing(LatLng from, LatLng to) {
+  final lat1 = from.latitude * math.pi / 180;
+  final lat2 = to.latitude * math.pi / 180;
+  final dLon = (to.longitude - from.longitude) * math.pi / 180;
+  final y = math.sin(dLon) * math.cos(lat2);
+  final x = math.cos(lat1) * math.sin(lat2) -
+      math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
+  return math.atan2(y, x);
+}
+
+/// Distancia cuadrática aproximada (grados²). Válida para búsqueda del nodo más cercano.
+double _distSq(LatLng a, LatLng b) {
+  final dlat = a.latitude - b.latitude;
+  final dlon = a.longitude - b.longitude;
+  return dlat * dlat + dlon * dlon;
+}
+
+/// Índice del nodo de [points] más cercano a [tap].
+int _closestNodeIndex(List<LatLng> points, LatLng tap) {
+  var minDist = double.infinity;
+  var minIdx = 0;
+  for (int i = 0; i < points.length; i++) {
+    final d = _distSq(points[i], tap);
+    if (d < minDist) {
+      minDist = d;
+      minIdx = i;
+    }
+  }
+  return minIdx;
+}
+
+/// Devuelve el segmento (entre nodos de intersección) que contiene [nodeIdx].
+/// Devuelve null si la vía no tiene intersecciones (no tiene tramos editables por separado).
+SegmentRef? _segmentContaining(OsmWay way, int nodeIdx) {
+  // El backend siempre incluye [0, last] en junctionIndices.
+  // Solo hay tramos editables cuando existen nodos intermedios (length > 2).
+  if (way.junctionIndices.length <= 2) return null;
+
+  // junctionIndices ya contiene 0 y last: usarlo directamente como boundaries
+  for (int i = 0; i < way.junctionIndices.length - 1; i++) {
+    final start = way.junctionIndices[i];
+    final end = way.junctionIndices[i + 1];
+    if (nodeIdx >= start && nodeIdx <= end) {
+      return (
+        startRef: way.nodeRefs[start],
+        endRef: way.nodeRefs[end],
+      );
+    }
+  }
+  return null;
+}
 
 // ═══════════════════════════════════════════════════════════════
 //  MapEditorScreen — editor nativo de red viaria
@@ -50,7 +107,7 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
   final _mapController = MapController();
   // LayerHitNotifier<T>: el valor se actualiza cuando el puntero toca una
   // polyline con hitValue. Lo leemos en onTap del GestureDetector externo.
-  final LayerHitNotifier<OsmWay> _hitNotifier = LayerHitNotifier();
+  final LayerHitNotifier<OsmWay> _hitNotifier = LayerHitNotifier(null);
 
   // Centro inicial — Posadas, Córdoba
   static const _center = LatLng(37.805503, -5.099805);
@@ -100,7 +157,7 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
   //  Interacción con el mapa
   // ─────────────────────────────────────────────────
 
-  void _onMapTap() {
+  void _onMapTap(LatLng tapCoord) {
     final hit = _hitNotifier.value;
     if (hit == null || hit.hitValues.isEmpty) {
       // Toque en zona sin vía → deseleccionar
@@ -111,14 +168,14 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
     // La vía más cercana al toque está primera en hitValues
     final tapped = hit.hitValues.first;
     setState(() => _selectedWay = tapped);
-    _showEditSheet(tapped);
+    _showEditSheet(tapped, tapCoord);
   }
 
   // ─────────────────────────────────────────────────
   //  Bottom sheet de edición
   // ─────────────────────────────────────────────────
 
-  void _showEditSheet(OsmWay way) {
+  void _showEditSheet(OsmWay way, LatLng tapCoord) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -129,6 +186,7 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
       builder: (_) => _WayEditSheet(
         way: way,
         pendingChange: _pending[way.id],
+        tappedSegment: _segmentContaining(way, _closestNodeIndex(way.points, tapCoord)),
         onApply: (change) {
           setState(() {
             _pending[way.id] = change;
@@ -427,23 +485,21 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
         )
         .toList();
 
-    // Marcadores de sentido único (flecha en el punto medio de la vía)
+    // Marcadores de sentido único: múltiples flechas rotadas por vía
     final onewayMarkers = _ways
         .where((w) => w.oneway != null)
-        .map(_buildOnewayMarker)
+        .expand(_buildOnewayMarkers)
         .toList();
 
-    return GestureDetector(
-      // El GestureDetector externo intercepta el tap DESPUÉS de que
-      // flutter_map haya actualizado _hitNotifier con la polyline tocada.
-      onTap: _onMapTap,
-      child: FlutterMap(
+    return FlutterMap(
         mapController: _mapController,
-        options: const MapOptions(
+        options: MapOptions(
           initialCenter: _center,
           initialZoom: 14,
           minZoom: 11,
           maxZoom: 19,
+          // onTap garantiza que _hitNotifier ya está actualizado cuando se dispara
+          onTap: (_, latLng) => _onMapTap(latLng),
         ),
         children: [
           TileLayer(
@@ -459,26 +515,53 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
           // Leyenda fija en esquina inferior izquierda
           const _MapLegendOverlay(),
         ],
-      ),
     );
   }
 
-  /// Flecha indicando sentido único sobre el punto medio de la vía.
-  Marker _buildOnewayMarker(OsmWay way) {
-    final midIndex = way.points.length ~/ 2;
-    final mid = way.points[midIndex];
+  /// Genera una o varias flechas a lo largo de [way] con la orientación geográfica real.
+  ///
+  /// Coloca hasta 4 flechas distribuidas uniformemente. Cada flecha se rota según
+  /// el bearing del segmento en que aparece. Para sentido '-1' (contrario al orden
+  /// de nodos) se invierte el bearing 180°.
+  List<Marker> _buildOnewayMarkers(OsmWay way) {
+    final pts = way.points;
+    if (pts.length < 2) return [];
+
     final isReverse = way.oneway == '-1';
-    return Marker(
-      point: mid,
-      width: 18,
-      height: 18,
-      child: Icon(
-        isReverse ? Icons.arrow_back_rounded : Icons.arrow_forward_rounded,
-        size: 14,
-        color: Colors.white.withAlpha(230),
-        shadows: const [Shadow(color: Colors.black54, blurRadius: 3)],
-      ),
-    );
+    final n = pts.length;
+
+    // Entre 1 y 4 flechas según longitud de la vía
+    final numArrows = math.max(1, math.min(4, n ~/ 4));
+    final step = math.max(1, (n - 1) ~/ numArrows);
+
+    final markers = <Marker>[];
+    // Empezamos en la mitad del primer intervalo para centrar visualmente
+    for (int i = step ~/ 2; i < n - 1; i += step) {
+      final from = isReverse ? pts[i + 1] : pts[i];
+      final to = isReverse ? pts[i] : pts[i + 1];
+      final bearing = _computeBearing(from, to);
+
+      markers.add(Marker(
+        point: pts[i],
+        width: 22,
+        height: 22,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withAlpha(172),
+            shape: BoxShape.circle,
+          ),
+          child: Transform.rotate(
+            angle: bearing,
+            child: const Icon(
+              Icons.arrow_upward_rounded,
+              size: 14,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ));
+    }
+    return markers;
   }
 
   // ─────────────────────────────────────────────────
@@ -699,12 +782,15 @@ class _MapEditorScreenState extends State<MapEditorScreen> {
 class _WayEditSheet extends StatefulWidget {
   final OsmWay way;
   final PendingWayChange? pendingChange;
+  /// Tramo de la vía donde el usuario tocó. Null si la vía no tiene intersecciones.
+  final SegmentRef? tappedSegment;
   final ValueChanged<PendingWayChange> onApply;
   final VoidCallback onRevert;
 
   const _WayEditSheet({
     required this.way,
     required this.pendingChange,
+    required this.tappedSegment,
     required this.onApply,
     required this.onRevert,
   });
@@ -717,6 +803,8 @@ class _WayEditSheetState extends State<_WayEditSheet> {
   late String _highway;
   late String? _oneway;
   late TextEditingController _nameCtrl;
+  // null = toda la vía; non-null = solo el tramo tocado
+  late SegmentRef? _segment;
 
   // Tipos de vía editables (los más frecuentes en contexto urbano)
   static const _highwayOptions = [
@@ -742,6 +830,10 @@ class _WayEditSheetState extends State<_WayEditSheet> {
 
     final currentName = (p != null && p.nameChanged) ? p.name : widget.way.name;
     _nameCtrl = TextEditingController(text: currentName ?? '');
+
+    // Si ya había una edición guardada, respetamos su alcance;
+    // si no, pre-seleccionamos el tramo tocado cuando la vía tiene intersecciones.
+    _segment = p?.segment ?? widget.tappedSegment;
   }
 
   @override
@@ -759,6 +851,7 @@ class _WayEditSheetState extends State<_WayEditSheet> {
     );
     change.highway = _highway;
     change.oneway  = _oneway;
+    change.segment = _segment;
 
     final newName = _nameCtrl.text.trim();
     final resolvedName = newName.isEmpty ? null : newName;
@@ -860,7 +953,7 @@ class _WayEditSheetState extends State<_WayEditSheet> {
           ),
           const SizedBox(height: 6),
           DropdownButtonFormField<String>(
-            value: _highwayOptions.any((t) => t.$1 == _highway)
+            initialValue: _highwayOptions.any((t) => t.$1 == _highway)
                 ? _highway
                 : 'residential',
             items: _highwayOptions
@@ -915,6 +1008,37 @@ class _WayEditSheetState extends State<_WayEditSheet> {
               ),
             ],
           ),
+          // ── Alcance ──────────────────────────────────
+          // Solo visible cuando la vía tiene intersecciones y hay tramo identificado
+          if (widget.tappedSegment != null) ...[
+            const SizedBox(height: 16),
+            const Text(
+              'Alcance del cambio',
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _OnewayChip(
+                  label: 'Toda la vía',
+                  value: null,
+                  selected: _segment == null,
+                  onTap: () => setState(() => _segment = null),
+                ),
+                const SizedBox(width: 6),
+                _OnewayChip(
+                  label: '✂  Solo este tramo',
+                  value: 'segment',
+                  selected: _segment != null,
+                  onTap: () =>
+                      setState(() => _segment = widget.tappedSegment),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 24),
 
           // ── Botones de acción ────────────────────────

@@ -18,6 +18,9 @@ const _pedHighways = {
   'cycleway', 'track', 'bridleway',
 };
 
+/// Referencia a un sub-tramo de una vía, definido por los refs de sus nodos límite.
+typedef SegmentRef = ({String startRef, String endRef});
+
 // ─────────────────────────────────────────────────────────────
 //  OsmWay — una vía del grafo
 // ─────────────────────────────────────────────────────────────
@@ -89,9 +92,10 @@ class PendingWayChange {
 
   // Valores editados
   String highway;
-  String? oneway;       // null = bidireccional, "yes" = directo, "-1" = inverso
-  String? name;         // null = sin nombre / eliminar tag
-  bool nameChanged;     // true si el usuario tocó el campo nombre
+  String? oneway;        // null = bidireccional, "yes" = directo, "-1" = inverso
+  String? name;          // null = sin nombre / eliminar tag
+  bool nameChanged;      // true si el usuario tocó el campo nombre
+  SegmentRef? segment;   // null = vía completa, non-null = solo este tramo
 
   PendingWayChange({
     required this.wayId,
@@ -101,7 +105,8 @@ class PendingWayChange {
   })  : highway = originalHighway,
         oneway = originalOneway,
         name = originalName,
-        nameChanged = false;
+        nameChanged = false,
+        segment = null;
 
   /// Serialización para el body del POST /api/editor/save
   Map<String, dynamic> toJson() => {
@@ -109,5 +114,10 @@ class PendingWayChange {
         'highway': highway,
         'oneway': oneway,
         if (nameChanged) 'name': name,
+        if (segment != null)
+          'segment': {
+            'start_node_ref': segment!.startRef,
+            'end_node_ref': segment!.endRef,
+          },
       };
 }
