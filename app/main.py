@@ -1,5 +1,5 @@
 """
-Posadas Route Planner — Backend FastAPI v2.3.0
+Posadas Route Planner — Backend FastAPI v1.0.0
 ==============================================
 Arquitectura:
   core/config.py    → Configuración centralizada
@@ -33,7 +33,7 @@ logging.basicConfig(
 app = FastAPI(
     title="Posadas Route Planner",
     description="API de optimización de rutas de reparto para Posadas (Córdoba)",
-    version="2.3.0",
+    version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )

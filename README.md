@@ -3,7 +3,7 @@
 > **Sistema completo de optimización de rutas de reparto para Posadas, Córdoba**
 > Backend FastAPI + Flutter App + OSRM + LKH3
 
-**Versión:** 2.2.0
+**Versión:** 1.0.0
 **Última actualización:** Marzo 2026
 
 ---
@@ -51,17 +51,19 @@ nohup ngrok http 8000 --log=stdout > /tmp/ngrok.log 2>&1 &
 
 | Archivo / Carpeta | Descripción |
 |-------------------|-------------|
-| **CHANGELOG.md** | Historial completo de versiones |
-| **explicacion.md** | Documentación técnica detallada de todos los módulos |
+| **docs/CHANGELOG.md** | Historial de versiones |
+| **docs/explicacion.md** | Documentación técnica detallada |
+| **docs/GUIA_INSTALACION.md** | Guía de instalación desde cero |
+| **docs/MEJORAS.md** | Roadmap y mejoras pendientes |
 | **start.sh** | Script de arranque y gestión de servicios |
 | **run_tests.sh** | Tests + cobertura + análisis estático (backend y Flutter) |
 | **docker-compose.yml** | Servicios Docker (OSRM) |
 | **requirements.txt** | Dependencias Python del backend |
 | **mypy.ini** | Configuración de análisis estático Python |
 | **app/** | Código del backend (FastAPI) |
-| **tests/** | Tests del backend (221 tests, pytest) |
+| **tests/** | Tests del backend (pytest) |
 | **flutter_app/** | Código de la app Flutter |
-| **docs/** | Documentación adicional (regenerar OSRM, etc.) |
+| **data_input/** | CSVs de ejemplo para pruebas |
 
 ---
 
@@ -184,7 +186,7 @@ dart analyze              # análisis estático (0 warnings)
 ```bash
 # Backend
 curl http://localhost:8000/health
-# → {"status":"ok","version":"2.2.0"}
+# → {"status":"ok","version":"1.0.0"}
 
 # OSRM
 curl -s "http://localhost:5000/route/v1/driving/-5.105,37.802;-5.110,37.800?overview=false" | grep "Ok"
@@ -252,11 +254,11 @@ app_repartir/
 │   └── android/             # Config Android
 │
 ├── osrm/                    # Datos OSM (mapa de Posadas)
-├── docs/                    # Documentación adicional
+├── docs/                    # Documentación completa
+├── data_input/              # CSVs de prueba
 ├── docker-compose.yml       # Definición servicios Docker
 ├── requirements.txt         # Dependencias Python
-├── start.sh                 # Script de gestión de servicios
-└── CHANGELOG.md             # Historial de versiones
+└── start.sh                 # Script de gestión de servicios
 ```
 
 ## Mapas OSRM

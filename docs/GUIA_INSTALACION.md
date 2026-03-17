@@ -1,4 +1,4 @@
-# Guía de instalación — Repartidor App v2.0.0
+# Guía de instalación — Repartidor App v1.0.0
 
 Guía completa para replicar el entorno de desarrollo en un ordenador nuevo, desde cero, partiendo del repositorio Git.
 
@@ -12,7 +12,7 @@ Compatible con **Linux (Ubuntu/Debian)** y **Windows 10/11 con WSL2** (Docker De
 2. [Clonar el repositorio](#2-clonar-el-repositorio)
 3. [Backend Python](#3-backend-python)
 4. [Datos OSRM (mapa de rutas)](#4-datos-osrm-mapa-de-rutas)
-5. [Servicios Docker (OSRM + VROOM)](#5-servicios-docker-osrm--vroom)
+5. [Servicios Docker (OSRM)](#5-servicios-docker-osrm)
 6. [Configurar ngrok](#6-configurar-ngrok)
 7. [App Flutter](#7-app-flutter)
 8. [Arrancar todo](#8-arrancar-todo)
@@ -234,7 +234,6 @@ app_repartir/
 │   ├── routers/
 │   └── services/
 ├── flutter_app/          # App móvil Flutter
-├── vroom-conf/           # Configuración de VROOM
 ├── docker-compose.yml
 ├── requirements.txt
 ├── start.sh
@@ -364,7 +363,7 @@ docker stop osrm-test
 
 ---
 
-## 5. Servicios Docker (OSRM + VROOM)
+## 5. Servicios Docker (OSRM)
 
 > Ejecuta en **terminal Linux** o **terminal WSL2 (Ubuntu)**, desde la raíz del proyecto.
 >
@@ -373,23 +372,20 @@ docker stop osrm-test
 ```bash
 cd ~/app_repartir
 
-# Arrancar OSRM (puerto 5000) y VROOM (puerto 3000)
+# Arrancar OSRM (puerto 5000)
 docker compose up -d
 
-# Verificar que están activos
+# Verificar que está activo
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 ```
 
 Salida esperada:
 ```
 NAMES            STATUS          PORTS
-vroom-posadas    Up X seconds
 osrm-posadas     Up X seconds    0.0.0.0:5000->5000/tcp
 ```
 
-> Los servicios tienen `restart: unless-stopped`, por lo que se reanudan automáticamente al reiniciar el sistema (siempre que Docker esté corriendo).
-
-> **Nota sobre Rancher Desktop:** VROOM usa `network_mode: host` en el `docker-compose.yml` para comunicarse con OSRM. Esto funciona correctamente con Rancher Desktop en modo `dockerd (moby)` sobre WSL2.
+> El servicio tiene `restart: unless-stopped`, por lo que se reanuda automáticamente al reiniciar el sistema (siempre que Docker esté corriendo).
 
 ---
 
@@ -506,8 +502,8 @@ cd ~/app_repartir
 ### Qué hace start.sh
 
 1. Verifica que Docker, Python y ngrok están instalados y el venv existe.
-2. Arranca los contenedores OSRM (puerto 5000) y VROOM (puerto 3000).
-3. Espera a que OSRM y VROOM respondan correctamente.
+2. Arranca el contenedor OSRM (puerto 5000).
+3. Espera a que OSRM responda correctamente.
 4. Lanza el backend FastAPI en background (puerto 8000), con el venv activado.
 5. Lanza ngrok y muestra la URL pública.
 6. Muestra un resumen con todos los servicios y URLs.
@@ -530,21 +526,17 @@ Ejecuta en terminal Linux o WSL2 para confirmar que todo funciona:
 ```bash
 # 1. Backend FastAPI
 curl http://localhost:8000/health
-# → {"status":"ok","version":"2.0.0"}
+# → {"status":"ok","version":"1.0.0"}
 
 # 2. OSRM (motor de rutas)
 curl -s "http://localhost:5000/route/v1/driving/-5.105,37.802;-5.110,37.800?overview=false" | grep '"code"'
 # → "code":"Ok"
 
-# 3. VROOM (optimizador TSP)
-curl -o /dev/null -s -w "%{http_code}\n" http://localhost:3000/health
-# → 200
-
-# 4. ngrok (túnel público)
+# 3. ngrok (túnel público)
 curl -s http://127.0.0.1:4040/api/tunnels | grep public_url
 # → "public_url":"https://xxxx.ngrok-free.app"
 
-# 5. Swagger UI — abre en el navegador:
+# 4. Swagger UI — abre en el navegador:
 #    http://localhost:8000/docs
 ```
 
@@ -554,7 +546,6 @@ curl -s http://127.0.0.1:4040/api/tunnels | grep public_url
 |--------|----------|
 | 8000 | Backend FastAPI |
 | 5000 | OSRM (motor de rutas) |
-| 3000 | VROOM (optimizador TSP) |
 | 4040 | Panel de ngrok |
 
 ---
@@ -731,15 +722,6 @@ ngrok config add-authtoken <tu-token>
 curl -s http://127.0.0.1:4040/api/tunnels | grep public_url
 ```
 
-### VROOM responde 500 en optimizaciones
-
-VROOM necesita comunicarse con OSRM. Verifica que ambos contenedores están activos y VROOM puede ver OSRM:
-
-```bash
-docker ps                              # ambos deben aparecer como "Up"
-docker logs vroom-posadas --tail 30    # busca errores de conexión a OSRM
-```
-
 ### La caché de geocodificación está corrupta
 
 ```bash
@@ -774,4 +756,4 @@ Requisitos:
 
 ---
 
-*Guía actualizada para Repartidor App v2.0.0 — Marzo 2026*
+*Guía actualizada para Repartidor App v1.0.0 — Marzo 2026*

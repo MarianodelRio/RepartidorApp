@@ -146,7 +146,7 @@ static const String baseUrl = 'https://xxxx-xxx.ngrok-free.app';
 Punto de entrada de la aplicación FastAPI.
 
 **Qué hace:**
-- Inicializa la app con título "Posadas Route Planner" v2.2.0
+- Inicializa la app con título "Posadas Route Planner" v1.0.0
 - Configura CORS abierto (`allow_origins=["*"]`) para cualquier cliente
 - Monta directorio `/static` para archivos estáticos
 - Registra los dos routers: `optimize.router` en `/api` y `validation.router` en `/api`
@@ -154,7 +154,7 @@ Punto de entrada de la aplicación FastAPI.
 
 **GET /health**
 - Sin parámetros
-- Respuesta: `{"status": "ok", "version": "2.2.0"}`
+- Respuesta: `{"status": "ok", "version": "1.0.0"}`
 - Uso: comprobación de vida del servidor desde la app
 
 **GET /api/services/status**

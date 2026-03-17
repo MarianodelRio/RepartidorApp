@@ -43,6 +43,6 @@ node_modules/
 # others
 *.sqlite3
 
-# files for test 
+# data
 data_input/
-
+app/data/
