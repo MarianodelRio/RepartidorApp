@@ -73,6 +73,28 @@ class PersistenceService {
     await saveSession(session);
   }
 
+  /// Devuelve una parada completada al estado pendiente y recalcula el puntero.
+  static Future<void> resetStopStatus(
+    DeliverySession session,
+    int stopIndex,
+  ) async {
+    if (stopIndex < 0 || stopIndex >= session.stops.length) return;
+
+    session.stops[stopIndex].status = StopStatus.pending;
+    session.stops[stopIndex].note = null;
+    session.stops[stopIndex].completedAt = null;
+
+    // Apuntar al primer pendiente (puede ser la parada recién restaurada)
+    for (int i = 1; i < session.stops.length; i++) {
+      if (!session.stops[i].isOrigin && session.stops[i].isPending) {
+        session.currentStopIndex = i;
+        break;
+      }
+    }
+
+    await saveSession(session);
+  }
+
   /// Crea una nueva sesión a partir de un OptimizeResponse.
   static DeliverySession createSession(OptimizeResponse response) {
     final id =

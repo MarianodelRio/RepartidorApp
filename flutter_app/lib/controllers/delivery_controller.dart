@@ -213,6 +213,24 @@ class DeliveryController extends ChangeNotifier {
     }
   }
 
+  /// Devuelve una parada completada al estado pendiente.
+  ///
+  /// Recalcula [currentStopIndex] al primer pendiente, limpia el segmento
+  /// y lanza la carga del nuevo tramo de forma asíncrona.
+  Future<void> unmarkStop(int sessionIndex) async {
+    if (sessionIndex >= _session.stops.length) return;
+
+    await PersistenceService.resetStopStatus(_session, sessionIndex);
+
+    if (_disposed) return;
+    _segmentGeometry = null;
+    _notify();
+
+    if (_session.currentStop != null) {
+      fetchSegment(); // fire-and-forget
+    }
+  }
+
   /// Guarda la sesión en Hive.
   /// Usado por el observer de ciclo de vida y el diálogo de salida.
   Future<void> save() async {

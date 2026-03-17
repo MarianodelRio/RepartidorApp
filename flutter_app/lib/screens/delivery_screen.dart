@@ -572,7 +572,7 @@ class _DeliveryScreenState extends State<DeliveryScreen>
   // ═══════════════════════════════════════════
 
   void _showCompletedStops() {
-    final completed =
+    final completedLocal =
         _ctrl.session.stops.where((s) => s.isCompleted).toList();
 
     showModalBottomSheet(
@@ -581,63 +581,73 @@ class _DeliveryScreenState extends State<DeliveryScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       isScrollControlled: true,
-      builder: (ctx) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.5,
-        maxChildSize: 0.85,
-        minChildSize: 0.3,
-        builder: (ctx, scrollController) => Column(
-          children: [
-            // Handle
-            Container(
-              margin: const EdgeInsets.only(top: 10, bottom: 6),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.border,
-                borderRadius: BorderRadius.circular(2),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.5,
+          maxChildSize: 0.85,
+          minChildSize: 0.3,
+          builder: (ctx, scrollController) => Column(
+            children: [
+              // Handle
+              Container(
+                margin: const EdgeInsets.only(top: 10, bottom: 6),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  const Icon(Icons.checklist, color: AppColors.primary),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Completadas (${completed.length})',
-                    style: const TextStyle(
-                        fontSize: 17, fontWeight: FontWeight.w700),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            Expanded(
-              child: completed.isEmpty
-                  ? const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.check_circle_outline,
-                              size: 40, color: AppColors.textTertiary),
-                          SizedBox(height: 12),
-                          Text('Ninguna parada completada aún',
-                              style: TextStyle(color: AppColors.textTertiary)),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      controller: scrollController,
-                      itemCount: completed.length,
-                      padding:
-                          const EdgeInsets.symmetric(vertical: 8),
-                      itemBuilder: (ctx, i) =>
-                          _CompletedTile(stop: completed[i]),
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.checklist, color: AppColors.primary),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Completadas (${completedLocal.length})',
+                      style: const TextStyle(
+                          fontSize: 17, fontWeight: FontWeight.w700),
                     ),
-            ),
-          ],
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: completedLocal.isEmpty
+                    ? const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check_circle_outline,
+                                size: 40, color: AppColors.textTertiary),
+                            SizedBox(height: 12),
+                            Text('Ninguna parada completada aún',
+                                style:
+                                    TextStyle(color: AppColors.textTertiary)),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: scrollController,
+                        itemCount: completedLocal.length,
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        itemBuilder: (ctx, i) => _CompletedTile(
+                          stop: completedLocal[i],
+                          onUnmark: () async {
+                            final stop = completedLocal[i];
+                            final sessionIdx =
+                                _ctrl.session.stops.indexOf(stop);
+                            setSheetState(() => completedLocal.removeAt(i));
+                            await _ctrl.unmarkStop(sessionIdx);
+                          },
+                        ),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -733,6 +743,11 @@ class _DeliveryScreenState extends State<DeliveryScreen>
                               setState(() => _selectedStopIndex = null),
                           onMarkStatus: (status) =>
                               _onMarkStopByIndex(_selectedStopIndex!, status),
+                          onUnmark: () {
+                            final idx = _selectedStopIndex!;
+                            setState(() => _selectedStopIndex = null);
+                            _ctrl.unmarkStop(idx);
+                          },
                           onRepin: () {
                             final idx = _selectedStopIndex!;
                             final stop = _ctrl.session.stops[idx];
@@ -1123,8 +1138,9 @@ class _NextStopCard extends StatelessWidget {
 /// Tile de una parada completada en el bottom sheet.
 class _CompletedTile extends StatelessWidget {
   final DeliveryStop stop;
+  final VoidCallback onUnmark;
 
-  const _CompletedTile({required this.stop});
+  const _CompletedTile({required this.stop, required this.onUnmark});
 
   @override
   Widget build(BuildContext context) {
@@ -1186,7 +1202,11 @@ class _CompletedTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '${stop.status.emoji} ${stop.status.label}',
+              stop.completedAt != null
+                  ? '${stop.status.emoji} ${stop.status.label}  ·  '
+                    '${stop.completedAt!.hour.toString().padLeft(2, '0')}:'
+                    '${stop.completedAt!.minute.toString().padLeft(2, '0')}'
+                  : '${stop.status.emoji} ${stop.status.label}',
               style: TextStyle(
                   fontSize: 11,
                   color: statusColor,
@@ -1203,14 +1223,14 @@ class _CompletedTile extends StatelessWidget {
               ),
           ],
         ),
-        trailing: stop.completedAt != null
-            ? Text(
-                '${stop.completedAt!.hour.toString().padLeft(2, '0')}:'
-                '${stop.completedAt!.minute.toString().padLeft(2, '0')}',
-                style: const TextStyle(
-                    fontSize: 11, color: AppColors.textTertiary),
-              )
-            : null,
+        trailing: IconButton(
+          onPressed: onUnmark,
+          icon: const Icon(Icons.undo, size: 18),
+          color: AppColors.error,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          tooltip: 'Devolver a pendiente',
+        ),
       ),
     );
   }
@@ -1236,6 +1256,7 @@ class _StopCallout extends StatelessWidget {
   final DeliveryStop stop;
   final VoidCallback onClose;
   final void Function(StopStatus) onMarkStatus;
+  final VoidCallback onUnmark;
   final VoidCallback onRepin;
   final VoidCallback onNavigate;
 
@@ -1243,6 +1264,7 @@ class _StopCallout extends StatelessWidget {
     required this.stop,
     required this.onClose,
     required this.onMarkStatus,
+    required this.onUnmark,
     required this.onRepin,
     required this.onNavigate,
   });
@@ -1438,6 +1460,13 @@ class _StopCallout extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             _ActionIconButton(
+              icon: Icons.undo,
+              color: AppColors.error,
+              tooltip: 'Devolver a pendiente',
+              onTap: onUnmark,
+            ),
+            const SizedBox(width: 4),
+            _ActionIconButton(
               icon: Icons.edit_location_alt,
               color: AppColors.primary,
               tooltip: 'Mover ubicación',
@@ -1455,6 +1484,13 @@ class _StopCallout extends StatelessWidget {
       StopStatus.delivered => Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
+            _ActionIconButton(
+              icon: Icons.undo,
+              color: AppColors.error,
+              tooltip: 'Devolver a pendiente',
+              onTap: onUnmark,
+            ),
+            const SizedBox(width: 4),
             _ActionIconButton(
               icon: Icons.edit_location_alt,
               color: AppColors.primary,
