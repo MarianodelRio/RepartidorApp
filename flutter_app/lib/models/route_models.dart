@@ -5,36 +5,46 @@ library;
 //  Paquete individual (cliente + nota)
 // ═══════════════════════════════════════════
 
-/// Un paquete individual dentro de una parada: cliente + nota + agencia.
+/// Un paquete individual dentro de una parada: cliente + nota + agencia + tipo.
 class Package {
   final String clientName;
   final String nota;
   final String agencia; // empresa de reparto (MRW, SEUR, etc.) — solo informativo
+  final String tipo;    // 'Express' o 'Normal'
 
-  const Package({this.clientName = '', this.nota = '', this.agencia = ''});
+  const Package({
+    this.clientName = '',
+    this.nota = '',
+    this.agencia = '',
+    this.tipo = 'Normal',
+  });
 
   factory Package.fromJson(Map<String, dynamic> json) => Package(
         clientName: (json['client_name'] as String?) ?? '',
         nota: (json['nota'] as String?) ?? '',
         agencia: (json['agencia'] as String?) ?? '',
+        tipo: (json['tipo'] as String?) ?? 'Normal',
       );
 
   Map<String, dynamic> toJson() => {
         'client_name': clientName,
         'nota': nota,
         'agencia': agencia,
+        'tipo': tipo,
       };
 
   Map<String, dynamic> toMap() => {
         'client_name': clientName,
         'nota': nota,
         'agencia': agencia,
+        'tipo': tipo,
       };
 
   factory Package.fromMap(Map<dynamic, dynamic> map) => Package(
         clientName: (map['client_name'] as String?) ?? '',
         nota: (map['nota'] as String?) ?? '',
         agencia: (map['agencia'] as String?) ?? '',
+        tipo: (map['tipo'] as String?) ?? 'Normal',
       );
 }
 
@@ -49,11 +59,12 @@ class StopInfo {
   final String clientName;
   final List<String> clientNames;
   final List<Package> packages;
-  final String type; // 'origin' | 'stop'
+  final String type;  // 'origin' | 'stop'
   final double? lat;
   final double? lon;
   final double distanceMeters;
   final int packageCount;
+  final String tipo;  // 'Express' o 'Normal'
 
   const StopInfo({
     required this.order,
@@ -68,9 +79,11 @@ class StopInfo {
     this.lon,
     required this.distanceMeters,
     this.packageCount = 1,
+    this.tipo = 'Normal',
   });
 
   bool get isOrigin => type == 'origin';
+  bool get isExpress => tipo == 'Express';
 
   /// ¿Hay más de un paquete en esta parada?
   bool get hasMultiplePackages => packageCount > 1;
@@ -98,6 +111,7 @@ class StopInfo {
       lon: json['lon'] != null ? (json['lon'] as num).toDouble() : null,
       distanceMeters: (json['distance_meters'] as num).toDouble(),
       packageCount: (json['package_count'] as int?) ?? 1,
+      tipo: (json['tipo'] as String?) ?? 'Normal',
     );
   }
 }

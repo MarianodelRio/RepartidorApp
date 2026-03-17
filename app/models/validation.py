@@ -14,6 +14,7 @@ class CsvRow(BaseModel):
     nota: str = ""
     agencia: str = ""  # empresa de reparto (MRW, SEUR, etc.) — solo informativo
     alias: str = ""    # nombre de negocio/lugar (activa Google Places si se provee)
+    tipo: str = "Normal"  # tipo de entrega: 'Express' o 'Normal'
 
 
 class StartRequest(BaseModel):
@@ -38,6 +39,7 @@ class GeocodedStop(BaseModel):
     lat: float
     lon: float
     confidence: str  # EXACT_ADDRESS | GOOD | EXACT_PLACE | OVERRIDE
+    tipo: str = "Normal"  # 'Express' si algún paquete es Express, si no 'Normal'
 
 
 class FailedStop(BaseModel):
@@ -46,6 +48,7 @@ class FailedStop(BaseModel):
     client_names: list[str]  # retrocompat — derivado de packages
     packages: list[Package]
     package_count: int
+    tipo: str = "Normal"  # 'Express' si algún paquete es Express, si no 'Normal'
 
 
 class StartResponse(BaseModel):

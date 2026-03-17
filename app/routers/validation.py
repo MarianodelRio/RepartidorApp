@@ -46,7 +46,8 @@ def validation_start(req: StartRequest):
             groups[key] = {"address": full_address, "packages": [], "alias": ""}
         if not groups[key]["alias"] and row.alias.strip():
             groups[key]["alias"] = row.alias.strip()
-        groups[key]["packages"].append(Package(client_name=row.cliente, nota=row.nota, agencia=row.agencia))
+        tipo = "Express" if row.tipo.strip().lower() == "express" else "Normal"
+        groups[key]["packages"].append(Package(client_name=row.cliente, nota=row.nota, agencia=row.agencia, tipo=tipo))
 
     # 2. Geocodificar cada dirección única
     coord_map: dict[str, tuple[tuple | None, str]] = {}
@@ -67,6 +68,7 @@ def validation_start(req: StartRequest):
         primary = next((p.client_name for p in packages if p.client_name), "")
         coord, confidence = coord_map.get(addr, (None, "FAILED"))
         alias = group.get("alias", "")
+        stop_tipo = "Express" if any(p.tipo == "Express" for p in packages) else "Normal"
 
         if coord:
             lat, lon = coord
@@ -80,6 +82,7 @@ def validation_start(req: StartRequest):
                 lat=lat,
                 lon=lon,
                 confidence=confidence,
+                tipo=stop_tipo,
             ))
         else:
             failed.append(FailedStop(
@@ -88,6 +91,7 @@ def validation_start(req: StartRequest):
                 client_names=client_names,
                 packages=packages,
                 package_count=package_count,
+                tipo=stop_tipo,
             ))
 
     return StartResponse(

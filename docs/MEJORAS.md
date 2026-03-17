@@ -124,7 +124,7 @@ Sin auth, cualquiera con la URL puede agotar la cuota de Google o inyectar datos
 | Item | Descripción |
 |------|-------------|
 | **Agente CSV** | Dado un fichero (Excel, PDF, imagen de albarán...), un agente LLM lo transforma automáticamente al formato CSV de la app. *Diseño y prompt pendiente — solo apuntado* |
-| **Dos repartidores** | Dividir la ruta optimizada entre dos conductores de forma inteligente. *El diseño de particionado y la UI se definirán aparte — solo apuntado* |
+| **Dos repartidores** | **Implementado.** Columna `tipo` en CSV (Express/Normal), selector 1/2 rutas en `ImportScreen`, `RouteSelectionScreen` con stats de cada ruta, llamadas paralelas al backend. Pendiente de mejoras según feedback del repartidor. |
 | Pinear versiones Python | `pip freeze > requirements.lock`. Usar ese fichero en la VM para reproducibilidad exacta |
 | Retry en llamadas HTTP | `tenacity`: 3 reintentos con backoff 1s/2s/4s en llamadas a Google API y OSRM. Cubre el 99% de fallos transitorios de red |
 

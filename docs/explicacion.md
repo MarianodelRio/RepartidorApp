@@ -107,7 +107,7 @@ static const String baseUrl = 'https://xxxx-xxx.ngrok-free.app';
 ```
 [App Flutter]
     │
-    ├─ Selecciona CSV (cliente, dirección, ciudad [, nota] [, alias])
+    ├─ Selecciona CSV (cliente, direccion, ciudad [, nota] [, agencia] [, tipo] [, alias])
     │       └─ CsvService.parse() → CsvData
     │
     ├─ POST /api/validation/start
@@ -122,14 +122,16 @@ static const String baseUrl = 'https://xxxx-xxx.ngrok-free.app';
     ├─ ValidationReviewScreen: el usuario revisa paradas, puede re-pinanr cualquier marcador
     │       └─ POST /api/validation/override → guarda pin manual en caché permanente
     │
-    ├─ POST /api/optimize
+    ├─ [Modo 1 ruta] POST /api/optimize
+    │   [Modo 2 rutas] 2 llamadas paralelas POST /api/optimize (Express y Normal por separado)
     │       └─ Backend recibe coords ya resueltas (no re-geocodifica)
     │          → LKH3 resuelve el TSP (orden óptimo de visita)
     │          → Post-proceso: _reorder_no_backtrack agrupa paradas "de paso" (desvío ≤ 20 m)
     │          → OSRM calcula geometría de la ruta completa
     │          Devuelve: lista ordenada de paradas + polilínea GeoJSON
     │
-    ├─ ResultScreen: mapa con ruta, estadísticas, orden de carga LIFO
+    ├─ [Modo 1 ruta] ResultScreen: mapa con ruta, estadísticas, orden de carga LIFO
+    │   [Modo 2 rutas] RouteSelectionScreen → ResultScreen(routeType)
     │
     └─ DeliveryScreen: navegación GPS en tiempo real
             ├─ GET /api/route-segment → tramo OSRM GPS→próxima parada (refresco cada 10 s)
@@ -301,16 +303,17 @@ Valida y geocodifica direcciones antes de la optimización. No llama a OSRM.
 
 **Modelos propios:**
 
-`CsvRow`: `cliente: str`, `direccion: str`, `ciudad: str`, `nota: str`, `alias: str`
+`CsvRow`: `cliente: str`, `direccion: str`, `ciudad: str`, `nota: str`, `agencia: str`, `tipo: str` (default `"Normal"`), `alias: str`
 
 `StartRequest`: `rows: list[CsvRow]` — filas crudas del CSV
 
 `GeocodedStop` — parada geocodificada con éxito:
 - `address`, `alias`, `client_name`, `all_client_names`, `packages`, `package_count`, `lat`, `lon`
 - `confidence: str` — nivel de confianza: `EXACT_ADDRESS | GOOD | EXACT_PLACE | OVERRIDE`
+- `tipo: str` — `"Express"` si algún paquete es Express, si no `"Normal"`
 
 `FailedStop` — parada que no pudo geocodificarse:
-- `address`, `alias`, `client_names`, `packages`, `package_count`
+- `address`, `alias`, `client_names`, `packages`, `package_count`, `tipo: str`
 
 `StartResponse`:
 - `geocoded: list[GeocodedStop]`, `failed: list[FailedStop]`
@@ -546,12 +549,13 @@ Modelos para el estado de entrega en curso. Estos se persisten en Hive.
 - Extension: `.label` → texto en español; `.emoji` → emoji
 
 **`DeliveryStop`** — versión mutable de StopInfo con estado de entrega
-- Campos: todos los de StopInfo + `status` (mutable), `note?` (mutable), `completedAt?` (mutable)
+- Campos: todos los de StopInfo + `tipo: String` (default `'Normal'`), `status` (mutable), `note?` (mutable), `completedAt?` (mutable)
 - Getters: `isOrigin`, `isCompleted`, `isPending`, `hasMultiplePackages`, `displayName`
 - `toMap()` / `fromMap()` para serialización en Hive
 
 **`DeliverySession`** — sesión de reparto completa (reanudable)
 - `id` (único), `createdAt`, `stops`, `geometry`, `totalStops`, `totalPackages`, `totalDistanceDisplay`, `computingTimeMs`
+- `routeType: String?` — `'Express'`, `'Normal'` o `null` (modo 1 ruta)
 - `currentStopIndex` (mutable): índice de la parada actual
 - Getters: `currentStop`, `pendingCount`, `completedCount`, `deliveredCount`, `absentCount`, `incidentCount`, `isFinished`, `progress` (0.0–1.0)
 - `advanceToNext()`: avanza `currentStopIndex` a la siguiente parada pendiente
@@ -563,8 +567,10 @@ Modelos para el estado de entrega en curso. Estos se persisten en Hive.
 
 Contenedor simple para los datos del CSV cargado.
 
-**`CsvData`**: `clientes`, `direcciones`, `ciudades`, `notas`, `aliases` (todas `List<String>`, una por fila del CSV)
-- `totalPackages` getter → `direcciones.length`
+**`CsvRow`**: `cliente`, `direccion`, `ciudad`, `nota`, `agencia`, `tipo` (default `'Normal'`), `alias` — todos `String`
+
+**`CsvData`**: `rows: List<CsvRow>`
+- `totalPackages` getter → `rows.length`
 - `isEmpty` / `isNotEmpty`
 
 ---
@@ -595,7 +601,7 @@ Capa de comunicación HTTP con el backend. Todos los métodos son estáticos.
 - Devuelve el GeoJSON geometry o `null` si falla
 
 `validationStart({csvData: CsvData}) → Future<ValidationResult>`
-- POST `/api/validation/start` con JSON body `{"rows": [{cliente, direccion, ciudad, nota, alias}, ...]}`
+- POST `/api/validation/start` con JSON body `{"rows": [{cliente, direccion, ciudad, nota, agencia, tipo, alias}, ...]}`
 - Timeout: 10 minutos
 - En error HTTP: lanza `ApiException`
 
@@ -621,10 +627,12 @@ Parsea archivos CSV en memoria, sin depender del backend.
    - `dirección/direccion/address/domicilio/calle` → columna de dirección (obligatoria)
    - `ciudad/city/localidad/municipio/población` → columna de ciudad
    - `nota/notas/note/observacion` → columna de nota (opcional)
+   - `agencia/transportista/empresa` → columna de agencia (opcional)
+   - `tipo/type/prioridad` → columna de tipo (opcional; `"express"` → `"Express"`, resto → `"Normal"`)
    - `alias/negocio/lugar/establecimiento` → columna de alias (opcional; activa Google Places)
 4. Para cada fila: extrae campos usando `_parseCsvLine()` (maneja campos con comillas y comas internas)
 5. Lanza `FormatException` si no encuentra la columna de dirección
-6. Devuelve `CsvData` con las cinco listas
+6. Devuelve `CsvData` con `rows: List<CsvRow>` (7 campos por fila)
 
 ---
 
@@ -697,6 +705,7 @@ Pantalla principal de importación y configuración de ruta. Es el hub central d
 - Tarjeta "Continuar Ruta" si hay sesión activa guardada en Hive
 - Área de carga de CSV (file picker)
 - Resumen del CSV cargado (paquetes totales)
+- Selector "1 ruta / 2 rutas" — visible tras cargar CSV. "2 rutas" deshabilitado si no hay paradas Express en el CSV
 - Botón "Validar Direcciones" (activo tras cargar CSV)
 - Diálogo de progreso durante validación ("Geocodificando… puede tardar varios minutos" + contador de tiempo)
 - Banner de error
@@ -711,11 +720,17 @@ Pantalla principal de importación y configuración de ruta. Es el hub central d
 3. Llama a `ApiService.validationStart(csvData)`
 4. En éxito: cierra diálogo y navega a `ValidationReviewScreen`
 
+`_calculateRoute()` (desde `ValidationReviewScreen`):
+- **Modo 1 ruta**: llama a `_optimizeStops(allStops)` → navega a `ResultScreen`
+- **Modo 2 rutas**: llama a `calculateTwoRoutes()` (2 llamadas paralelas con `Future.wait`) → navega a `RouteSelectionScreen`
+
 `_ValidationProgressDialog`: diálogo no cancelable con spinner, "Geocodificando… puede tardar varios minutos", barra indeterminada y contador de tiempo transcurrido.
 
 **Navegación:**
 - → `DeliveryScreen` (si retoma sesión existente)
 - → `ValidationReviewScreen` (tras validar CSV)
+- → `ResultScreen` (modo 1 ruta, tras calcular)
+- → `RouteSelectionScreen` (modo 2 rutas, tras calcular)
 
 ---
 
@@ -764,21 +779,43 @@ Pantalla informativa de orden de carga LIFO (Last-In-First-Out) para la furgonet
 
 ---
 
+### 3.16 `screens/route_selection_screen.dart`
+
+Pantalla intermedia del modo 2 rutas. Muestra las dos rutas calculadas para que el repartidor elija cuál abrir.
+
+**Props:** `expressRoute: OptimizeResponse`, `normalRoute: OptimizeResponse`
+
+**Qué muestra:** Dos tarjetas (`_RouteCard`):
+- **Express** (color `AppColors.warning`): paradas, paquetes, distancia
+- **Normal** (color `AppColors.primary`): paradas, paquetes, distancia
+
+**Interacción:** Tap en una tarjeta → navega a `ResultScreen(response, routeType: 'Express'/'Normal')`
+
+**Navegación:**
+- ← `ImportScreen` (atrás)
+- → `ResultScreen` (al seleccionar ruta)
+
+---
+
 ### 3.17 `screens/result_screen.dart`
 
 Visualización de la ruta optimizada antes de iniciar el reparto.
 
+**Props:** `response: OptimizeResponse`, `routeType: String?` (null = modo 1 ruta)
+
 **Qué muestra:**
 - `StatsBanner` con: paradas totales, paquetes totales (si hay agrupaciones), distancia total, tiempo de cómputo
 - Mapa interactivo (35% de altura) con `RouteMap` en modo preview (geometría completa)
-- Lista de paradas con `StopsList`
+- Lista de paradas con `StopsList` (badge Express en paradas Express)
 - Botón "Iniciar Reparto"
 
 **Interacción:**
 - Tap en una parada de la lista → `_mapKey.currentState?.flyToStop()` centra el mapa en esa parada
 - Tap en un marcador del mapa → selecciona esa parada en la lista
 - Botón "Ordenar Paquetes (LIFO)" → navega a `LoadingOrderScreen`
-- Botón "Iniciar Reparto" → llama a `PersistenceService.createSession()` y `saveSession()`, navega a `DeliveryScreen`
+- Botón "Iniciar Reparto" → llama a `PersistenceService.createSession(routeType: routeType)` y `saveSession()`, navega a `DeliveryScreen`
+
+**AppBar:** "Ruta Express" / "Ruta Normal" / "Ruta Optimizada" según `routeType`
 
 **Estado:** `_highlightedStop: int?` — índice de parada seleccionada (sincronizado entre mapa y lista)
 
@@ -792,8 +829,10 @@ Visualización de la ruta optimizada antes de iniciar el reparto.
 
 Pantalla de ejecución del reparto en tiempo real. La más compleja de la app.
 
+**AppBar:** "Reparto Express" / "Reparto Normal" / "En Reparto" según `session.routeType`
+
 **Qué muestra:**
-- AppBar: "En Reparto" + badge con conteo de completadas
+- AppBar con título dinámico + badge con conteo de completadas
 - Cabecera de progreso: "X de Y entregas" con chips (✅ entregadas, 🚫 ausentes, ⚠️ incidencias) y barra de progreso
 - Mapa en modo delivery (tramo GPS → próxima parada, no la ruta completa)
 - Tarjeta "Siguiente Parada" (`_NextStopCard`): número, alias (si existe), dirección, lista de paquetes, botón de navegación externa (Google Maps), botón de re-pin (naranja, `edit_location_alt`)

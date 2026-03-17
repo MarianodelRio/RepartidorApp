@@ -175,6 +175,36 @@ void main() {
       expect(restored.note, isNull);
     });
 
+    test('tipo "Express" se preserva en round-trip', () {
+      final stop = DeliveryStop(
+        order: 1,
+        address: 'Calle Test 1',
+        label: 'Stop 1',
+        type: 'stop',
+        lat: 37.80,
+        lon: -5.10,
+        distanceMeters: 100.0,
+        tipo: 'Express',
+      );
+      final restored = DeliveryStop.fromMap(stop.toMap());
+      expect(restored.tipo, 'Express');
+    });
+
+    test('tipo "Normal" se preserva en round-trip', () {
+      final stop = DeliveryStop(
+        order: 1,
+        address: 'Calle Test 1',
+        label: 'Stop 1',
+        type: 'stop',
+        lat: 37.80,
+        lon: -5.10,
+        distanceMeters: 100.0,
+        tipo: 'Normal',
+      );
+      final restored = DeliveryStop.fromMap(stop.toMap());
+      expect(restored.tipo, 'Normal');
+    });
+
     test('todos los StopStatus se serializan correctamente', () {
       for (final status in StopStatus.values) {
         final stop = _makeStop(status: status);
@@ -366,6 +396,27 @@ void main() {
       final restored = DeliverySession.fromMap(session.toMap());
       expect(restored.stops[1].status, StopStatus.delivered);
       expect(restored.stops[2].status, StopStatus.absent);
+    });
+
+    test('routeType se preserva en round-trip', () {
+      final session = DeliverySession(
+        id: 'test-session-2',
+        createdAt: DateTime(2026, 3, 1, 10, 0, 0),
+        stops: [_makeOrigin(), _makeStop(order: 1)],
+        totalStops: 1,
+        totalPackages: 1,
+        totalDistanceDisplay: '1.0 km',
+        computingTimeMs: 5.0,
+        routeType: 'Express',
+      );
+      final restored = DeliverySession.fromMap(session.toMap());
+      expect(restored.routeType, 'Express');
+    });
+
+    test('routeType null se preserva en round-trip', () {
+      final session = _makeSession([_makeOrigin(), _makeStop(order: 1)]);
+      final restored = DeliverySession.fromMap(session.toMap());
+      expect(restored.routeType, isNull);
     });
   });
 }

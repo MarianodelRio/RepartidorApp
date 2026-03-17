@@ -6,7 +6,7 @@ import '../models/csv_data.dart';
 /// Servicio para parsear archivos CSV de paradas.
 ///
 /// Formato esperado:
-///   cliente,direccion,ciudad[,nota][,agencia][,alias]
+///   cliente,direccion,ciudad,nota,agencia,alias,tipo
 ///
 /// Cada fila = 1 paquete.
 class CsvService {
@@ -41,6 +41,8 @@ class CsvService {
       final dir = _safeGet(fields, colMap['direccion']!).trim();
       if (dir.isEmpty) continue;
 
+      final rawTipo = _safeGet(fields, colMap['tipo']!).trim();
+      final tipo = rawTipo.toLowerCase() == 'express' ? 'Express' : 'Normal';
       rows.add(CsvRow(
         cliente: _safeGet(fields, colMap['cliente']!).trim(),
         direccion: dir,
@@ -48,16 +50,17 @@ class CsvService {
         nota: _safeGet(fields, colMap['nota']!).trim(),
         agencia: _safeGet(fields, colMap['agencia']!).trim(),
         alias: _safeGet(fields, colMap['alias']!).trim(),
+        tipo: tipo,
       ));
     }
 
     return CsvData(rows: rows);
   }
 
-  /// Detecta las columnas cliente, direccion, ciudad, nota, agencia, alias por nombre.
+  /// Detecta las columnas cliente, direccion, ciudad, nota, agencia, alias, tipo por nombre.
   static Map<String, int> _detectColumns(List<String> headers) {
     int clienteIdx = -1, direccionIdx = -1, ciudadIdx = -1, notaIdx = -1,
-        agenciaIdx = -1, aliasIdx = -1;
+        agenciaIdx = -1, aliasIdx = -1, tipoIdx = -1;
 
     for (int i = 0; i < headers.length; i++) {
       final h = headers[i].toLowerCase().trim();
@@ -92,6 +95,9 @@ class CsvService {
            h.contains('alias'))) {
         aliasIdx = i;
       }
+      if (tipoIdx < 0 && (h == 'tipo' || h == 'type' || h == 'prioridad')) {
+        tipoIdx = i;
+      }
     }
 
     return {
@@ -101,6 +107,7 @@ class CsvService {
       'nota': notaIdx,
       'agencia': agenciaIdx,
       'alias': aliasIdx,
+      'tipo': tipoIdx,
     };
   }
 

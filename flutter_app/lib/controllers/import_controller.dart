@@ -179,11 +179,17 @@ class ImportController extends ChangeNotifier {
   String _manualAddress = '';
   bool _isCalculating = false;
   String? _routeError;
+  int _numRoutes = 1;
 
   OriginMode get originMode => _originMode;
   String get manualAddress => _manualAddress;
   bool get isCalculating => _isCalculating;
   String? get routeError => _routeError;
+  int get numRoutes => _numRoutes;
+
+  /// True si hay al menos una parada geocodificada con tipo Express.
+  bool get hasExpressStops =>
+      _reviewResult?.geocoded.any((s) => s.tipo == 'Express') ?? false;
 
   void setOriginMode(OriginMode mode) {
     _originMode = mode;
@@ -195,13 +201,63 @@ class ImportController extends ChangeNotifier {
     _notify();
   }
 
+  void setNumRoutes(int n) {
+    _numRoutes = n;
+    _notify();
+  }
+
   void clearRouteError() {
     _routeError = null;
     _notify();
   }
 
+  /// Resuelve el origen y devuelve la dirección de inicio (null = usar la del backend).
+  Future<String?> _resolveStartAddress() async {
+    if (_originMode == OriginMode.manual && _manualAddress.isNotEmpty) {
+      return _manualAddress;
+    }
+    if (_originMode == OriginMode.gps) {
+      final pos = await LocationService.getCurrentPosition();
+      return '${pos.latitude}, ${pos.longitude}';
+    }
+    return null;
+  }
+
+  /// Construye el payload de optimize para un conjunto de paradas.
+  Future<OptimizeResponse> _optimizeStops(
+    List<GeocodedStop> stops,
+    String? startAddress,
+  ) async {
+    final addresses = <String>[];
+    final clientNames = <String>[];
+    final coords = <List<double>?>[];
+    final packageCounts = <int>[];
+    final packagesPerStop = <List<Package>>[];
+    final aliases = <String>[];
+
+    for (final st in stops) {
+      addresses.add(st.address);
+      clientNames.add(st.clientName);
+      coords.add([st.lat, st.lon]);
+      packageCounts.add(st.packageCount);
+      packagesPerStop.add(st.packages);
+      aliases.add(st.alias);
+    }
+
+    return ApiService.optimize(
+      addresses: addresses,
+      clientNames: clientNames,
+      startAddress: startAddress,
+      coords: coords,
+      packageCounts: packageCounts,
+      packagesPerStop: packagesPerStop,
+      aliases: aliases,
+    );
+  }
+
   /// Resuelve el origen, construye el payload y llama a [ApiService.optimize].
   ///
+  /// Modo 1 ruta: optimiza todas las paradas geocodificadas.
   /// - Actualiza [isCalculating] y [routeError] internamente.
   /// - Lanza [LocationException] si el GPS falla.
   /// - Lanza [ApiException] si el servidor responde con error.
@@ -214,53 +270,71 @@ class ImportController extends ChangeNotifier {
     _notify();
 
     try {
-      // Resolver dirección de inicio según modo de origen
-      String? startAddress;
-      if (_originMode == OriginMode.manual && _manualAddress.isNotEmpty) {
-        startAddress = _manualAddress;
-      } else if (_originMode == OriginMode.gps) {
-        final pos = await LocationService.getCurrentPosition();
-        startAddress = '${pos.latitude}, ${pos.longitude}';
-      }
-
+      final startAddress = await _resolveStartAddress();
       if (_disposed) throw Exception('Cancelado');
 
-      // Construir payload desde las paradas geocodificadas
       final geocoded = _reviewResult!.geocoded;
       if (geocoded.isEmpty) {
         throw Exception('No hay paradas válidas para calcular la ruta');
       }
 
-      final optimizeAddresses = <String>[];
-      final optimizeClientNames = <String>[];
-      final preResolvedCoords = <List<double>?>[];
-      final packageCounts = <int>[];
-      final packagesPerStop = <List<Package>>[];
-      final aliases = <String>[];
-
-      for (final st in geocoded) {
-        optimizeAddresses.add(st.address);
-        optimizeClientNames.add(st.clientName);
-        preResolvedCoords.add([st.lat, st.lon]);
-        packageCounts.add(st.packageCount);
-        packagesPerStop.add(st.packages);
-        aliases.add(st.alias);
-      }
-
-      final result = await ApiService.optimize(
-        addresses: optimizeAddresses,
-        clientNames: optimizeClientNames,
-        startAddress: startAddress,
-        coords: preResolvedCoords,
-        packageCounts: packageCounts,
-        packagesPerStop: packagesPerStop,
-        aliases: aliases,
-      );
-
+      final result = await _optimizeStops(geocoded, startAddress);
       if (_disposed) throw Exception('Cancelado');
 
       await PersistenceService.clearValidationState();
       return result;
+    } catch (e) {
+      if (_disposed) rethrow;
+      _routeError = e is ApiException ? e.message : e.toString();
+      _notify();
+      rethrow;
+    } finally {
+      if (!_disposed) {
+        _isCalculating = false;
+        _notify();
+      }
+    }
+  }
+
+  /// Calcula dos rutas en paralelo (Express y Normal) dividiendo las paradas por tipo.
+  ///
+  /// Ambas llamadas al backend se lanzan simultáneamente.
+  /// Siempre devuelve ambas respuestas; la ruta Express puede tener 0 paradas reales
+  /// si no hay stops de tipo Express.
+  Future<({OptimizeResponse express, OptimizeResponse normal})>
+      calculateTwoRoutes() async {
+    assert(_reviewResult != null, 'calculateTwoRoutes requiere reviewResult');
+
+    _isCalculating = true;
+    _routeError = null;
+    _notify();
+
+    try {
+      final startAddress = await _resolveStartAddress();
+      if (_disposed) throw Exception('Cancelado');
+
+      final geocoded = _reviewResult!.geocoded;
+      final expressStops = geocoded.where((s) => s.tipo == 'Express').toList();
+      final normalStops = geocoded.where((s) => s.tipo == 'Normal').toList();
+
+      if (normalStops.isEmpty) {
+        throw Exception('No hay paradas de tipo Normal para calcular la ruta');
+      }
+
+      if (expressStops.isEmpty) {
+        throw Exception('No hay paradas de tipo Express para calcular la ruta Express');
+      }
+
+      // Lanzar ambas optimizaciones en paralelo
+      final results = await Future.wait([
+        _optimizeStops(expressStops, startAddress),
+        _optimizeStops(normalStops, startAddress),
+      ]);
+
+      if (_disposed) throw Exception('Cancelado');
+
+      await PersistenceService.clearValidationState();
+      return (express: results[0], normal: results[1]);
     } catch (e) {
       if (_disposed) rethrow;
       _routeError = e is ApiException ? e.message : e.toString();

@@ -682,7 +682,9 @@ class _DeliveryScreenState extends State<DeliveryScreen>
       child: Scaffold(
         backgroundColor: AppColors.scaffoldLight,
         appBar: AppBar(
-          title: const Text('En Reparto'),
+          title: Text(_ctrl.session.routeType != null
+              ? 'Reparto ${_ctrl.session.routeType}'
+              : 'En Reparto'),
           centerTitle: true,
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,

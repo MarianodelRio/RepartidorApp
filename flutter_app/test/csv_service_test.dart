@@ -134,6 +134,44 @@ void main() {
       expect(data.rows[0].agencia, 'SEUR');
       expect(data.rows[0].alias, 'Bar El Gato');
     });
+
+    test('parsea columna tipo: Express y Normal', () {
+      final data = CsvService.parse(_bytes(
+        'cliente,direccion,ciudad,tipo\n'
+        'Juan,Calle A 1,Posadas,Express\n'
+        'María,Calle B 2,Posadas,Normal\n'
+        'Pedro,Calle C 3,Posadas,',
+      ));
+      expect(data.rows[0].tipo, 'Express');
+      expect(data.rows[1].tipo, 'Normal');
+      expect(data.rows[2].tipo, 'Normal'); // vacío → Normal
+    });
+
+    test('tipo es case-insensitive: express → Express', () {
+      final data = CsvService.parse(_bytes(
+        'cliente,direccion,ciudad,tipo\n'
+        'Juan,Calle A 1,Posadas,express\n'
+        'María,Calle B 2,Posadas,EXPRESS',
+      ));
+      expect(data.rows[0].tipo, 'Express');
+      expect(data.rows[1].tipo, 'Express');
+    });
+
+    test('tipo desconocido usa Normal', () {
+      final data = CsvService.parse(_bytes(
+        'cliente,direccion,ciudad,tipo\n'
+        'Juan,Calle A 1,Posadas,Urgente',
+      ));
+      expect(data.rows[0].tipo, 'Normal');
+    });
+
+    test('tipo vacío cuando no existe la columna usa Normal', () {
+      final data = CsvService.parse(_bytes(
+        'cliente,direccion,ciudad\n'
+        'Juan,Calle A 1,Posadas',
+      ));
+      expect(data.rows[0].tipo, 'Normal');
+    });
   });
 
   // ══════════════════════════════════════════════════════════════════

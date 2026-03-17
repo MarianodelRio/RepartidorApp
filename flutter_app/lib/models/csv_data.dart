@@ -6,6 +6,7 @@ class CsvRow {
   final String nota;
   final String agencia;
   final String alias;
+  final String tipo; // 'Express' o 'Normal'
 
   const CsvRow({
     required this.cliente,
@@ -14,12 +15,13 @@ class CsvRow {
     this.nota = '',
     this.agencia = '',
     this.alias = '',
+    this.tipo = 'Normal',
   });
 }
 
 /// Colección de filas parseadas de un CSV de paradas.
 ///
-/// Formato esperado: cliente,direccion,ciudad[,nota][,agencia][,alias]
+/// Formato esperado: cliente,direccion,ciudad,nota,agencia,alias,tipo
 /// Cada fila = 1 paquete. Las agrupaciones se hacen después.
 class CsvData {
   final List<CsvRow> rows;

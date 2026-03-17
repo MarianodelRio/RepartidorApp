@@ -109,6 +109,7 @@ def _build_stops(
             dist_m = stop_details_map.get(orig_idx, {}).get("arrival_distance", 0)
 
         stop_alias = all_aliases_list[orig_idx] if orig_idx < len(all_aliases_list) else ""
+        stop_tipo = "Express" if any(p.tipo == "Express" for p in pkgs) else "Normal"
         stops.append(StopInfo(
             order=seq,
             address=addr,
@@ -122,6 +123,7 @@ def _build_stops(
             lon=lon,
             distance_meters=round(dist_m),
             package_count=pkg_count,
+            tipo=stop_tipo,
         ))
     return stops
 

@@ -48,6 +48,7 @@ class DeliveryStop {
   final double? lon;
   final double distanceMeters;
   final int packageCount;
+  final String tipo; // 'Express' o 'Normal'
 
   StopStatus status;
   String? note;
@@ -66,6 +67,7 @@ class DeliveryStop {
     required this.lon,
     required this.distanceMeters,
     this.packageCount = 1,
+    this.tipo = 'Normal',
     this.status = StopStatus.pending,
     this.note,
     this.completedAt,
@@ -95,6 +97,7 @@ class DeliveryStop {
         'lon': lon,
         'distanceMeters': distanceMeters,
         'packageCount': packageCount,
+        'tipo': tipo,
         'status': status.index,
         'note': note,
         'completedAt': completedAt?.toIso8601String(),
@@ -120,6 +123,7 @@ class DeliveryStop {
       lon: map['lon'] != null ? (map['lon'] as num).toDouble() : null,
       distanceMeters: (map['distanceMeters'] as num).toDouble(),
       packageCount: (map['packageCount'] as int?) ?? 1,
+      tipo: (map['tipo'] as String?) ?? 'Normal',
       status: StopStatus.values[map['status'] as int],
       note: map['note'] as String?,
       completedAt: map['completedAt'] != null
@@ -143,6 +147,7 @@ class DeliverySession {
   final int totalPackages;
   final String totalDistanceDisplay;
   final double computingTimeMs;
+  final String? routeType; // 'Express', 'Normal' o null (modo 1 ruta)
   int currentStopIndex;
 
   DeliverySession({
@@ -153,6 +158,7 @@ class DeliverySession {
     this.totalPackages = 0,
     required this.totalDistanceDisplay,
     required this.computingTimeMs,
+    this.routeType,
     this.currentStopIndex = 1, // Empieza en 1 (el 0 es el origen)
   });
 
@@ -209,6 +215,7 @@ class DeliverySession {
         'totalPackages': totalPackages,
         'totalDistanceDisplay': totalDistanceDisplay,
         'computingTimeMs': computingTimeMs,
+        'routeType': routeType,
         'currentStopIndex': currentStopIndex,
       };
 
@@ -223,6 +230,7 @@ class DeliverySession {
       totalPackages: (map['totalPackages'] as int?) ?? 0,
       totalDistanceDisplay: map['totalDistanceDisplay'] as String,
       computingTimeMs: (map['computingTimeMs'] as num).toDouble(),
+      routeType: map['routeType'] as String?,
       currentStopIndex: map['currentStopIndex'] as int,
     );
   }

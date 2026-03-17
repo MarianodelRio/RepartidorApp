@@ -70,6 +70,26 @@ void main() {
       final stop = StopInfo.fromJson(json);
       expect(stop.alias, '');
     });
+
+    test('tipo ausente usa "Normal"', () {
+      final json = Map<String, dynamic>.from(_stopInfoJson())..remove('tipo');
+      final stop = StopInfo.fromJson(json);
+      expect(stop.tipo, 'Normal');
+    });
+
+    test('tipo "Express" se deserializa correctamente', () {
+      final json = Map<String, dynamic>.from(_stopInfoJson())
+        ..['tipo'] = 'Express';
+      final stop = StopInfo.fromJson(json);
+      expect(stop.tipo, 'Express');
+    });
+
+    test('tipo "Normal" se deserializa correctamente', () {
+      final json = Map<String, dynamic>.from(_stopInfoJson())
+        ..['tipo'] = 'Normal';
+      final stop = StopInfo.fromJson(json);
+      expect(stop.tipo, 'Normal');
+    });
   });
 
   // ══════════════════════════════════════════════════════════════════
@@ -102,6 +122,25 @@ void main() {
     test('displayName devuelve la dirección', () {
       final stop = StopInfo.fromJson(_stopInfoJson());
       expect(stop.displayName, 'Calle Gaitán 24');
+    });
+
+    test('isExpress es true cuando tipo == "Express"', () {
+      final json = Map<String, dynamic>.from(_stopInfoJson())
+        ..['tipo'] = 'Express';
+      final stop = StopInfo.fromJson(json);
+      expect(stop.isExpress, isTrue);
+    });
+
+    test('isExpress es false cuando tipo == "Normal"', () {
+      final json = Map<String, dynamic>.from(_stopInfoJson())
+        ..['tipo'] = 'Normal';
+      final stop = StopInfo.fromJson(json);
+      expect(stop.isExpress, isFalse);
+    });
+
+    test('isExpress es false cuando tipo está ausente (default Normal)', () {
+      final stop = StopInfo.fromJson(_stopInfoJson());
+      expect(stop.isExpress, isFalse);
     });
   });
 

@@ -154,6 +154,14 @@ class _StopTile extends StatelessWidget {
                           color: AppColors.warning,
                         ),
                       ],
+                      if (stop.isExpress) ...[
+                        const SizedBox(width: 6),
+                        _InfoChip(
+                          icon: Icons.bolt,
+                          text: 'Express',
+                          color: AppColors.warning,
+                        ),
+                      ],
                     ],
                   ),
                 ),

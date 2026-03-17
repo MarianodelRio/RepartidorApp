@@ -141,6 +141,7 @@ class ApiService {
         'nota': row.nota,
         'agencia': row.agencia,
         'alias': row.alias,
+        'tipo': row.tipo,
       });
     }
 

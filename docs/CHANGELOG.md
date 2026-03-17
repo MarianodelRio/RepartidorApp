@@ -40,9 +40,18 @@ Primera versión de producción. Base funcional estable para entrega al repartid
 - Apertura de Google Maps/navegación externa por parada
 - Sesión persistente en Hive (reanudable si la app se cierra)
 
+#### Modo 2 rutas (Express / Normal)
+- Nueva columna `tipo` en el CSV (`Express` o `Normal`; case-insensitive; vacío = Normal). Formato completo: `cliente, direccion, ciudad, nota, agencia, tipo, alias`
+- Toggle "1 ruta / 2 rutas" en `ImportScreen`. Con 2 rutas: el frontend divide las paradas por tipo y lanza dos llamadas paralelas al backend
+- Nueva `RouteSelectionScreen`: muestra ambas rutas (paradas, paquetes, km) y permite elegir cuál abrir
+- Badge **Express** en las tarjetas de parada (`StopsList`) — solo visible cuando hay paquetes Express
+- Título dinámico de AppBar en `ResultScreen` ("Ruta Express / Normal") y `DeliveryScreen` ("Reparto Express / Normal")
+- `DeliverySession.routeType: String?` para identificar la sesión activa en modo 2 rutas
+- Backward compatible: CSVs sin columna `tipo` funcionan igual que antes
+
 #### Calidad
-- 209+ tests backend (pytest), análisis estático mypy (0 errores)
-- 110+ tests Flutter, cobertura ≥ 98 % en modelos y servicios, dart analyze (0 warnings)
+- 273+ tests backend (pytest), análisis estático mypy (0 errores)
+- 128+ tests Flutter, cobertura ≥ 98 % en modelos y servicios, dart analyze (0 warnings)
 - Script `run_tests.sh` unificado (tests + cobertura + análisis estático)
 
 ---

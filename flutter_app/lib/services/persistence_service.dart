@@ -96,9 +96,13 @@ class PersistenceService {
   }
 
   /// Crea una nueva sesión a partir de un OptimizeResponse.
-  static DeliverySession createSession(OptimizeResponse response) {
-    final id =
-        'session_${DateTime.now().millisecondsSinceEpoch}';
+  ///
+  /// [routeType] identifica la ruta en modo 2 rutas: 'Express', 'Normal' o null.
+  static DeliverySession createSession(
+    OptimizeResponse response, {
+    String? routeType,
+  }) {
+    final id = 'session_${DateTime.now().millisecondsSinceEpoch}';
 
     final stops = response.stops.map((s) => DeliveryStop(
           order: s.order,
@@ -113,6 +117,7 @@ class PersistenceService {
           lon: s.lon,
           distanceMeters: s.distanceMeters,
           packageCount: s.packageCount,
+          tipo: s.tipo,
         )).toList();
 
     return DeliverySession(
@@ -123,6 +128,7 @@ class PersistenceService {
       totalPackages: response.summary.totalPackages,
       totalDistanceDisplay: response.summary.totalDistanceDisplay,
       computingTimeMs: response.summary.computingTimeMs,
+      routeType: routeType,
     );
   }
 

@@ -11,10 +11,11 @@ from pydantic import BaseModel, Field
 # ═══════════════════════════════════════════
 
 class Package(BaseModel):
-    """Un paquete individual dentro de una parada: cliente + nota + agencia."""
+    """Un paquete individual dentro de una parada: cliente + nota + agencia + tipo."""
     client_name: str = Field("", description="Nombre del destinatario")
     nota: str = Field("", description="Nota de entrega (piso, instrucciones, etc.)")
     agencia: str = Field("", description="Empresa de reparto (MRW, SEUR, etc.)")
+    tipo: str = Field("Normal", description="Tipo de entrega: 'Express' o 'Normal'")
 
 
 # ═══════════════════════════════════════════
@@ -105,6 +106,7 @@ class StopInfo(BaseModel):
     lon: float | None = Field(None, description="Longitud")
     distance_meters: float = Field(0, description="Distancia acumulada hasta esta parada (m)")
     package_count: int = Field(1, description="Número de paquetes en esta dirección")
+    tipo: str = Field("Normal", description="Tipo de entrega de la parada: 'Express' si algún paquete es Express, si no 'Normal'")
 
 
 class RouteSummary(BaseModel):

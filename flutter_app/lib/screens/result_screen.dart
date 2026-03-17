@@ -18,7 +18,10 @@ import 'loading_order_screen.dart';
 class ResultScreen extends StatefulWidget {
   final OptimizeResponse response;
 
-  const ResultScreen({super.key, required this.response});
+  /// Tipo de ruta en modo 2 rutas: 'Express', 'Normal' o null (modo 1 ruta).
+  final String? routeType;
+
+  const ResultScreen({super.key, required this.response, this.routeType});
 
   @override
   State<ResultScreen> createState() => _ResultScreenState();
@@ -56,7 +59,11 @@ class _ResultScreenState extends State<ResultScreen> {
     return Scaffold(
       backgroundColor: AppColors.scaffoldLight,
       appBar: AppBar(
-        title: const Text('Ruta Optimizada'),
+        title: Text(
+          widget.routeType != null
+              ? 'Ruta ${widget.routeType}'
+              : 'Ruta Optimizada',
+        ),
         centerTitle: true,
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
@@ -308,7 +315,10 @@ class _ResultScreenState extends State<ResultScreen> {
   }
 
   Future<void> _startDelivery(BuildContext context) async {
-    final session = PersistenceService.createSession(widget.response);
+    final session = PersistenceService.createSession(
+      widget.response,
+      routeType: widget.routeType,
+    );
     await PersistenceService.saveSession(session);
 
     if (!context.mounted) return;

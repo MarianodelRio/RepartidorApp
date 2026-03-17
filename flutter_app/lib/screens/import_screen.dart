@@ -14,6 +14,7 @@ import '../services/csv_service.dart';
 import '../widgets/origin_selector.dart';
 import 'map_picker_screen.dart';
 import 'result_screen.dart';
+import 'route_selection_screen.dart';
 
 // ═══════════════════════════════════════════
 //  Pantalla de importación + revisión de validación
@@ -283,18 +284,45 @@ class _ImportScreenState extends State<ImportScreen> {
     );
 
     try {
-      final result = await _ctrl.calculateRoute();
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => ResultScreen(response: result)),
-      );
+      if (_ctrl.numRoutes == 2) {
+        final routes = await _ctrl.calculateTwoRoutes();
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => RouteSelectionScreen(
+              expressRoute: routes.express,
+              normalRoute: routes.normal,
+            ),
+          ),
+        );
+      } else {
+        final result = await _ctrl.calculateRoute();
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => ResultScreen(response: result)),
+        );
+      }
     } catch (_) {
       if (mounted) Navigator.of(context).pop();
       // _ctrl.routeError ya contiene el mensaje; ListenableBuilder rerenderiza.
     } finally {
       WakelockPlus.disable();
     }
+  }
+
+  void _onNumRoutesTap(int n) {
+    if (n == 2 && !_ctrl.hasExpressStops) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay paquetes Express en este reparto'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    _ctrl.setNumRoutes(n);
   }
 
   Color _markerColor(GeoConfidence confidence) {
@@ -437,6 +465,11 @@ class _ImportScreenState extends State<ImportScreen> {
                   onModeChanged: _ctrl.setOriginMode,
                   onAddressChanged: _ctrl.setManualAddress,
                 ),
+
+                const SizedBox(height: 16),
+
+                // Selector de número de rutas
+                _buildNumRoutesSelector(),
 
                 const SizedBox(height: 16),
 
@@ -686,6 +719,50 @@ class _ImportScreenState extends State<ImportScreen> {
   }
 
   // ═══════════════════════════════════════════
+  //  Selector de número de rutas
+  // ═══════════════════════════════════════════
+
+  Widget _buildNumRoutesSelector() {
+    final hasExpress = _ctrl.hasExpressStops;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Modo de reparto',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _RouteOptionButton(
+                label: '1 Ruta',
+                subtitle: 'Todos los paquetes',
+                selected: _ctrl.numRoutes == 1,
+                onTap: () => _onNumRoutesTap(1),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _RouteOptionButton(
+                label: '2 Rutas',
+                subtitle: 'Express y Normal',
+                selected: _ctrl.numRoutes == 2,
+                enabled: hasExpress,
+                onTap: () => _onNumRoutesTap(2),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ═══════════════════════════════════════════
   //  Widgets fase de carga (upload)
   // ═══════════════════════════════════════════
 
@@ -759,7 +836,7 @@ class _ImportScreenState extends State<ImportScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                    'Formato: .csv (cliente, direccion, ciudad, nota, agencia, alias)',
+                    'Formato: .csv (cliente, direccion, ciudad, nota, agencia, alias, tipo)',
                     style: TextStyle(
                         fontSize: 12, color: AppColors.textTertiary)),
               ),
@@ -1049,6 +1126,91 @@ class _LegendItem extends StatelessWidget {
             style: const TextStyle(
                 fontSize: 11, color: AppColors.textSecondary)),
       ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════
+//  Botón de opción de número de rutas
+// ═══════════════════════════════════════════
+
+class _RouteOptionButton extends StatelessWidget {
+  final String label;
+  final String subtitle;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _RouteOptionButton({
+    required this.label,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveColor = enabled ? AppColors.primary : AppColors.textTertiary;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primarySurface
+              : AppColors.cardLight,
+          borderRadius: BorderRadius.circular(AppRadius.button),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.border,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 18,
+              height: 18,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: effectiveColor, width: 2),
+                color: selected ? effectiveColor : Colors.transparent,
+              ),
+              child: selected
+                  ? const Icon(Icons.check, size: 12, color: Colors.white)
+                  : null,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: enabled
+                          ? AppColors.textPrimary
+                          : AppColors.textTertiary,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: enabled
+                          ? AppColors.textSecondary
+                          : AppColors.textTertiary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

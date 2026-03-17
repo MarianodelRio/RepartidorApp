@@ -45,6 +45,7 @@ class GeocodedStop {
   final double lat;
   final double lon;
   final GeoConfidence confidence;
+  final String tipo; // 'Express' o 'Normal'
 
   const GeocodedStop({
     required this.address,
@@ -56,6 +57,7 @@ class GeocodedStop {
     required this.lat,
     required this.lon,
     this.confidence = GeoConfidence.good,
+    this.tipo = 'Normal',
   });
 
   factory GeocodedStop.fromJson(Map<String, dynamic> json) {
@@ -76,6 +78,7 @@ class GeocodedStop {
       lon: (json['lon'] as num).toDouble(),
       confidence: GeoConfidence.fromString(
           (json['confidence'] as String?) ?? 'EXACT_ADDRESS'),
+      tipo: (json['tipo'] as String?) ?? 'Normal',
     );
   }
 
@@ -95,6 +98,7 @@ class GeocodedStop {
       lat: lat ?? this.lat,
       lon: lon ?? this.lon,
       confidence: confidence ?? this.confidence,
+      tipo: tipo,
     );
   }
 }
