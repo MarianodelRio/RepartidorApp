@@ -340,3 +340,29 @@ def test_fuzzy_matching_no_actua_si_calle_ya_esta_en_catalogo(monkeypatch):
     assert "Calle Mayor" in call_params["address"]
 
 
+# ── get_corrected_street ──────────────────────────────────────────────────────
+
+def test_get_corrected_street_sin_cache_devuelve_calle_parseada():
+    """Sin entrada en caché devuelve la calle extraída del texto original."""
+    assert geo.get_corrected_street("Calle Mayor 5") == "Calle Mayor"
+
+
+def test_get_corrected_street_con_fuzzy_correccion_en_cache():
+    """Si la caché tiene fuzzy_corrected_to, devuelve el nombre corregido."""
+    street, number = geo._parse_address("Calle Hornoss 5")
+    key = geo._cache_key(street, number)
+    geo._persisted[key] = {"lat": 37.805, "lon": -5.099, "fuzzy_corrected_to": "Calle Hornos"}
+
+    assert geo.get_corrected_street("Calle Hornoss 5") == "Calle Hornos"
+
+
+def test_get_corrected_street_override_sin_fuzzy_devuelve_calle_parseada():
+    """Override manual sin fuzzy_corrected_to → calle parseada del original."""
+    geo.add_override("Calle Mayor 5", 37.805, -5.099)
+
+    assert geo.get_corrected_street("Calle Mayor 5") == "Calle Mayor"
+
+
+def test_get_corrected_street_expande_abreviatura():
+    """C/ se expande a Calle antes de parsear."""
+    assert geo.get_corrected_street("C/ Mayor 5") == "Calle Mayor"
