@@ -11,7 +11,7 @@ Flutter App (Android)
 Backend FastAPI (Python 3.10)
       ├── Google Geocoding API  → geocodificación de direcciones
       ├── Google Places API     → geocodificación de negocios por alias
-      ├── Overpass API (OSM)    → catálogo de calles para fuzzy matching
+      ├── streets.json          → catálogo estático de calles para fuzzy matching
       ├── LKH3 (binario local)  → solver TSP
       └── OSRM (Docker)         → distancias y rutas reales por carretera
 ```

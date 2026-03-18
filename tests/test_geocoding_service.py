@@ -21,12 +21,11 @@ def reset_geo(tmp_path, monkeypatch):
     geo._cache.clear()
     geo._persisted.clear()
     # Catálogo vacío → _find_closest_street devuelve None sin llamadas HTTP
-    monkeypatch.setattr(geo, "_osm_streets", [])
-    monkeypatch.setattr(geo, "_osm_streets_norm", [])
-    monkeypatch.setattr(geo, "_osm_streets_norm_set", set())
-    # Ficheros de caché en directorio temporal
+    monkeypatch.setattr(geo, "_streets", [])
+    monkeypatch.setattr(geo, "_streets_norm", [])
+    monkeypatch.setattr(geo, "_streets_norm_set", set())
+    # Fichero de caché en directorio temporal
     monkeypatch.setattr(geo, "_CACHE_FILE", tmp_path / "cache.json")
-    monkeypatch.setattr(geo, "_STREETS_FILE", tmp_path / "streets.json")
     # API key válida por defecto (tests individuales pueden sobrescribirla)
     monkeypatch.setattr(geo, "GOOGLE_API_KEY", "TEST_KEY")
     yield
@@ -39,6 +38,7 @@ def reset_geo(tmp_path, monkeypatch):
 def _google_resp(location_type: str, lat: float = 37.805, lng: float = -5.099):
     """Mock de una respuesta exitosa de Google Geocoding."""
     m = Mock()
+    m.status_code = 200
     m.raise_for_status.return_value = None
     m.json.return_value = {
         "status": "OK",
@@ -53,6 +53,7 @@ def _google_resp(location_type: str, lat: float = 37.805, lng: float = -5.099):
 def _places_resp(lat: float = 37.805, lng: float = -5.099, name: str = ""):
     """Mock de una respuesta exitosa de Google Places."""
     m = Mock()
+    m.status_code = 200
     m.raise_for_status.return_value = None
     m.json.return_value = {
         "status": "OK",
@@ -64,6 +65,7 @@ def _places_resp(lat: float = 37.805, lng: float = -5.099, name: str = ""):
 def _zero_results():
     """Mock de Google sin resultados."""
     m = Mock()
+    m.status_code = 200
     m.raise_for_status.return_value = None
     m.json.return_value = {"status": "ZERO_RESULTS", "results": []}
     return m
@@ -179,16 +181,18 @@ def test_google_zero_results_devuelve_failed():
     assert conf == "FAILED"
 
 
-def test_cache_none_devuelve_failed_sin_llamar_google():
-    """Dirección ya intentada y fallida (cache=None) devuelve FAILED sin llamar a Google."""
+def test_failed_no_cachea_y_reintenta_google():
+    """FAILED no se cachea: la segunda llamada reintenta Google y puede tener éxito."""
     with patch("app.services.geocoding.requests.get", return_value=_zero_results()):
-        geo.geocode("Calle Inexistente 999")  # primer intento → FAILED, cache[key]=None
+        coord1, conf1 = geo.geocode("Calle Inexistente 999")  # FAILED, no se cachea
+    assert coord1 is None
+    assert conf1 == "FAILED"
 
-    with patch("app.services.geocoding.requests.get") as mock_get:
-        coord, conf = geo.geocode("Calle Inexistente 999")  # segundo intento → desde caché
-        mock_get.assert_not_called()
-    assert coord is None
-    assert conf == "FAILED"
+    with patch("app.services.geocoding.requests.get", return_value=_google_resp("ROOFTOP")) as mock_get:
+        coord2, conf2 = geo.geocode("Calle Inexistente 999")  # segunda llamada → reintenta
+        mock_get.assert_called_once()  # sí llama a Google (no estaba en caché)
+    assert coord2 is not None
+    assert conf2 == "EXACT_ADDRESS"
 
 
 def test_places_error_de_red_devuelve_failed():
@@ -217,6 +221,36 @@ def test_google_error_de_red_devuelve_failed():
         coord, conf = geo.geocode("Calle Mayor 1")
     assert coord is None
     assert conf == "FAILED"
+
+
+def test_google_timeout_reintenta_y_devuelve_resultado():
+    """Timeout en Google (error transitorio) → se reintenta; si el segundo intento tiene éxito, devuelve coord."""
+    import requests as _req
+    call_count = [0]
+
+    def mock_get(*args, **kwargs):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise _req.Timeout()
+        m = Mock()
+        m.raise_for_status.return_value = None
+        m.status_code = 200
+        m.json.return_value = {
+            "status": "OK",
+            "results": [{"geometry": {
+                "location": {"lat": 37.805, "lng": -5.099},
+                "location_type": "ROOFTOP",
+            }}],
+        }
+        return m
+
+    with patch("app.services.geocoding.requests.get", side_effect=mock_get):
+        with patch("app.services.geocoding.time.sleep"):  # evitar espera real
+            coord, conf = geo.geocode("Calle Mayor 1")
+
+    assert coord is not None
+    assert conf == "EXACT_ADDRESS"
+    assert call_count[0] == 2  # primer intento falló, segundo tuvo éxito
 
 
 def test_resultado_exitoso_se_guarda_en_cache():
@@ -300,6 +334,19 @@ def test_places_sin_geocoding_y_nombre_no_coincide_devuelve_failed():
     assert conf == "FAILED"
 
 
+def test_places_usa_posadas_center_cuando_google_devuelve_nada():
+    """Cuando Google Geocoding no devuelve coord, Places usa POSADAS_CENTER como referencia
+    con radio ampliado (_PLACES_MAX_DIST_FALLBACK_M = 1000 m)."""
+    with patch("app.services.geocoding.requests.get") as mock_get:
+        mock_get.side_effect = [
+            _zero_results(),                                          # Geocoding: sin coord
+            _places_resp(lat=37.805, lng=-5.099, name="Bar El Sol"),  # Places: cerca de POSADAS_CENTER
+        ]
+        coord, conf = geo.geocode("Calle Desconocida 5", alias="Bar El Sol")
+    assert coord is not None
+    assert conf == "EXACT_PLACE"
+
+
 def test_places_sin_api_key_no_se_llama(monkeypatch):
     monkeypatch.setattr(geo, "GOOGLE_API_KEY", "")
     with patch("app.services.geocoding.requests.get") as mock_get:
@@ -311,9 +358,9 @@ def test_places_sin_api_key_no_se_llama(monkeypatch):
 
 def test_fuzzy_matching_corrige_typo(monkeypatch):
     """Un typo en el nombre de calle se corrige antes de llamar a Google."""
-    monkeypatch.setattr(geo, "_osm_streets", ["Calle Hornos"])
-    monkeypatch.setattr(geo, "_osm_streets_norm", ["calle hornos"])
-    monkeypatch.setattr(geo, "_osm_streets_norm_set", {"calle hornos"})
+    monkeypatch.setattr(geo, "_streets", ["Calle Hornos"])
+    monkeypatch.setattr(geo, "_streets_norm", ["calle hornos"])
+    monkeypatch.setattr(geo, "_streets_norm_set", {"calle hornos"})
 
     with patch("app.services.geocoding.requests.get",
                return_value=_google_resp("ROOFTOP")) as mock_get:
@@ -327,9 +374,9 @@ def test_fuzzy_matching_corrige_typo(monkeypatch):
 
 def test_fuzzy_matching_no_actua_si_calle_ya_esta_en_catalogo(monkeypatch):
     """Si la calle ya está normalizada en el catálogo, no hay corrección."""
-    monkeypatch.setattr(geo, "_osm_streets", ["Calle Mayor"])
-    monkeypatch.setattr(geo, "_osm_streets_norm", ["calle mayor"])
-    monkeypatch.setattr(geo, "_osm_streets_norm_set", {"calle mayor"})
+    monkeypatch.setattr(geo, "_streets", ["Calle Mayor"])
+    monkeypatch.setattr(geo, "_streets_norm", ["calle mayor"])
+    monkeypatch.setattr(geo, "_streets_norm_set", {"calle mayor"})
 
     with patch("app.services.geocoding.requests.get",
                return_value=_google_resp("ROOFTOP")) as mock_get:

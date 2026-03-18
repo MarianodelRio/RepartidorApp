@@ -171,17 +171,19 @@ class DeliveryController extends ChangeNotifier {
   }
 
   /// Aplica un re-pin manual a una parada de la sesión activa.
-  /// Notifica al backend y recarga el segmento si es la parada actual.
-  Future<void> applyRepin(
+  /// Actualiza Hive y notifica al backend.
+  /// Devuelve [true] si el override se persistió en el servidor, [false] si hubo error de red.
+  /// El estado local (Hive) se actualiza siempre independientemente del resultado.
+  Future<bool> applyRepin(
     int sessionIndex,
     double lat,
     double lon,
   ) async {
-    if (sessionIndex >= _session.stops.length) return;
+    if (sessionIndex >= _session.stops.length) return false;
 
     final stop = _session.stops[sessionIndex];
 
-    ApiService.postOverride(address: stop.address, lat: lat, lon: lon);
+    final persisted = await ApiService.postOverride(address: stop.address, lat: lat, lon: lon);
 
     _session.stops[sessionIndex] = DeliveryStop(
       order: stop.order,
@@ -202,7 +204,7 @@ class DeliveryController extends ChangeNotifier {
     );
 
     await PersistenceService.saveSession(_session);
-    if (_disposed) return;
+    if (_disposed) return false;
 
     if (sessionIndex == _session.currentStopIndex) {
       _segmentGeometry = null;
@@ -211,6 +213,8 @@ class DeliveryController extends ChangeNotifier {
     } else {
       _notify();
     }
+
+    return persisted;
   }
 
   /// Devuelve una parada completada al estado pendiente.

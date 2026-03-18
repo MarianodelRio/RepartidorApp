@@ -7,7 +7,6 @@ import 'route_models.dart';
 /// Niveles de confianza de geocodificación.
 enum GeoConfidence {
   exactAddress, // EXACT_ADDRESS — portal exacto (Google ROOFTOP)
-  good,         // GOOD — buena estimación (Google RANGE_INTERPOLATED)
   exactPlace,   // EXACT_PLACE — lugar/negocio encontrado por Places
   override,     // OVERRIDE — pin manual del usuario
   failed,       // FAILED — no geocodificado
@@ -18,8 +17,6 @@ enum GeoConfidence {
     switch (s) {
       case 'EXACT_ADDRESS':
         return GeoConfidence.exactAddress;
-      case 'GOOD':
-        return GeoConfidence.good;
       case 'EXACT_PLACE':
         return GeoConfidence.exactPlace;
       case 'OVERRIDE':
@@ -31,7 +28,7 @@ enum GeoConfidence {
 
   /// True si la confianza es suficiente para mostrar en verde (no requiere revisión).
   bool get isAccepted =>
-      this == exactAddress || this == good || this == exactPlace || this == override;
+      this == exactAddress || this == exactPlace || this == override;
 }
 
 /// Parada geocodificada correctamente.
@@ -39,9 +36,7 @@ class GeocodedStop {
   final String address;
   final String alias;
   final String clientName;
-  final List<String> allClientNames;
   final List<Package> packages;
-  final int packageCount;
   final double lat;
   final double lon;
   final GeoConfidence confidence;
@@ -51,12 +46,10 @@ class GeocodedStop {
     required this.address,
     this.alias = '',
     required this.clientName,
-    required this.allClientNames,
     this.packages = const [],
-    required this.packageCount,
     required this.lat,
     required this.lon,
-    this.confidence = GeoConfidence.good,
+    this.confidence = GeoConfidence.exactAddress,
     this.tipo = 'Normal',
   });
 
@@ -65,15 +58,10 @@ class GeocodedStop {
       address: json['address'] as String,
       alias: (json['alias'] as String?) ?? '',
       clientName: (json['client_name'] as String?) ?? '',
-      allClientNames: (json['all_client_names'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList() ??
-          const [],
       packages: (json['packages'] as List<dynamic>?)
               ?.map((e) => Package.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      packageCount: (json['package_count'] as int?) ?? 1,
       lat: (json['lat'] as num).toDouble(),
       lon: (json['lon'] as num).toDouble(),
       confidence: GeoConfidence.fromString(
@@ -92,9 +80,7 @@ class GeocodedStop {
       address: address,
       alias: alias,
       clientName: clientName,
-      allClientNames: allClientNames,
       packages: packages,
-      packageCount: packageCount,
       lat: lat ?? this.lat,
       lon: lon ?? this.lon,
       confidence: confidence ?? this.confidence,
@@ -107,31 +93,22 @@ class GeocodedStop {
 class FailedStop {
   final String address;
   final String alias;
-  final List<String> clientNames;
   final List<Package> packages;
-  final int packageCount;
 
   const FailedStop({
     required this.address,
     this.alias = '',
-    required this.clientNames,
     this.packages = const [],
-    required this.packageCount,
   });
 
   factory FailedStop.fromJson(Map<String, dynamic> json) {
     return FailedStop(
       address: json['address'] as String,
       alias: (json['alias'] as String?) ?? '',
-      clientNames: (json['client_names'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList() ??
-          const [],
       packages: (json['packages'] as List<dynamic>?)
               ?.map((e) => Package.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      packageCount: (json['package_count'] as int?) ?? 1,
     );
   }
 }

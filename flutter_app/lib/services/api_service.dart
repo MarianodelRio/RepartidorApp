@@ -177,8 +177,8 @@ class ApiService {
   }
 
   /// Registra coordenadas manuales (pin) para una dirección en el backend.
-  /// Fire-and-forget: los errores se ignoran silenciosamente.
-  static Future<void> postOverride({
+  /// Devuelve [true] si el servidor confirmó el override, [false] si hubo error de red.
+  static Future<bool> postOverride({
     required String address,
     required double lat,
     required double lon,
@@ -191,8 +191,9 @@ class ApiService {
             body: jsonEncode({'address': address, 'lat': lat, 'lon': lon}),
           )
           .timeout(const Duration(seconds: 10));
+      return true;
     } catch (_) {
-      // fire-and-forget: ignorar errores de red
+      return false;
     }
   }
 }

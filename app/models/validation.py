@@ -33,21 +33,17 @@ class GeocodedStop(BaseModel):
     address: str
     alias: str = ""
     client_name: str
-    all_client_names: list[str]  # retrocompat — derivado de packages
     packages: list[Package]
-    package_count: int
     lat: float
     lon: float
-    confidence: str  # EXACT_ADDRESS | GOOD | EXACT_PLACE | OVERRIDE
+    confidence: str  # EXACT_ADDRESS | EXACT_PLACE | OVERRIDE
     tipo: str = "Normal"  # 'Express' si algún paquete es Express, si no 'Normal'
 
 
 class FailedStop(BaseModel):
     address: str
     alias: str = ""
-    client_names: list[str]  # retrocompat — derivado de packages
     packages: list[Package]
-    package_count: int
     tipo: str = "Normal"  # 'Express' si algún paquete es Express, si no 'Normal'
 
 

@@ -9,12 +9,10 @@ Map<String, dynamic> _geocodedStopJson({
       'address': 'Calle Gaitán 24',
       'alias': 'Bar El Gato',
       'client_name': 'Juan García',
-      'all_client_names': ['Juan García', 'María López'],
       'packages': [
         {'client_name': 'Juan García', 'nota': '', 'agencia': 'MRW'},
         {'client_name': 'María López', 'nota': '2º izq', 'agencia': ''},
       ],
-      'package_count': 2,
       'lat': 37.8012,
       'lon': -5.1050,
       'confidence': confidence,
@@ -23,11 +21,9 @@ Map<String, dynamic> _geocodedStopJson({
 Map<String, dynamic> _failedStopJson() => {
       'address': 'Calle Inventada 99',
       'alias': '',
-      'client_names': ['Pedro Ruiz'],
       'packages': [
         {'client_name': 'Pedro Ruiz', 'nota': '', 'agencia': 'SEUR'},
       ],
-      'package_count': 1,
     };
 
 void main() {
@@ -38,10 +34,6 @@ void main() {
   group('GeoConfidence.fromString', () {
     test('EXACT_ADDRESS → exactAddress', () {
       expect(GeoConfidence.fromString('EXACT_ADDRESS'), GeoConfidence.exactAddress);
-    });
-
-    test('GOOD → good', () {
-      expect(GeoConfidence.fromString('GOOD'), GeoConfidence.good);
     });
 
     test('EXACT_PLACE → exactPlace', () {
@@ -59,6 +51,7 @@ void main() {
     test('cadena desconocida → failed', () {
       expect(GeoConfidence.fromString('UNKNOWN'), GeoConfidence.failed);
       expect(GeoConfidence.fromString(''), GeoConfidence.failed);
+      expect(GeoConfidence.fromString('GOOD'), GeoConfidence.failed);
     });
   });
 
@@ -67,9 +60,8 @@ void main() {
   // ══════════════════════════════════════════════════════════════════
 
   group('GeoConfidence.isAccepted', () {
-    test('exactAddress, good, exactPlace y override son aceptados', () {
+    test('exactAddress, exactPlace y override son aceptados', () {
       expect(GeoConfidence.exactAddress.isAccepted, isTrue);
-      expect(GeoConfidence.good.isAccepted, isTrue);
       expect(GeoConfidence.exactPlace.isAccepted, isTrue);
       expect(GeoConfidence.override.isAccepted, isTrue);
     });
@@ -89,8 +81,7 @@ void main() {
       expect(stop.address, 'Calle Gaitán 24');
       expect(stop.alias, 'Bar El Gato');
       expect(stop.clientName, 'Juan García');
-      expect(stop.allClientNames, ['Juan García', 'María López']);
-      expect(stop.packageCount, 2);
+      expect(stop.packages.length, 2);
       expect(stop.lat, 37.8012);
       expect(stop.lon, -5.1050);
       expect(stop.confidence, GeoConfidence.exactAddress);
@@ -98,16 +89,10 @@ void main() {
 
     test('deserializa la lista de packages con agencia', () {
       final stop = GeocodedStop.fromJson(_geocodedStopJson());
-      expect(stop.packages.length, 2);
       expect(stop.packages[0].clientName, 'Juan García');
       expect(stop.packages[0].agencia, 'MRW');
       expect(stop.packages[1].nota, '2º izq');
       expect(stop.packages[1].agencia, '');
-    });
-
-    test('confidence GOOD se mapea correctamente', () {
-      final stop = GeocodedStop.fromJson(_geocodedStopJson(confidence: 'GOOD'));
-      expect(stop.confidence, GeoConfidence.good);
     });
 
     test('alias ausente usa cadena vacía', () {
@@ -117,11 +102,11 @@ void main() {
       expect(stop.alias, '');
     });
 
-    test('all_client_names ausente usa lista vacía', () {
+    test('packages ausente usa lista vacía', () {
       final json = Map<String, dynamic>.from(_geocodedStopJson())
-        ..remove('all_client_names');
+        ..remove('packages');
       final stop = GeocodedStop.fromJson(json);
-      expect(stop.allClientNames, isEmpty);
+      expect(stop.packages, isEmpty);
     });
   });
 
@@ -163,21 +148,20 @@ void main() {
       final stop = FailedStop.fromJson(_failedStopJson());
       expect(stop.address, 'Calle Inventada 99');
       expect(stop.alias, '');
-      expect(stop.clientNames, ['Pedro Ruiz']);
-      expect(stop.packageCount, 1);
+      expect(stop.packages.length, 1);
     });
 
     test('deserializa la lista de packages', () {
       final stop = FailedStop.fromJson(_failedStopJson());
-      expect(stop.packages.length, 1);
       expect(stop.packages[0].clientName, 'Pedro Ruiz');
+      expect(stop.packages[0].agencia, 'SEUR');
     });
 
-    test('client_names ausente usa lista vacía', () {
+    test('packages ausente usa lista vacía', () {
       final json = Map<String, dynamic>.from(_failedStopJson())
-        ..remove('client_names');
+        ..remove('packages');
       final stop = FailedStop.fromJson(json);
-      expect(stop.clientNames, isEmpty);
+      expect(stop.packages, isEmpty);
     });
   });
 

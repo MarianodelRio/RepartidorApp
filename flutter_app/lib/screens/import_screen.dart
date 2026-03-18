@@ -688,7 +688,7 @@ class _ImportScreenState extends State<ImportScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${stop.packageCount} paquete${stop.packageCount > 1 ? 's' : ''}',
+                  '${stop.packages.length} paquete${stop.packages.length > 1 ? 's' : ''}',
                   style: const TextStyle(
                       fontSize: 11, color: AppColors.textSecondary),
                 ),

@@ -16,6 +16,7 @@ from app.services.geocoding import (
     _parse_address,
     _portal_display,
     _cache_key,
+    _title_street,
 )
 from app.utils.validation import in_work_bbox
 
@@ -245,6 +246,38 @@ class TestCacheKey:
 
     def test_distinta_calle_mismo_numero_son_distintas(self):
         assert _cache_key("Calle Gaitán", "24") != _cache_key("Calle Mayor", "24")
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  _title_street
+# ══════════════════════════════════════════════════════════════════════
+
+class TestTitleStreet:
+
+    def test_mayusculas_completo(self):
+        assert _title_street("CALLE DE LA PAZ") == "Calle de la Paz"
+
+    def test_minusculas_completo(self):
+        assert _title_street("avenida blas infante") == "Avenida Blas Infante"
+
+    def test_primera_palabra_siempre_capitalizada(self):
+        """La primera palabra se capitaliza incluso si es una preposición."""
+        assert _title_street("de la paz") == "De la Paz"
+
+    def test_preposicion_del(self):
+        assert _title_street("calle del rio") == "Calle del Rio"
+
+    def test_articulo_los(self):
+        assert _title_street("calle de los olivos") == "Calle de los Olivos"
+
+    def test_preposicion_sin(self):
+        assert _title_street("calle sin nombre") == "Calle sin Nombre"
+
+    def test_cadena_vacia(self):
+        assert _title_street("") == ""
+
+    def test_una_palabra(self):
+        assert _title_street("plaza") == "Plaza"
 
 
 # ══════════════════════════════════════════════════════════════════════

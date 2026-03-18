@@ -122,14 +122,15 @@ class ImportController extends ChangeNotifier {
     final newGeocoded = GeocodedStop(
       address: stop.address,
       alias: stop.alias,
-      clientName:
-          stop.clientNames.firstWhere((n) => n.isNotEmpty, orElse: () => ''),
-      allClientNames: stop.clientNames,
+      clientName: stop.packages
+          .firstWhere((p) => p.clientName.isNotEmpty,
+              orElse: () => const Package())
+          .clientName,
       packages: stop.packages,
-      packageCount: stop.packageCount,
       lat: lat,
       lon: lon,
       confidence: GeoConfidence.override,
+      tipo: stop.packages.any((p) => p.tipo == 'Express') ? 'Express' : 'Normal',
     );
 
     _reviewResult = ValidationResult(
@@ -154,12 +155,11 @@ class ImportController extends ChangeNotifier {
       address: stop.address,
       alias: stop.alias,
       clientName: stop.clientName,
-      allClientNames: stop.allClientNames,
       packages: stop.packages,
-      packageCount: stop.packageCount,
       lat: lat,
       lon: lon,
       confidence: GeoConfidence.override,
+      tipo: stop.tipo,
     );
 
     _reviewResult = ValidationResult(
@@ -239,7 +239,7 @@ class ImportController extends ChangeNotifier {
       addresses.add(st.address);
       clientNames.add(st.clientName);
       coords.add([st.lat, st.lon]);
-      packageCounts.add(st.packageCount);
+      packageCounts.add(st.packages.length);
       packagesPerStop.add(st.packages);
       aliases.add(st.alias);
     }

@@ -78,7 +78,7 @@ def test_dedup_misma_direccion_exacta(client):
     assert data["total_packages"] == 2
     assert data["unique_addresses"] == 1
     assert len(data["geocoded"]) == 1
-    assert data["geocoded"][0]["package_count"] == 2
+    assert len(data["geocoded"][0]["packages"]) == 2
     # geocode solo se llama UNA vez (dirección única)
     mock_geo.assert_called_once()
 
@@ -91,6 +91,33 @@ def test_dedup_misma_direccion_diferente_mayusculas(client):
     data = r.json()
     assert data["unique_addresses"] == 1
     mock_geo.assert_called_once()
+
+
+def test_dedup_abreviatura_y_nombre_completo(client):
+    """C/ Gaitán 24 y Calle Gaitán 24 son la misma parada."""
+    with patch("app.routers.validation.geocode", return_value=GEOCODE_OK) as mock_geo:
+        r = client.post(URL_START, json={"rows": _rows("C/ Gaitán 24", "Calle Gaitán 24")})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["unique_addresses"] == 1
+    mock_geo.assert_called_once()
+
+
+def test_dedup_con_sufijo_ciudad(client):
+    """Con y sin sufijo de ciudad son la misma parada."""
+    with patch("app.routers.validation.geocode", return_value=GEOCODE_OK) as mock_geo:
+        r = client.post(URL_START, json={"rows": _rows("Calle Mayor 1, Posadas", "Calle Mayor 1")})
+    assert r.status_code == 200
+    assert r.json()["unique_addresses"] == 1
+    mock_geo.assert_called_once()
+
+
+def test_direccion_abreviada_se_normaliza_en_respuesta(client):
+    """La dirección se muestra en forma canónica en la respuesta."""
+    with patch("app.routers.validation.geocode", return_value=GEOCODE_OK):
+        r = client.post(URL_START, json={"rows": _rows("C/ Mayor 1")})
+    assert r.status_code == 200
+    assert r.json()["geocoded"][0]["address"] == "Calle Mayor 1"
 
 
 def test_dedup_dos_direcciones_distintas(client):
@@ -212,3 +239,51 @@ def test_override_devuelve_la_direccion(client):
             "lon": -5.100,
         })
     assert r.json()["address"] == "Calle Gaitán 3"
+
+
+def test_override_rechaza_longitud_positiva(client):
+    """Longitud positiva en España es casi siempre lat/lon invertidos → 400."""
+    r = client.post(URL_OVERRIDE, json={
+        "address": "Calle Mayor 1",
+        "lat": 37.805,
+        "lon": 5.099,   # positiva — invertido
+    })
+    assert r.status_code == 400
+    assert "longitud positiva" in r.json()["detail"].lower()
+
+
+def test_override_rechaza_latitud_fuera_de_bbox(client):
+    """Latitud fuera del área de trabajo → 400."""
+    r = client.post(URL_OVERRIDE, json={
+        "address": "Calle Mayor 1",
+        "lat": 40.4,    # Madrid — fuera del bbox
+        "lon": -5.099,
+    })
+    assert r.status_code == 400
+
+
+def test_limite_paradas_unicas_rechaza_exceso(client):
+    """Más de MAX_STOPS direcciones únicas → 422 antes de llamar a geocode."""
+    from app.core.config import MAX_STOPS
+    rows = [
+        {"cliente": f"Cliente{i}", "direccion": f"Calle Numero {i}", "ciudad": "Posadas",
+         "alias": "", "agencia": ""}
+        for i in range(MAX_STOPS + 1)
+    ]
+    with patch("app.routers.validation.geocode") as mock_geo:
+        r = client.post(URL_START, json={"rows": rows})
+    assert r.status_code == 422
+    mock_geo.assert_not_called()
+
+
+def test_limite_paradas_unicas_acepta_exactamente_max(client):
+    """Exactamente MAX_STOPS direcciones únicas → 200."""
+    from app.core.config import MAX_STOPS
+    rows = [
+        {"cliente": f"Cliente{i}", "direccion": f"Calle Numero {i}", "ciudad": "Posadas",
+         "alias": "", "agencia": ""}
+        for i in range(MAX_STOPS)
+    ]
+    with patch("app.routers.validation.geocode", return_value=GEOCODE_OK):
+        r = client.post(URL_START, json={"rows": rows})
+    assert r.status_code == 200

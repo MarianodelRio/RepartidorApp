@@ -5,13 +5,17 @@ Caché en disco: clave canónica = normalize(calle)#normalize(número).
 
 Pipeline (en orden de prioridad):
   1. Caché en disco: override permanente, google/places con TTL de GOOGLE_CACHE_TTL_DAYS días.
-  2. Fuzzy matching contra catálogo combinado (OSM + aprendidas).
+  2. Fuzzy matching contra catálogo estático (streets.json).
      Sin llamada HTTP. Corrige el nombre de la calle antes de consultar APIs.
   3. Google Geocoding API — solo ROOFTOP → EXACT_ADDRESS.
      Cualquier otro resultado (RANGE_INTERPOLATED, GEOMETRIC_CENTER, APPROXIMATE)
      no se acepta directamente; se intenta con Places si hay alias.
   4. Google Places API — si hay alias de negocio.
-  5. FAILED → devuelve None.
+  5. FAILED → devuelve None. No se cachea para permitir reintentos en futuras llamadas.
+
+Errores transitorios (timeout, red, HTTP 429/5xx) se reintentan con backoff
+exponencial (_GEOCODE_RETRY_DELAYS). Errores permanentes (ZERO_RESULTS, fuera de
+bbox) no se reintentan.
 
 Confianza devuelta (str):
   EXACT_ADDRESS  — portal exacto (Google ROOFTOP)
@@ -24,6 +28,7 @@ import difflib
 import json
 import math
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -37,7 +42,6 @@ from app.core.config import (
     GOOGLE_CACHE_TTL_DAYS,
     GEOCODE_TIMEOUT,
 )
-from app.adapters.overpass import fetch_streets_from_overpass
 from app.utils.normalization import normalize_text
 from app.utils.validation import in_work_bbox
 from app.core.logging import get_logger
@@ -47,24 +51,46 @@ logger = get_logger(__name__)
 GeoResult = tuple[float, float]  # (lat, lon)
 
 # ─── Caché en memoria ──────────────────────────────────────────────────────────
-_cache: dict[str, GeoResult | None] = {}
+# Solo almacena coordenadas válidas; los FAILED no se cachean.
+_cache: dict[str, GeoResult] = {}
 
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _CACHE_FILE = _DATA_DIR / "geocode_cache.json"
-_STREETS_FILE = _DATA_DIR / "osm_streets.json"
 _persisted: dict[str, dict] = {}
 
 # Parámetros de fuzzy matching
 FUZZY_THRESHOLD = 0.80
-STREET_LIST_TTL_DAYS = 7
 
-# Catálogo de calles OSM (cargado lazily)
-_osm_streets: list[str] | None = None
-_osm_streets_norm: list[str] | None = None
-_osm_streets_norm_set: set[str] | None = None  # búsqueda O(1) de pertenencia
+# Catálogo de calles (cargado lazily desde streets.json vía catalog.py)
+_streets: list[str] | None = None
+_streets_norm: list[str] | None = None
+_streets_norm_set: set[str] | None = None  # búsqueda O(1) de pertenencia
 
+# ─── Threading ─────────────────────────────────────────────────────────────────
+# RLock protege _cache, _persisted y _save_cache(). No se mantiene durante
+# llamadas a APIs externas (Google) para no serializar peticiones.
+_lock = threading.RLock()
 
-# Abreviaturas de tipo de vía que se expanden antes de analizar la dirección
+# ─── Errores transitorios y reintentos ─────────────────────────────────────────
+
+class _GeoTransientError(Exception):
+    """Error transitorio en llamada a API de geocodificación (red, timeout, rate-limit).
+    Se reintenta con backoff exponencial; a diferencia de devolver None, indica
+    que el problema es temporal y merece reintento.
+    """
+
+_GEOCODE_RETRY_DELAYS: tuple[float, ...] = (1.0, 2.0)  # segundos entre reintentos
+
+# ─── Places: distancias de referencia ──────────────────────────────────────────
+_PLACES_MAX_DIST_M: float = 300.0           # con ref_coord de Geocoding precisa
+_PLACES_MAX_DIST_FALLBACK_M: float = 1000.0  # cuando Google no devuelve ninguna coord
+
+# ─── Title-case para calles españolas ──────────────────────────────────────────
+_LOWERCASE_WORDS: frozenset[str] = frozenset({
+    "de", "del", "la", "el", "los", "las", "y", "a", "al", "e", "con", "sin",
+})
+
+# ─── Abreviaturas de tipo de vía ───────────────────────────────────────────────
 _VIA_ABBREVS = (
     (r"(?<!\w)C/\s*",          "Calle "),       # C/5 → Calle 5
     (r"\bCl\.?(?=\s|$)",       "Calle"),        # Cl. / Cl → Calle
@@ -84,6 +110,20 @@ _VIA_ABBREVS = (
 
 # Alias local — la implementación canónica vive en app/utils/normalization.py.
 _normalize = normalize_text
+
+
+def _title_street(s: str) -> str:
+    """Title-case para nombres de calle respetando preposiciones y artículos españoles.
+
+    'CALLE DE LA PAZ'      → 'Calle de la Paz'
+    'avenida blas infante'  → 'Avenida Blas Infante'
+    'calle de los olivos'   → 'Calle de los Olivos'
+    """
+    words = s.split()
+    return " ".join(
+        w.capitalize() if i == 0 or w.lower() not in _LOWERCASE_WORDS else w.lower()
+        for i, w in enumerate(words)
+    )
 
 
 def _parse_address(raw: str) -> tuple[str, str]:
@@ -161,6 +201,39 @@ def _parse_address(raw: str) -> tuple[str, str]:
 
     return s, ""
 
+
+def address_key(address: str) -> str:
+    """Clave canónica de una dirección para detección de duplicados.
+
+    Expande abreviaturas de tipo de vía (C/ → Calle, Avda → Avenida) y elimina
+    sufijos de ciudad antes de normalizar, garantizando que variantes de la
+    misma dirección produzcan la misma clave:
+
+      'C/ Gaitán 24'              → 'calle gaitan#24'
+      'Calle Gaitán, 24, Posadas' → 'calle gaitan#24'
+      'CALLE GAITAN 24'           → 'calle gaitan#24'
+    """
+    street, number = _parse_address(address.strip())
+    return _cache_key(street, number)
+
+
+def canonical_address(address: str) -> str:
+    """Forma canónica de una dirección: expande abreviaturas, normaliza capitalización
+    y elimina sufijos de ciudad.
+
+    'C/ gaitán, 24, Posadas'  → 'Calle Gaitán 24'
+    'AVDA BLAS INFANTE 5'     → 'Avenida Blas Infante 5'
+    'calle de la paz 3'       → 'Calle de la Paz 3'
+
+    Útil para mostrar al usuario y como referencia limpia de la dirección.
+    """
+    street, number = _parse_address(address.strip())
+    parts = [_title_street(street)]
+    if number:
+        parts.append(number)
+    return " ".join(parts)
+
+
 def get_corrected_street(address: str) -> str:
     """
     Devuelve el nombre de calle más preciso conocido para una dirección.
@@ -194,75 +267,25 @@ def _cache_key(street: str, number: str) -> str:
     return f"{_normalize(street)}#{_normalize(number)}"
 
 
-# ─── Catálogo de calles (Overpass + Catastro + aprendidas) ─────────────────────
-
-def _load_streets_from_disk() -> list[str] | None:
-    if not _STREETS_FILE.exists():
-        return None
-    try:
-        raw = json.loads(_STREETS_FILE.read_text("utf-8"))
-        age_days = (time.time() - raw.get("timestamp", 0)) / 86400
-        if age_days > STREET_LIST_TTL_DAYS:
-            return None
-        return raw.get("streets", [])
-    except Exception:
-        return None
-
-
-def _save_streets_to_disk(streets: list[str]) -> None:
-    try:
-        _DATA_DIR.mkdir(parents=True, exist_ok=True)
-        _STREETS_FILE.write_text(
-            json.dumps({"timestamp": time.time(), "streets": streets},
-                       ensure_ascii=False, indent=2),
-            "utf-8",
-        )
-    except Exception as e:
-        logger.error("Error guardando catálogo OSM: %s", e)
-
+# ─── Catálogo de calles (streets.json — solo lectura) ──────────────────────────
 
 def _get_street_catalog() -> list[str]:
-    """
-    Devuelve el catálogo combinado de calles, cargándolo lazily.
-    Intenta primero el catálogo combinado (catalog.py); si no, solo Overpass.
-    """
-    global _osm_streets, _osm_streets_norm, _osm_streets_norm_set
+    """Devuelve el catálogo de calles, cargándolo lazily desde catalog.py."""
+    global _streets, _streets_norm, _streets_norm_set
 
-    if _osm_streets is not None:
-        return _osm_streets
+    if _streets is not None:
+        return _streets
 
-    # Intentar catálogo combinado (OSM + Catastro + aprendidas)
     try:
-        from app.services.catalog import get_combined_catalog
-        streets = get_combined_catalog()
-        if streets:
-            _osm_streets = streets
-            _osm_streets_norm = [_normalize(s) for s in streets]
-            _osm_streets_norm_set = set(_osm_streets_norm)
-            return _osm_streets
+        from app.services.catalog import get_catalog
+        streets = get_catalog()
+        _streets = streets
+        _streets_norm = [_normalize(s) for s in streets]
+        _streets_norm_set = set(_streets_norm)
+        return _streets
     except Exception as e:
-        logger.error("Error cargando catálogo combinado: %s", e)
-
-    # Fallback: solo Overpass
-    osm_streets: list[str] | None = _load_streets_from_disk()
-    if osm_streets is None:
-        logger.info("Descargando catálogo de calles desde Overpass...")
-        try:
-            osm_streets = fetch_streets_from_overpass()
-            _save_streets_to_disk(osm_streets)
-            logger.info("Catálogo Overpass listo: %d calles", len(osm_streets))
-        except Exception as e:
-            logger.error("Error descargando Overpass: %s", e)
-            _osm_streets = []
-            _osm_streets_norm = []
-            _osm_streets_norm_set = set()
-            return []
-
-    assert osm_streets is not None  # None entra en el if de arriba, que siempre retorna o asigna
-    _osm_streets = osm_streets
-    _osm_streets_norm = [_normalize(s) for s in osm_streets]
-    _osm_streets_norm_set = set(_osm_streets_norm)
-    return _osm_streets
+        logger.error("Error cargando catálogo de calles: %s", e)
+        return []
 
 
 # ─── Fuzzy matching ────────────────────────────────────────────────────────────
@@ -343,13 +366,13 @@ def _find_closest_street(query_street: str) -> str | None:
     query_norm = _normalize(query_street)
 
     # Si la calle normalizada ya está en el catálogo, no hay nada que corregir
-    if _osm_streets_norm_set and query_norm in _osm_streets_norm_set:
+    if _streets_norm_set and query_norm in _streets_norm_set:
         return None
 
     best_score = 0.0
     best_street = None
 
-    for osm_name, osm_norm in zip(streets, _osm_streets_norm or []):
+    for osm_name, osm_norm in zip(streets, _streets_norm or []):
         score = _token_set_ratio(query_norm, osm_norm)
         if score > best_score:
             best_score = score
@@ -367,7 +390,8 @@ def _find_closest_street(query_street: str) -> str | None:
 def _google_geocode(street: str, number: str) -> tuple[GeoResult, str] | None:
     """
     Geocodifica con Google Geocoding API.
-    Devuelve ((lat, lon), location_type) o None.
+    Devuelve ((lat, lon), location_type) o None si la dirección no se encuentra.
+    Lanza _GeoTransientError para errores de red, timeout o rate-limit (429/5xx).
     location_type: ROOFTOP | RANGE_INTERPOLATED | GEOMETRIC_CENTER | APPROXIMATE
     """
     if not GOOGLE_API_KEY:
@@ -386,6 +410,8 @@ def _google_geocode(street: str, number: str) -> tuple[GeoResult, str] | None:
 
     try:
         r = requests.get(GOOGLE_GEOCODING_URL, params=params, timeout=GEOCODE_TIMEOUT)
+        if r.status_code == 429 or r.status_code >= 500:
+            raise _GeoTransientError(f"HTTP {r.status_code} para '{address}'")
         r.raise_for_status()
         data = r.json()
 
@@ -409,16 +435,18 @@ def _google_geocode(street: str, number: str) -> tuple[GeoResult, str] | None:
         logger.info("Google: '%s' → %s (%.5f, %.5f)", address, location_type, lat, lng)
         return (lat, lng), location_type
 
+    except _GeoTransientError:
+        raise
+    except requests.Timeout:
+        raise _GeoTransientError(f"timeout ({GEOCODE_TIMEOUT}s) para '{address}'")
+    except requests.ConnectionError as exc:
+        raise _GeoTransientError(f"error de red para '{address}': {exc}")
     except Exception as e:
-        logger.error("Google error: %s", e)
+        logger.error("Google Geocoding error: %s", e)
         return None
 
 
 # ─── Distancia haversine ───────────────────────────────────────────────────────
-
-_PLACES_NAME_SIM_THRESHOLD = 0.55   # similitud mínima nombre Places vs alias
-_PLACES_MAX_DIST_M = 300.0          # distancia máxima (m) entre Places y ref Geocoding
-
 
 def _haversine_m(a: GeoResult, b: GeoResult) -> float:
     """Distancia en metros entre dos coordenadas (lat, lon)."""
@@ -431,15 +459,57 @@ def _haversine_m(a: GeoResult, b: GeoResult) -> float:
 
 # ─── Google Places API ─────────────────────────────────────────────────────────
 
-def _google_places(alias: str, ref_coord: GeoResult | None = None) -> GeoResult | None:
+def _places_name_matches(alias: str, name_returned: str) -> bool:
+    """True si el nombre devuelto por Places corresponde al alias buscado.
+
+    Comparación basada en tokens: todos los tokens significativos (longitud ≥ 3)
+    del alias deben tener cobertura en los tokens del nombre devuelto
+    (coincidencia exacta o similitud ≥ _TOKEN_CHAR_THRESHOLD).
+
+    Más robusto que SequenceMatcher puro ante nombres que comparten subsecuencias
+    largas pero son negocios distintos (ej. "Bar El Gato" vs "El Gato Azul":
+    el token "bar" no aparece en el nombre devuelto → rechazado).
+
+    Fallback para alias sin tokens significativos (solo artículos/preposiciones):
+    SequenceMatcher ≥ 0.70.
+    """
+    alias_norm = _normalize(alias)
+    name_norm = _normalize(name_returned)
+
+    sig_tokens = [t for t in alias_norm.split() if len(t) >= 3]
+    if not sig_tokens:
+        # Solo tokens cortos — fallback a similitud de cadena completa
+        return difflib.SequenceMatcher(None, alias_norm, name_norm).ratio() >= 0.70
+
+    name_tokens = name_norm.split()
+    for token in sig_tokens:
+        if token in name_tokens:
+            continue
+        best = max(
+            (difflib.SequenceMatcher(None, token, nt).ratio() for nt in name_tokens),
+            default=0.0,
+        )
+        if best < _TOKEN_CHAR_THRESHOLD:
+            return False
+    return True
+
+
+def _google_places(
+    alias: str,
+    ref_coord: GeoResult,
+    max_dist: float,
+) -> GeoResult | None:
     """
     Busca un negocio/lugar por nombre con Google Places Find Place.
     Solo se usa cuando Google Geocoding falla/es impreciso y hay alias.
+    Lanza _GeoTransientError para errores de red, timeout o rate-limit (429/5xx).
 
     Validaciones:
       1. bbox de comarca.
-      2. Similitud del nombre devuelto con el alias buscado ≥ _PLACES_NAME_SIM_THRESHOLD.
-      3. Si ref_coord proporcionada: distancia ≤ _PLACES_MAX_DIST_M.
+      2. Nombre devuelto satisface _places_name_matches (comparación por tokens).
+      3. Distancia a ref_coord ≤ max_dist.
+         ref_coord puede ser la coord de Geocoding (precisa) o POSADAS_CENTER (fallback
+         cuando Google no devuelve ningún resultado), con max_dist ajustado en cada caso.
     """
     if not GOOGLE_API_KEY or not alias:
         return None
@@ -455,6 +525,8 @@ def _google_places(alias: str, ref_coord: GeoResult | None = None) -> GeoResult 
 
     try:
         r = requests.get(GOOGLE_PLACES_URL, params=params, timeout=GEOCODE_TIMEOUT)
+        if r.status_code == 429 or r.status_code >= 500:
+            raise _GeoTransientError(f"HTTP {r.status_code} para alias '{alias}'")
         r.raise_for_status()
         data = r.json()
 
@@ -470,36 +542,58 @@ def _google_places(alias: str, ref_coord: GeoResult | None = None) -> GeoResult 
             logger.warning("Places fuera de bbox para '%s'", alias)
             return None
 
-        # Validar que el nombre devuelto se parece al alias buscado
         name_returned = candidate.get("name", "")
-        sim = difflib.SequenceMatcher(
-            None, _normalize(alias), _normalize(name_returned)
-        ).ratio()
-        if sim < _PLACES_NAME_SIM_THRESHOLD:
+        if not _places_name_matches(alias, name_returned):
             logger.warning(
-                "Places: nombre '%s' no coincide con alias '%s' (sim=%.2f) → rechazado",
-                name_returned, alias, sim,
+                "Places: nombre '%s' no coincide con alias '%s' → rechazado",
+                name_returned, alias,
             )
             return None
 
         coord: GeoResult = (lat, lng)
-
-        # Validar distancia respecto a la coord de referencia de Geocoding (si existe)
-        if ref_coord is not None:
-            dist_m = _haversine_m(ref_coord, coord)
-            if dist_m > _PLACES_MAX_DIST_M:
-                logger.warning(
-                    "Places: '%s' a %.0f m de la dirección → rechazado (umbral %d m)",
-                    alias, dist_m, _PLACES_MAX_DIST_M,
-                )
-                return None
+        dist_m = _haversine_m(ref_coord, coord)
+        if dist_m > max_dist:
+            logger.warning(
+                "Places: '%s' a %.0f m de la referencia → rechazado (umbral %.0f m)",
+                alias, dist_m, max_dist,
+            )
+            return None
 
         logger.info("Places: '%s' → '%s' (%.5f, %.5f)", alias, name_returned, lat, lng)
         return coord
 
+    except _GeoTransientError:
+        raise
+    except requests.Timeout:
+        raise _GeoTransientError(f"timeout ({GEOCODE_TIMEOUT}s) para alias '{alias}'")
+    except requests.ConnectionError as exc:
+        raise _GeoTransientError(f"error de red para alias '{alias}': {exc}")
     except Exception as e:
         logger.error("Google Places error: %s", e)
         return None
+
+
+# ─── Retry para errores transitorios ──────────────────────────────────────────
+
+def _call_with_retry(fn, *args, **kwargs):
+    """Ejecuta fn(*args, **kwargs) con reintentos exponenciales ante _GeoTransientError.
+
+    Devuelve el resultado de fn si tiene éxito, o None si se agotan los reintentos.
+    fn debe devolver None (fallo permanente) o lanzar _GeoTransientError (transitorio).
+    """
+    for attempt, delay in enumerate((*_GEOCODE_RETRY_DELAYS, None)):
+        try:
+            return fn(*args, **kwargs)
+        except _GeoTransientError as exc:
+            if delay is None:
+                logger.error("%s: agotados reintentos → %s", fn.__name__, exc)
+                return None
+            logger.warning(
+                "%s: error transitorio (%s), reintentando en %.0fs…",
+                fn.__name__, exc, delay,
+            )
+            time.sleep(delay)
+    return None  # inalcanzable
 
 
 # ─── TTL de caché Google ───────────────────────────────────────────────────────
@@ -562,11 +656,11 @@ def _persist_entry(
     street: str,
     number: str,
     source: str = "google",
-    confidence: str = "GOOD",
+    confidence: str = "EXACT_ADDRESS",
     corrected_to: str | None = None,
     alias: str | None = None,
 ) -> None:
-    """Guarda una entrada geocodificada en disco."""
+    """Guarda una entrada geocodificada en disco. Debe llamarse bajo _lock."""
     entry: dict = {
         "lat": lat,
         "lon": lon,
@@ -596,12 +690,15 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
     Pipeline:
       0. Formato "lat,lon" directo → OVERRIDE.
       1. Caché (_cache): clave de dirección ("calle#num") o clave de alias ("@nombre").
+         Los FAILED nunca se cachean: siempre se reintenta en la próxima llamada.
       2. Fuzzy matching en catálogo (corrección de nombre sin API).
       3. Google Geocoding: solo ROOFTOP → EXACT_ADDRESS.
          Resto de resultados (RANGE_INTERPOLATED, GEOMETRIC_CENTER, APPROXIMATE)
          se usan solo como referencia de distancia para validar Places.
-      4. Google Places (solo si alias): valida nombre (sim≥0.55) y distancia (≤300m).
-      5. FAILED (requiere pin manual).
+      4. Google Places (solo si alias): valida tokens del nombre y distancia.
+         Si Google no devolvió ninguna coord, usa POSADAS_CENTER como referencia
+         con radio ampliado (_PLACES_MAX_DIST_FALLBACK_M).
+      5. FAILED — no se cachea para permitir reintentos en futuras llamadas.
     """
     if not address or not address.strip():
         return None, "FAILED"
@@ -617,29 +714,28 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
     street, number = _parse_address(address.strip())
     key = _cache_key(street, number)
 
-    # 1. Caché (por dirección o por alias — misma estructura _cache)
-    if key in _cache:
-        coord = _cache[key]
-        entry = _persisted.get(key, {})
-        src = entry.get("source", "")
-        if src in ("google", "places") and _google_cache_expired(entry):
-            # Expirada: limpiar memoria y disco, y re-geocodificar
-            del _cache[key]
-            if entry.get("alias"):
-                _cache.pop("@" + _normalize(entry["alias"]), None)
-            _persisted.pop(key, None)
-            _save_cache()
-        else:
-            if coord is None:
-                return None, "FAILED"
-            confidence = entry.get("confidence", "GOOD")
-            return coord, confidence
+    # 1. Caché — protegida por _lock
+    with _lock:
+        if key in _cache:
+            coord = _cache[key]
+            entry = _persisted.get(key, {})
+            src = entry.get("source", "")
+            if src in ("google", "places") and _google_cache_expired(entry):
+                # Expirada: limpiar memoria y disco, y re-geocodificar
+                del _cache[key]
+                if entry.get("alias"):
+                    _cache.pop("@" + _normalize(entry["alias"]), None)
+                _persisted.pop(key, None)
+                _save_cache()
+            else:
+                confidence = entry.get("confidence", "EXACT_ADDRESS")
+                return coord, confidence
 
-    if alias:
-        alias_coord = _cache.get("@" + _normalize(alias))
-        if alias_coord is not None:
-            logger.info("Caché por alias '%s' → EXACT_PLACE", alias)
-            return alias_coord, "EXACT_PLACE"
+        if alias:
+            alias_coord = _cache.get("@" + _normalize(alias))
+            if alias_coord is not None:
+                logger.info("Caché por alias '%s' → EXACT_PLACE", alias)
+                return alias_coord, "EXACT_PLACE"
 
     # 2. Fuzzy matching (sin API — solo corrige el nombre de calle)
     corrected_to: str | None = None
@@ -651,42 +747,40 @@ def geocode(address: str, alias: str = "") -> tuple[GeoResult | None, str]:
 
     # 3. Google Geocoding — solo ROOFTOP es aceptado directamente
     ref_coord: GeoResult | None = None
-    google_result = _google_geocode(corrected_street, number)
+    google_result = _call_with_retry(_google_geocode, corrected_street, number)
     if google_result:
         coord, location_type = google_result
         if location_type == "ROOFTOP":
-            _cache[key] = coord
-            _persist_entry(
-                key, coord[0], coord[1], street, number,
-                source="google", confidence="EXACT_ADDRESS",
-                corrected_to=corrected_to,
-                alias=alias if alias else None,
-            )
-            if corrected_to:
-                try:
-                    from app.services.catalog import save_learned_street
-                    save_learned_street(corrected_to)
-                except Exception:
-                    pass
+            with _lock:
+                _cache[key] = coord
+                _persist_entry(
+                    key, coord[0], coord[1], street, number,
+                    source="google", confidence="EXACT_ADDRESS",
+                    corrected_to=corrected_to,
+                    alias=alias if alias else None,
+                )
             return coord, "EXACT_ADDRESS"
-        # RANGE_INTERPOLATED / GEOMETRIC_CENTER / APPROXIMATE:
+        # RANGE_INTERPOLATED / GEOMETRIC_CENTER / APPROXIMATE — no aceptado:
         # guardar como referencia de distancia para validar Places
         ref_coord = coord
 
     # 4. Google Places (solo si hay alias de negocio)
     if alias:
-        places_coord = _google_places(alias, ref_coord=ref_coord)
+        # Si Geocoding no devolvió ninguna coord, usar POSADAS_CENTER con radio más amplio
+        places_ref = ref_coord if ref_coord is not None else POSADAS_CENTER
+        places_max_dist = _PLACES_MAX_DIST_M if ref_coord is not None else _PLACES_MAX_DIST_FALLBACK_M
+        places_coord = _call_with_retry(_google_places, alias, places_ref, places_max_dist)
         if places_coord:
-            _cache[key] = places_coord
-            _persist_entry(
-                key, places_coord[0], places_coord[1], street, number,
-                source="places", confidence="EXACT_PLACE",
-                corrected_to=corrected_to, alias=alias,
-            )
+            with _lock:
+                _cache[key] = places_coord
+                _persist_entry(
+                    key, places_coord[0], places_coord[1], street, number,
+                    source="places", confidence="EXACT_PLACE",
+                    corrected_to=corrected_to, alias=alias,
+                )
             return places_coord, "EXACT_PLACE"
 
-    # 5. FAILED
-    _cache[key] = None
+    # 5. FAILED — no se cachea para permitir reintentos en futuras llamadas
     return None, "FAILED"
 
 
@@ -694,14 +788,16 @@ def add_override(address: str, lat: float, lon: float) -> None:
     """
     Registra coordenadas manuales para una dirección (override permanente).
     Tiene prioridad sobre cualquier resultado automático.
+    Las coordenadas deben ser válidas (verificadas por el router antes de llamar).
     """
     street, number = _parse_address(address.strip())
     key = _cache_key(street, number)
-    _cache[key] = (lat, lon)
-    _persist_entry(
-        key, lat, lon, street, number,
-        source="override", confidence="OVERRIDE",
-    )
+    with _lock:
+        _cache[key] = (lat, lon)
+        _persist_entry(
+            key, lat, lon, street, number,
+            source="override", confidence="OVERRIDE",
+        )
 
 
 # Cargar caché al importar el módulo

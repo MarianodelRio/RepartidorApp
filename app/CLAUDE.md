@@ -21,7 +21,7 @@ La dirección del flujo es siempre: router → service → util. No saltarse cap
 
 **Medio — revisar impacto antes de cambiar**
 
-- `services/catalog.py`: Overpass API + catálogo OSM. Afecta a la validación previa a geocodificar.
+- `services/catalog.py`: catálogo estático (streets.json). Afecta al fuzzy matching previo a geocodificar.
 - `core/config.py`: cualquier cambio de valor afecta a todo el backend. Documentar el motivo.
 - `routers/validation.py`: pipeline de validación de direcciones. Estado intermedio entre geocoding y optimize.
 
@@ -32,7 +32,8 @@ La dirección del flujo es siempre: router → service → util. No saltarse cap
 
 ## Zonas de cambio controlado
 
-- `app/data/*.json`: son estado runtime generado automáticamente. No editar directamente. Si hay que limpiarlos, es una decisión del usuario.
+- `app/data/streets.json`: catálogo de calles gestionado manualmente. Editar directamente para añadir o corregir calles.
+- `app/data/*.json` (resto): estado runtime generado automáticamente. No editar directamente. Si hay que limpiarlos, es una decisión del usuario.
 - `core/config.py`: es la fuente única. Si se cambia un valor por defecto, dejar claro por qué.
 
 ## Tests
@@ -40,7 +41,7 @@ La dirección del flujo es siempre: router → service → util. No saltarse cap
 Los tests viven en `tests/` (sibling de `app/`). La estructura es un archivo por servicio o capa lógica.
 
 **Tests puros** (no necesitan `.env` ni servicios externos — siempre ejecutables):
-- `test_dedup.py`, `test_geocoding_pure.py`, `test_routing_pure.py`, `test_catalog_pure.py`
+- `test_dedup.py`, `test_geocoding_pure.py`, `test_routing_pure.py`, `test_catalog_service.py`
 
 **Tests de integración** (necesitan OSRM activo y `GOOGLE_API_KEY`):
 - `test_geocoding_service.py`, `test_routing_service.py`

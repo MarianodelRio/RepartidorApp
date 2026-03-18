@@ -239,16 +239,22 @@ class _DeliveryScreenState extends State<DeliveryScreen>
     );
     if (result == null || !mounted) return;
 
-    await _ctrl.applyRepin(sessionIndex, result.latitude, result.longitude);
+    final persisted = await _ctrl.applyRepin(sessionIndex, result.latitude, result.longitude);
     if (!mounted) return;
 
     onStopUpdated?.call(_ctrl.session.stops[sessionIndex]);
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Ubicación corregida'),
-        backgroundColor: AppColors.success,
-      ),
+      persisted
+          ? const SnackBar(
+              content: Text('Ubicación corregida'),
+              backgroundColor: AppColors.success,
+            )
+          : const SnackBar(
+              content: Text('Ubicación corregida localmente. Sin conexión: no se guardará para el próximo reparto.'),
+              backgroundColor: AppColors.warning,
+              duration: Duration(seconds: 5),
+            ),
     );
   }
 
