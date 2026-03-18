@@ -22,7 +22,7 @@ from app.models import (
     StopInfo,
     RouteSummary,
 )
-from app.services.geocoding import geocode, parse_address
+from app.services.geocoding import geocode, get_corrected_street
 from app.services.routing import optimize_route, snap_to_street, format_distance, get_osrm_matrix
 from app.utils.validation import validate_coord as _validate_coord
 
@@ -192,7 +192,7 @@ def optimize(req: OptimizeRequest):
         origin_coord, _ = geocode(origin_addr)
         if origin_coord is None:
             raise HTTPException(400, detail=f"No se pudo geocodificar el origen: {origin_addr}")
-        origin_hint, _ = parse_address(origin_addr)
+        origin_hint = get_corrected_street(origin_addr)
     else:
         origin_coord = (DEPOT_LAT, DEPOT_LON)
         origin_hint = START_ADDRESS
@@ -212,7 +212,7 @@ def optimize(req: OptimizeRequest):
     routable_ok: list[tuple[str, tuple[float, float], int]] = []
     for addr, coord, orig_i in geocoded_ok:
         lat, lon = coord
-        street_hint, _ = parse_address(addr)
+        street_hint = get_corrected_street(addr)
         snapped = snap_to_street(lat, lon, street_hint)
         if snapped is None:
             geocoded_fail.append((addr, orig_i))

@@ -161,8 +161,21 @@ def _parse_address(raw: str) -> tuple[str, str]:
 
     return s, ""
 
-# Alias público para uso desde routers (sin importar privados).
-parse_address = _parse_address
+def get_corrected_street(address: str) -> str:
+    """
+    Devuelve el nombre de calle más preciso conocido para una dirección.
+
+    Si el fuzzy matching corrigió el nombre de calle durante la geocodificación,
+    devuelve el nombre corregido guardado en caché (fuzzy_corrected_to).
+    En caso contrario devuelve el nombre de calle extraído del texto original.
+
+    Uso: obtener el street_hint para snap_to_street; el nombre corregido
+    mejora el matching contra los nombres de la red viaria OSRM.
+    """
+    street, number = _parse_address(address.strip())
+    key = _cache_key(street, number)
+    corrected = _persisted.get(key, {}).get("fuzzy_corrected_to")
+    return corrected if corrected else street
 
 
 def _portal_display(number: str) -> str:
